@@ -6,3 +6,4 @@ cabal.sandbox.config
 .DS_Store
 *~
 travis.log
+dist-newstyle
