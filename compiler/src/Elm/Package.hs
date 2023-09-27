@@ -82,7 +82,7 @@ data Canonical =
 
 isKernel :: Name -> Bool
 isKernel (Name author _) =
-  author == elm || author == elm_explorations
+  author == elm || author == elm_explorations || author == zelm || author == zelm_explorations
 
 
 toChars :: Name -> String
@@ -186,10 +186,22 @@ elm =
   Utf8.fromChars "elm"
 
 
+{-# NOINLINE zelm #-}
+zelm :: Author
+zelm =
+  Utf8.fromChars "zelm"
+
+
 {-# NOINLINE elm_explorations #-}
 elm_explorations :: Author
 elm_explorations =
   Utf8.fromChars "elm-explorations"
+
+
+{-# NOINLINE zelm_explorations #-}
+zelm_explorations :: Author
+zelm_explorations =
+  Utf8.fromChars "zelm-explorations"
 
 
 
@@ -244,7 +256,7 @@ nearbyNames (Name author1 project1) possibleNames =
 
 authorDistance :: [Char] -> Author -> Int
 authorDistance given possibility =
-  if possibility == elm || possibility == elm_explorations
+  if possibility == elm || possibility == elm_explorations || possibility == zelm || possibility == zelm_explorations
   then 0
   else abs (Suggest.distance given (Utf8.toChars possibility))
 
