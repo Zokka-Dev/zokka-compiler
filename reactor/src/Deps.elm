@@ -451,7 +451,7 @@ await checkpoint changes model =
 
 view : Model -> Browser.Document Msg
 view model =
-  { title = "elm.json"
+  { title = "zelm.json"
   , body =
       [ span
           [ style "width" "calc(100% - 500px - 2em)"

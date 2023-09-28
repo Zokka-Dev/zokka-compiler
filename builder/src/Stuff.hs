@@ -29,6 +29,7 @@ import System.FilePath ((</>), (<.>))
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
+import Elm.OutlineConstants (zelmOutlineFile)
 
 
 
@@ -110,7 +111,7 @@ findRootHelp dirs =
       return Nothing
 
     _:_ ->
-      do  exists <- Dir.doesFileExist (FP.joinPath dirs </> "elm.json")
+      do  exists <- Dir.doesFileExist (FP.joinPath dirs </> zelmOutlineFile)
           if exists
             then return (Just (FP.joinPath dirs))
             else findRootHelp (init dirs)

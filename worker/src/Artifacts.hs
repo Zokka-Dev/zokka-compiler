@@ -60,7 +60,7 @@ loadRepl =
 load :: FilePath -> IO Artifacts
 load dir =
   BW.withScope $ \scope ->
-  do  putStrLn $ "Loading " ++ dir </> "elm.json"
+  do  putStrLn $ "Loading " ++ dir </> zelmOutlineFile
       style <- Reporting.terminal
       root <- fmap (</> dir) Dir.getCurrentDirectory
       result <- Details.load style scope root

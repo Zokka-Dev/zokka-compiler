@@ -40,6 +40,7 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Task as Task
 import qualified Stuff
+import Elm.OutlineConstants (zelmOutlineFile)
 
 
 
@@ -390,7 +391,7 @@ register manager pkg vsn docs commitHash sha =
   in
   Task.eio Exit.PublishCannotRegister $
     Http.upload manager url
-      [ Http.filePart "elm.json" "elm.json"
+      [ Http.filePart zelmOutlineFile zelmOutlineFile
       , Http.jsonPart "docs.json" "docs.json" (Docs.encode docs)
       , Http.filePart "README.md" "README.md"
       , Http.stringPart "github-hash" (Http.shaToChars sha)

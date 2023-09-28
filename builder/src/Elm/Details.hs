@@ -58,6 +58,7 @@ import qualified Reporting.Annotation as A
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
+import Elm.OutlineConstants (zelmOutlineFile)
 
 
 
@@ -144,7 +145,7 @@ loadInterfaces root (Details _ _ _ _ _ extras) =
 
 verifyInstall :: BW.Scope -> FilePath -> Solver.Env -> Outline.Outline -> IO (Either Exit.Details ())
 verifyInstall scope root (Solver.Env cache manager connection registry) outline =
-  do  time <- File.getTime (root </> "elm.json")
+  do  time <- File.getTime (root </> zelmOutlineFile)
       let key = Reporting.ignorer
       let env = Env key scope root cache manager connection registry
       case outline of
@@ -158,7 +159,7 @@ verifyInstall scope root (Solver.Env cache manager connection registry) outline 
 
 load :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.Details Details)
 load style scope root =
-  do  newTime <- File.getTime (root </> "elm.json")
+  do  newTime <- File.getTime (root </> zelmOutlineFile)
       maybeDetails <- File.readBinary (Stuff.details root)
       case maybeDetails of
         Nothing ->

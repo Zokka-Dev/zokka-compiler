@@ -60,6 +60,7 @@ import qualified Reporting.Error.Json as Json
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Error as Error
 import qualified Reporting.Render.Code as Code
+import Elm.OutlineConstants (zelmOutlineFile)
 
 
 
@@ -169,7 +170,7 @@ diffToReport diff =
       toOutlineReport outline
 
     DiffApplication ->
-      Help.report "CANNOT DIFF APPLICATIONS" (Just "elm.json")
+      Help.report "CANNOT DIFF APPLICATIONS" (Just zelmOutlineFile)
         "Your elm.json says this project is an application, but `elm diff` only works\
         \ with packages. That way there are previously published versions of the API to\
         \ diff against!"
@@ -178,7 +179,7 @@ diffToReport diff =
         ]
 
     DiffNoExposed ->
-      Help.report "NO EXPOSED MODULES" (Just "elm.json")
+      Help.report "NO EXPOSED MODULES" (Just zelmOutlineFile)
         "Your elm.json has no \"exposed-modules\" which means there is no public API at\
         \ all right now! What am I supposed to diff?"
         [ D.reflow $
@@ -265,13 +266,13 @@ bumpToReport bump =
       toOutlineReport outline
 
     BumpApplication ->
-      Help.report "CANNOT BUMP APPLICATIONS" (Just "elm.json")
+      Help.report "CANNOT BUMP APPLICATIONS" (Just zelmOutlineFile)
         "Your elm.json says this is an application. That means it cannot be published\
         \ on <https://package.elm-lang.org> and therefore has no version to bump!"
         []
 
     BumpUnexpectedVersion vsn versions ->
-      Help.docReport "CANNOT BUMP" (Just "elm.json")
+      Help.docReport "CANNOT BUMP" (Just zelmOutlineFile)
         ( D.fillSep
             ["Your","elm.json","says","I","should","bump","relative","to","version"
             ,D.red (D.fromVersion vsn) <> ","
@@ -298,7 +299,7 @@ bumpToReport bump =
       toDetailsReport details
 
     BumpNoExposed ->
-      Help.docReport "NO EXPOSED MODULES" (Just "elm.json")
+      Help.docReport "NO EXPOSED MODULES" (Just zelmOutlineFile)
         ( D.fillSep $
             [ "To", "bump", "a", "package,", "the"
             , D.dullyellow "\"exposed-modules\"", "field", "of", "your"
@@ -429,7 +430,7 @@ publishToReport publish =
         ]
 
     PublishInvalidBump statedVersion latestVersion ->
-      Help.docReport "INVALID VERSION" (Just "elm.json")
+      Help.docReport "INVALID VERSION" (Just zelmOutlineFile)
         ( D.fillSep $
             ["Your","elm.json","says","the","next","version","should","be"
             ,D.red (D.fromVersion statedVersion) <> ","
@@ -450,7 +451,7 @@ publishToReport publish =
         ]
 
     PublishBadBump old new magnitude realNew realMagnitude ->
-      Help.docReport "INVALID VERSION" (Just "elm.json")
+      Help.docReport "INVALID VERSION" (Just zelmOutlineFile)
         (
           D.fillSep $
             ["Your","elm.json","says","the","next","version","should","be"
@@ -476,7 +477,7 @@ publishToReport publish =
         ]
 
     PublishNoSummary ->
-      Help.docReport "NO SUMMARY" (Just "elm.json")
+      Help.docReport "NO SUMMARY" (Just zelmOutlineFile)
         ( D.fillSep $
             [ "To", "publish", "a", "package,", "your", "elm.json", "must"
             , "have", "a", D.dullyellow "\"summary\"", "field", "that", "gives"
@@ -489,7 +490,7 @@ publishToReport publish =
         ]
 
     PublishNoExposed ->
-      Help.docReport "NO EXPOSED MODULES" (Just "elm.json")
+      Help.docReport "NO EXPOSED MODULES" (Just zelmOutlineFile)
         ( D.fillSep $
             [ "To", "publish", "a", "package,", "the"
             , D.dullyellow "\"exposed-modules\"", "field", "of", "your"
@@ -816,7 +817,7 @@ installToReport exit =
         ]
 
     InstallNoOfflineAppSolution pkg ->
-      Help.report "CANNOT FIND COMPATIBLE VERSION LOCALLY" (Just "elm.json")
+      Help.report "CANNOT FIND COMPATIBLE VERSION LOCALLY" (Just zelmOutlineFile)
         (
           "I cannot find a version of " ++ Pkg.toChars pkg ++ " that is compatible\
           \ with your existing dependencies."
@@ -829,7 +830,7 @@ installToReport exit =
         ]
 
     InstallNoOnlinePkgSolution pkg ->
-      Help.report "CANNOT FIND COMPATIBLE VERSION" (Just "elm.json")
+      Help.report "CANNOT FIND COMPATIBLE VERSION" (Just zelmOutlineFile)
         (
           "I cannot find a version of " ++ Pkg.toChars pkg ++ " that is compatible\
           \ with your existing constraints."
@@ -848,7 +849,7 @@ installToReport exit =
         ]
 
     InstallNoOfflinePkgSolution pkg ->
-      Help.report "CANNOT FIND COMPATIBLE VERSION LOCALLY" (Just "elm.json")
+      Help.report "CANNOT FIND COMPATIBLE VERSION LOCALLY" (Just zelmOutlineFile)
         (
           "I cannot find a version of " ++ Pkg.toChars pkg ++ " that is compatible\
           \ with your existing constraints."
@@ -971,13 +972,13 @@ toOutlineReport :: Outline -> Help.Report
 toOutlineReport problem =
   case problem of
     OutlineHasBadStructure decodeError ->
-      Json.toReport "elm.json" (Json.FailureToReport toOutlineProblemReport) decodeError $
+      Json.toReport zelmOutlineFile (Json.FailureToReport toOutlineProblemReport) decodeError $
         Json.ExplicitReason "I ran into a problem with your elm.json file."
 
     OutlineHasMissingSrcDirs dir dirs ->
       case dirs of
         [] ->
-          Help.report "MISSING SOURCE DIRECTORY" (Just "elm.json")
+          Help.report "MISSING SOURCE DIRECTORY" (Just zelmOutlineFile)
             "I need a valid elm.json file, but the \"source-directories\" field lists the following directory:"
             [ D.indent 4 $ D.red $ D.fromChars dir
             , D.reflow $
@@ -985,7 +986,7 @@ toOutlineReport problem =
             ]
 
         _:_ ->
-          Help.report "MISSING SOURCE DIRECTORIES" (Just "elm.json")
+          Help.report "MISSING SOURCE DIRECTORIES" (Just zelmOutlineFile)
             "I need a valid elm.json file, but the \"source-directories\" field lists the following directories:"
             [ D.indent 4 $ D.vcat $
                 map (D.red . D.fromChars) (dir:dirs)
@@ -995,7 +996,7 @@ toOutlineReport problem =
 
     OutlineHasDuplicateSrcDirs canonicalDir dir1 dir2 ->
       if dir1 == dir2 then
-        Help.report "REDUNDANT SOURCE DIRECTORIES" (Just "elm.json")
+        Help.report "REDUNDANT SOURCE DIRECTORIES" (Just zelmOutlineFile)
           "I need a valid elm.json file, but the \"source-directories\" field lists the same directory twice:"
           [ D.indent 4 $ D.vcat $
               map (D.red . D.fromChars) [dir1,dir2]
@@ -1003,7 +1004,7 @@ toOutlineReport problem =
               "Remove one of the entries!"
           ]
       else
-        Help.report "REDUNDANT SOURCE DIRECTORIES" (Just "elm.json")
+        Help.report "REDUNDANT SOURCE DIRECTORIES" (Just zelmOutlineFile)
           "I need a valid elm.json file, but the \"source-directories\" field has some redundant directories:"
           [ D.indent 4 $ D.vcat $
               map (D.red . D.fromChars) [dir1,dir2]
@@ -1015,7 +1016,7 @@ toOutlineReport problem =
           ]
 
     OutlineNoPkgCore ->
-      Help.report "MISSING DEPENDENCY" (Just "elm.json")
+      Help.report "MISSING DEPENDENCY" (Just zelmOutlineFile)
         "I need to see an \"elm/core\" dependency your elm.json file. The default imports\
         \ of `List` and `Maybe` do not work without it."
         [ D.reflow $
@@ -1025,7 +1026,7 @@ toOutlineReport problem =
         ]
 
     OutlineNoAppCore ->
-      Help.report "MISSING DEPENDENCY" (Just "elm.json")
+      Help.report "MISSING DEPENDENCY" (Just zelmOutlineFile)
         "I need to see an \"elm/core\" dependency your elm.json file. The default imports\
         \ of `List` and `Maybe` do not work without it."
         [ D.reflow $
@@ -1035,7 +1036,7 @@ toOutlineReport problem =
         ]
 
     OutlineNoAppJson ->
-      Help.report "MISSING DEPENDENCY" (Just "elm.json")
+      Help.report "MISSING DEPENDENCY" (Just zelmOutlineFile)
         "I need to see an \"elm/json\" dependency your elm.json file. It helps me handle\
         \ flags and ports."
         [ D.reflow $
@@ -1278,7 +1279,7 @@ toDetailsReport :: Details -> Help.Report
 toDetailsReport details =
   case details of
     DetailsNoSolution ->
-      Help.report "INCOMPATIBLE DEPENDENCIES" (Just "elm.json")
+      Help.report "INCOMPATIBLE DEPENDENCIES" (Just zelmOutlineFile)
         "The dependencies in your elm.json are not compatible."
         [ D.fillSep
             ["Did","you","change","them","by","hand?","Try","to","change","it","back!"
@@ -1290,7 +1291,7 @@ toDetailsReport details =
         ]
 
     DetailsNoOfflineSolution ->
-      Help.report "TROUBLE VERIFYING DEPENDENCIES" (Just "elm.json")
+      Help.report "TROUBLE VERIFYING DEPENDENCIES" (Just zelmOutlineFile)
         "I could not connect to https://package.elm-lang.org to get the latest list of\
         \ packages, and I was unable to verify your dependencies with the information I\
         \ have cached locally."
@@ -1307,7 +1308,7 @@ toDetailsReport details =
       toSolverReport solver
 
     DetailsBadElmInPkg constraint ->
-      Help.report "ELM VERSION MISMATCH" (Just "elm.json")
+      Help.report "ELM VERSION MISMATCH" (Just zelmOutlineFile)
         "Your elm.json says this package needs a version of Elm in this range:"
         [ D.indent 4 $ D.dullyellow $ D.fromChars $ C.toChars constraint
         , D.fillSep
@@ -1318,7 +1319,7 @@ toDetailsReport details =
         ]
 
     DetailsBadElmInAppOutline version ->
-      Help.report "ELM VERSION MISMATCH" (Just "elm.json")
+      Help.report "ELM VERSION MISMATCH" (Just zelmOutlineFile)
         "Your elm.json says this application needs a different version of Elm."
         [ D.fillSep
             [ "It", "requires"
@@ -1330,7 +1331,7 @@ toDetailsReport details =
         ]
 
     DetailsHandEditedDependencies ->
-      Help.report "ERROR IN DEPENDENCIES" (Just "elm.json")
+      Help.report "ERROR IN DEPENDENCIES" (Just zelmOutlineFile)
         "It looks like the dependencies elm.json in were edited by hand (or by a 3rd\
         \ party tool) leaving them in an invalid state."
         [ D.fillSep
@@ -1877,7 +1878,7 @@ toProjectProblemReport projectProblem =
     BP_MissingExposed (NE.List (name, problem) _) ->
       case problem of
         Import.NotFound ->
-          Help.report "MISSING MODULE" (Just "elm.json")
+          Help.report "MISSING MODULE" (Just zelmOutlineFile)
             "The  \"exposed-modules\" of your elm.json lists the following module:"
             [ D.indent 4 $ D.red $ D.fromName name
             , D.reflow $
@@ -1885,7 +1886,7 @@ toProjectProblemReport projectProblem =
             ]
 
         Import.Ambiguous _ _ pkg _ ->
-          Help.report "AMBIGUOUS MODULE NAME" (Just "elm.json")
+          Help.report "AMBIGUOUS MODULE NAME" (Just zelmOutlineFile)
             "The  \"exposed-modules\" of your elm.json lists the following module:"
             [ D.indent 4 $ D.red $ D.fromName name
             , D.reflow $
@@ -1894,7 +1895,7 @@ toProjectProblemReport projectProblem =
             ]
 
         Import.AmbiguousLocal path1 path2 paths ->
-          Help.report "AMBIGUOUS MODULE NAME" (Just "elm.json")
+          Help.report "AMBIGUOUS MODULE NAME" (Just zelmOutlineFile)
             "The  \"exposed-modules\" of your elm.json lists the following module:"
             [ D.indent 4 $ D.red $ D.fromName name
             , D.reflow $
@@ -1906,7 +1907,7 @@ toProjectProblemReport projectProblem =
             ]
 
         Import.AmbiguousForeign _ _ _ ->
-          Help.report "MISSING MODULE" (Just "elm.json")
+          Help.report "MISSING MODULE" (Just zelmOutlineFile)
             "The  \"exposed-modules\" of your elm.json lists the following module:"
             [ D.indent 4 $ D.red $ D.fromName name
             , D.reflow $

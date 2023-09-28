@@ -28,6 +28,7 @@ import qualified Deps.Website as Website
 import qualified Elm.Constraint as C
 import qualified Elm.Package as Pkg
 import qualified Elm.Outline as Outline
+import qualified Elm.OutlineConstants as OC
 import qualified Elm.Version as V
 import qualified File
 import qualified Http
@@ -287,7 +288,7 @@ getConstraints pkg vsn =
           Nothing ->
             do  let toNewState cs = State cache connection registry (Map.insert key cs cDict)
                 let home = Stuff.package cache pkg vsn
-                let path = home </> "elm.json"
+                let path = home </> OC.zelmOutlineFile
                 outlineExists <- File.exists path
                 if outlineExists
                   then
@@ -313,7 +314,7 @@ getConstraints pkg vsn =
                         back state
 
                       Online manager ->
-                        do  let url = Website.metadata pkg vsn "elm.json"
+                        do  let url = Website.metadata pkg vsn OC.vanillaElmOutlineFile
                             result <- Http.get manager url [] id (return . Right)
                             case result of
                               Left httpProblem ->
