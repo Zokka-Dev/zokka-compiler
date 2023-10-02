@@ -18,7 +18,6 @@ import qualified Elm.Version as V
 import qualified Reporting
 import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
-import Elm.OutlineConstants (zelmOutlineFile)
 
 
 
@@ -28,7 +27,7 @@ import Elm.OutlineConstants (zelmOutlineFile)
 run :: () -> () -> IO ()
 run () () =
   Reporting.attempt Exit.initToReport $
-  do  exists <- Dir.doesFileExist zelmOutlineFile
+  do  exists <- Dir.doesFileExist "elm.json"
       if exists
         then return (Left Exit.InitAlreadyExists)
         else

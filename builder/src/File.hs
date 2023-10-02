@@ -33,7 +33,6 @@ import qualified System.FilePath as FP
 import System.FilePath ((</>))
 import qualified System.IO as IO
 import System.IO.Error (ioeGetErrorType, annotateIOError, modifyIOError)
-import Elm.OutlineConstants (zelmOutlineFile)
 
 
 
@@ -194,7 +193,7 @@ writeEntry destination root entry =
   if List.isPrefixOf "src/" path
     || path == "LICENSE"
     || path == "README.md"
-    || path == zelmOutlineFile
+    || path == "elm.json"
   then
       if not (null path) && last path == '/'
       then Dir.createDirectoryIfMissing True (destination </> path)

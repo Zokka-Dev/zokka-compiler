@@ -93,7 +93,6 @@ Executable elm
 
         -- Elm things
         Elm.Outline
-        Elm.OutlineConstants
         Elm.Details
         --
         Elm.Compiler.Imports

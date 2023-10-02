@@ -30,7 +30,6 @@ import System.FilePath ((</>))
 import qualified Elm.Constraint as Con
 import qualified Elm.Licenses as Licenses
 import qualified Elm.ModuleName as ModuleName
-import qualified Elm.OutlineConstants as OC
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
 import qualified File
@@ -114,7 +113,7 @@ flattenExposed exposed =
 
 write :: FilePath -> Outline -> IO ()
 write root outline =
-  E.write (root </> OC.zelmOutlineFile) (encode outline)
+  E.write (root </> "elm.json") (encode outline)
 
 
 
@@ -188,7 +187,7 @@ encodeSrcDir srcDir =
 
 read :: FilePath -> IO (Either Exit.Outline Outline)
 read root =
-  do  bytes <- File.readUtf8 (root </> OC.zelmOutlineFile)
+  do  bytes <- File.readUtf8 (root </> "elm.json")
       case D.fromByteString decoder bytes of
         Left err ->
           return $ Left (Exit.OutlineHasBadStructure err)
