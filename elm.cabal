@@ -107,6 +107,8 @@ Executable elm
         Elm.Magnitude
         Elm.ModuleName
         Elm.Package
+        Elm.CustomRepositoryData
+        Elm.PackageOverrideData
         Elm.String
         Elm.Version
 
