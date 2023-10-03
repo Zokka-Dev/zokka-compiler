@@ -89,7 +89,7 @@ data Result a
 
 
 data Details =
-  Details V.Version (Map.Map Pkg.Name C.Constraint)
+  Details V.Version (Map.Map Pkg.Name C.Constraint) -- First argument is the version, second is the set of dependencies that the package depends on
 
 
 verify :: Stuff.PackageCache -> Connection -> Registry.Registry -> Map.Map Pkg.Name C.Constraint -> IO (Result (Map.Map Pkg.Name Details))
@@ -130,7 +130,7 @@ data AppSolution =
 
 
 addToApp :: Stuff.PackageCache -> Connection -> Registry.Registry -> Pkg.Name -> Outline.AppOutline -> IO (Result AppSolution)
-addToApp cache connection registry pkg outline@(Outline.AppOutline _ _ direct indirect testDirect testIndirect) =
+addToApp cache connection registry pkg outline@(Outline.AppOutline _ _ direct indirect testDirect testIndirect _) =
   Stuff.withRegistryLock cache $
   let
     allIndirects = Map.union indirect testIndirect
@@ -157,14 +157,14 @@ addToApp cache connection registry pkg outline@(Outline.AppOutline _ _ direct in
 
 
 toApp :: State -> Pkg.Name -> Outline.AppOutline -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version -> AppSolution
-toApp (State _ _ _ constraints) pkg (Outline.AppOutline elm srcDirs direct _ testDirect _) old new =
+toApp (State _ _ _ constraints) pkg (Outline.AppOutline elm srcDirs direct _ testDirect _ pkgOverrides) old new =
   let
     d   = Map.intersection new (Map.insert pkg V.one direct)
     i   = Map.difference (getTransitive constraints new (Map.toList d) Map.empty) d
     td  = Map.intersection new (Map.delete pkg testDirect)
     ti  = Map.difference new (Map.unions [d,i,td])
   in
-  AppSolution old new (Outline.AppOutline elm srcDirs d i td ti)
+  AppSolution old new (Outline.AppOutline elm srcDirs d i td ti pkgOverrides)
 
 
 getTransitive :: Map.Map (Pkg.Name, V.Version) Constraints -> Map.Map Pkg.Name V.Version -> [(Pkg.Name,V.Version)] -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version

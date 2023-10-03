@@ -66,6 +66,8 @@ import GHC.Prim
 import GHC.Word (Word8(W8#))
 
 import qualified Parse.Primitives as P
+import Data.ByteString (unpack)
+import Data.Char (chr)
 
 
 
@@ -74,6 +76,9 @@ import qualified Parse.Primitives as P
 
 data Utf8 tipe =
   Utf8 ByteArray#
+  
+instance Show (Utf8 a) where
+  show x = toChars x
 
 
 

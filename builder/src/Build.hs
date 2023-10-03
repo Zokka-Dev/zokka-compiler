@@ -24,7 +24,7 @@ import qualified Data.Graph as Graph
 import qualified Data.List as List
 import qualified Data.Map.Utils as Map
 import qualified Data.Map.Strict as Map
-import Data.Map.Strict ((!))
+import Data.Map.Strict ((!), (!?))
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
@@ -56,6 +56,8 @@ import qualified Reporting.Error.Import as Import
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Render.Type.Localizer as L
 import qualified Stuff
+import qualified Debug.Trace as Debug
+import Data.Vector.Internal.Check (HasCallStack)
 
 
 
@@ -189,18 +191,29 @@ fromPaths :: Reporting.Style -> FilePath -> Details.Details -> NE.List FilePath 
 fromPaths style root details paths =
   Reporting.trackBuild style $ \key ->
   do  env <- makeEnv key root details
+      _ <- print ("foreigns env: " ++ show (_foreigns env))
+      _ <- print ("details foreigns: " ++ show (Details._foreigns details))
 
       elroots <- findRoots env paths
+      _ <- case elroots of
+        Left _ -> pure ()
+        Right roots -> print ("hello" ++ show roots)
       case elroots of
         Left problem ->
           return (Left (Exit.BuildProjectProblem problem))
 
         Right lroots ->
           do  -- crawl
+              _ <- print ("extras" ++ show (Details._extras details))
               dmvar <- Details.loadInterfaces root details
+              dmvarContents <- readMVar dmvar
+              _ <- print ("dmvarContents: " ++ show (fmap Map.keys dmvarContents))
               smvar <- newMVar Map.empty
+              _ <- print "made it to point A"
               srootMVars <- traverse (fork . crawlRoot env smvar) lroots
+              _ <- print "made it to point B"
               sroots <- traverse readMVar srootMVars
+              _ <- print "made it to point C"
               statuses <- traverse readMVar =<< readMVar smvar
 
               midpoint <- checkMidpointAndRoots dmvar statuses sroots
@@ -211,9 +224,13 @@ fromPaths style root details paths =
                 Right foreigns ->
                   do  -- compile
                       rmvar <- newEmptyMVar
+                      _ <- print "made it to point D"
                       resultsMVars <- forkWithKey (checkModule env foreigns rmvar) statuses
+                      _ <- print "made it to point E"
                       putMVar rmvar resultsMVars
+                      _ <- print "made it to point F"
                       rrootMVars <- traverse (fork . checkRoot env resultsMVars) sroots
+                      _ <- print "made it to point G"
                       results <- traverse readMVar resultsMVars
                       writeDetails root details results
                       toArtifacts env foreigns results <$> traverse readMVar rrootMVars
@@ -363,7 +380,7 @@ data CachedInterface
   | Corrupted
 
 
-checkModule :: Env -> Dependencies -> MVar ResultDict -> ModuleName.Raw -> Status -> IO Result
+checkModule :: HasCallStack => Env -> Dependencies -> MVar ResultDict -> ModuleName.Raw -> Status -> IO Result
 checkModule env@(Env _ root projectType _ _ _ _) foreigns resultsMVar name status =
   case status of
     SCached local@(Details.Local path time deps hasMain lastChange lastCompile) ->
@@ -423,9 +440,10 @@ checkModule env@(Env _ root projectType _ _ _ _) foreigns resultsMVar name statu
         Error.BadSyntax err
 
     SForeign home ->
-      case foreigns ! ModuleName.Canonical home name of
-        I.Public iface -> return (RForeign iface)
-        I.Private _ _ _ -> error $ "mistakenly seeing private interface for " ++ Pkg.toChars home ++ " " ++ ModuleName.toChars name
+      case foreigns !? ModuleName.Canonical (Debug.traceShow ("home in SForeign: " ++ show home) home) name of
+        Just (I.Public iface) -> return (RForeign iface)
+        Just (I.Private _ _ _) -> error $ "mistakenly seeing private interface for " ++ Pkg.toChars home ++ " " ++ ModuleName.toChars name
+        Nothing -> error $ "couldn't find module in lookup table" ++ Pkg.toChars home ++ " " ++ ModuleName.toChars name
 
     SKernel ->
       return RKernel
@@ -970,6 +988,7 @@ finalizeReplArtifacts env@(Env _ root projectType _ _ _ _) source modul@(Src.Mod
 data RootLocation
   = LInside ModuleName.Raw
   | LOutside FilePath
+  deriving Show
 
 
 findRoots :: Env -> NE.List FilePath -> IO (Either Exit.BuildProjectProblem (NE.List RootLocation))
@@ -1108,18 +1127,23 @@ crawlRoot env@(Env _ _ projectType _ buildID _ _) mvar root =
   case root of
     LInside name ->
       do  statusMVar <- newEmptyMVar
+          print "Made it to point AAA"
           statusDict <- takeMVar mvar
           putMVar mvar (Map.insert name statusMVar statusDict)
+          print "Made it to point BBB"
           putMVar statusMVar =<< crawlModule env mvar (DocsNeed False) name
+          print "Made it to point CCC"
           return (SInside name)
 
     LOutside path ->
       do  time <- File.getTime path
           source <- File.readUtf8 path
+          print "Made it to point AA"
           case Parse.fromByteString projectType source of
             Right modul@(Src.Module _ _ _ imports values _ _ _ _) ->
               do  let deps = map Src.getImportName imports
                   let local = Details.Local path time deps (any isMain values) buildID buildID
+                  print "Made it to point BB"
                   crawlDeps env mvar deps (SOutsideOk local source modul)
 
             Left syntaxError ->

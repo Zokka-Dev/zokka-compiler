@@ -40,7 +40,7 @@ import System.IO.Error (ioeGetErrorType, annotateIOError, modifyIOError)
 
 
 newtype Time = Time Fixed.Pico
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 
 getTime :: FilePath -> IO Time

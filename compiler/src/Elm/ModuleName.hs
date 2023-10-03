@@ -133,6 +133,7 @@ data Canonical =
     { _package :: !Pkg.Name
     , _module :: !Name.Name
     }
+    deriving Show
 
 
 

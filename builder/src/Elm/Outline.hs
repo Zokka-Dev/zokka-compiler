@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
-{-# LANGUAGE MultiWayIf, OverloadedStrings #-}
+{-# LANGUAGE MultiWayIf, OverloadedStrings, PatternGuards #-}
 module Elm.Outline
   ( Outline(..)
   , AppOutline(..)
@@ -31,6 +31,8 @@ import qualified Elm.Constraint as Con
 import qualified Elm.Licenses as Licenses
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
+import qualified Elm.PackageOverrideData as PkgOverride
+import Elm.PackageOverrideData (PackageOverrideData(..))
 import qualified Elm.Version as V
 import qualified File
 import qualified Json.Decode as D
@@ -39,6 +41,7 @@ import Json.Encode ((==>))
 import qualified Json.String as Json
 import qualified Parse.Primitives as P
 import qualified Reporting.Exit as Exit
+import Data.Maybe (mapMaybe)
 
 
 
@@ -58,6 +61,7 @@ data AppOutline =
     , _app_deps_indirect :: Map.Map Pkg.Name V.Version
     , _app_test_direct :: Map.Map Pkg.Name V.Version
     , _app_test_indirect :: Map.Map Pkg.Name V.Version
+    , _app_zelm_package_overrides :: [PkgOverride.PackageOverrideData]
     }
 
 
@@ -82,6 +86,7 @@ data Exposed
 data SrcDir
   = AbsoluteSrcDir FilePath
   | RelativeSrcDir FilePath
+  deriving Show
 
 
 
@@ -123,7 +128,7 @@ write root outline =
 encode :: Outline -> E.Value
 encode outline =
   case outline of
-    App (AppOutline elm srcDirs depsDirect depsTrans testDirect testTrans) ->
+    App (AppOutline elm srcDirs depsDirect depsTrans testDirect testTrans pkgOverrides) ->
       E.object
         [ "type" ==> E.chars "application"
         , "source-directories" ==> E.list encodeSrcDir (NE.toList srcDirs)
@@ -138,6 +143,7 @@ encode outline =
               [ "direct" ==> encodeDeps V.encode testDirect
               , "indirect" ==> encodeDeps V.encode testTrans
               ]
+        , "zelm-package-overrides" ==> E.list encodePkgOverride pkgOverrides
         ]
 
     Pkg (PkgOutline name summary license version exposed deps tests elm) ->
@@ -180,10 +186,23 @@ encodeSrcDir srcDir =
     AbsoluteSrcDir dir -> E.chars dir
     RelativeSrcDir dir -> E.chars dir
 
+encodePkgOverride :: PackageOverrideData -> E.Value
+encodePkgOverride (PackageOverrideData overridePackageName overridePackageVersion originalPackageName originalPackageVersion) =
+  E.object
+    [ "original-package-name" ==> Pkg.encode originalPackageName
+    , "original-package-version" ==> V.encode originalPackageVersion
+    , "override-package-name" ==> Pkg.encode overridePackageName
+    , "override-package-version" ==> V.encode overridePackageVersion
+    ]
 
 
 -- PARSE AND VERIFY
 
+findPkgOverridesAgainstNonexistentDeps :: Map.Map Pkg.Name V.Version -> PackageOverrideData -> Maybe (Pkg.Name, V.Version)
+findPkgOverridesAgainstNonexistentDeps deps PackageOverrideData{_originalPackageName=originalPackageName, _originalPackageVersion=originalPackageVersion} =
+  if nameAndVersionMatch then Nothing else Just (originalPackageName, originalPackageVersion)
+    where
+      nameAndVersionMatch = Map.lookup originalPackageName deps == Just originalPackageVersion
 
 read :: FilePath -> IO (Either Exit.Outline Outline)
 read root =
@@ -200,12 +219,15 @@ read root =
                 then Left Exit.OutlineNoPkgCore
                 else Right outline
 
-            App (AppOutline _ srcDirs direct indirect _ _)
+            App (AppOutline _ srcDirs direct indirect _ _ pkgOverrides)
               | Map.notMember Pkg.core direct ->
                   return $ Left Exit.OutlineNoAppCore
 
               | Map.notMember Pkg.json direct && Map.notMember Pkg.json indirect ->
                   return $ Left Exit.OutlineNoAppJson
+
+              | (packageName, packageVersion) : _ <- mapMaybe (findPkgOverridesAgainstNonexistentDeps (Map.union direct indirect)) pkgOverrides ->
+                  pure $ Left (Exit.OutlinePkgOverridesDoNotMatchDeps packageName packageVersion)
 
               | otherwise ->
                   do  badDirs <- filterM (isSrcDirMissing root) (NE.toList srcDirs)
@@ -291,6 +313,7 @@ appDecoder =
     <*> D.field "dependencies" (D.field "indirect" (depsDecoder versionDecoder))
     <*> D.field "test-dependencies" (D.field "direct" (depsDecoder versionDecoder))
     <*> D.field "test-dependencies" (D.field "indirect" (depsDecoder versionDecoder))
+    <*> D.field "zelm-package-overrides" (D.list packageOverrideDataDecoder)
 
 
 pkgDecoder :: Decoder PkgOutline
@@ -340,6 +363,14 @@ depsDecoder valueDecoder =
 dirsDecoder :: Decoder (NE.List SrcDir)
 dirsDecoder =
   fmap (toSrcDir . Json.toChars) <$> D.nonEmptyList D.string Exit.OP_NoSrcDirs
+
+packageOverrideDataDecoder :: Decoder PkgOverride.PackageOverrideData
+packageOverrideDataDecoder =
+  PkgOverride.PackageOverrideData
+    <$> D.field "override-package-name" nameDecoder
+    <*> D.field "override-package-version" versionDecoder
+    <*> D.field "original-package-name" nameDecoder
+    <*> D.field "original-package-version" versionDecoder
 
 
 toSrcDir :: FilePath -> SrcDir

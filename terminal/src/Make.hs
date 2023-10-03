@@ -30,6 +30,11 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
 import Terminal (Parser(..))
+import qualified Debug.Trace as Debug
+import qualified Data.Map as Map
+import Elm.Details (Foreign(..))
+import qualified Data.Utf8 as Utf8
+import Elm.Package (Name(..))
 
 
 
@@ -77,8 +82,14 @@ runHelp :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> IO (Either Exit
 runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
   BW.withScope $ \scope ->
   Stuff.withRootLock root $ Task.run $
-  do  desiredMode <- getMode debug optimize
+  do  desiredMode <- Debug.traceShowId <$> getMode debug optimize
       details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
+      -- _ <- Task.io $ print ("Foreigns" ++ show (Details._foreigns details))
+      let oldDetails = details
+      let dummyModuleName = Utf8.fromChars "Iso8601"
+      let dummyPackageName = Name { _author = Utf8.fromChars "random-author", _project = Utf8.fromChars "random-project" }
+      let details = oldDetails { Details._foreigns = Map.insert dummyModuleName (Foreign dummyPackageName []) (Details._foreigns oldDetails) }
+      _ <- Task.io $ print ("What paths looks like" ++ show paths)
       case paths of
         [] ->
           do  exposed <- getExposed details
@@ -252,7 +263,7 @@ generate style target builder names =
 -- TO BUILDER
 
 
-data DesiredMode = Debug | Dev | Prod
+data DesiredMode = Debug | Dev | Prod deriving Show
 
 
 toBuilder :: FilePath -> Details.Details -> DesiredMode -> Build.Artifacts -> Task B.Builder

@@ -47,7 +47,8 @@ instance Foldable List where
   foldl step state (List x xs) = foldl step (step state x) xs
   foldl1 step      (List x xs) = foldl step x xs
 
-
+instance (Show a) => Show (List a) where
+  show xs = show (toList xs)
 
 -- SORT BY
 

@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Reporting.Exit
   ( Init(..), initToReport
@@ -60,6 +61,7 @@ import qualified Reporting.Error.Json as Json
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Error as Error
 import qualified Reporting.Render.Code as Code
+import Elm.PackageOverrideData (PackageOverrideData(..))
 
 
 
@@ -952,6 +954,7 @@ data Outline
   | OutlineNoPkgCore
   | OutlineNoAppCore
   | OutlineNoAppJson
+  | OutlinePkgOverridesDoNotMatchDeps Pkg.Name V.Version
 
 
 data OutlineProblem
@@ -1042,6 +1045,17 @@ toOutlineReport problem =
             "If you modified your elm.json by hand, try to change it back! And if you are\
             \ having trouble getting back to a working elm.json, it may be easier to delete it\
             \ and use `elm init` to start fresh."
+        ]
+    
+    OutlinePkgOverridesDoNotMatchDeps packageName packageVersion ->
+      Help.report "BAD PACKAGE OVERRIDE" (Just "elm.json")
+        "Package overrides in zelm-package-overrides need to override versions of packages \
+        \ that actually are used in your direct or indirect dependencies! You are attempting \
+        \ to override "
+        [ D.indent 4 $ D.red $ D.fromChars $ Pkg.toChars packageName ++ " " ++ V.toChars packageVersion
+        , D.reflow
+            "But this combination of package and version is not used in your direct or indirect \
+            \ dependencies." 
         ]
 
 

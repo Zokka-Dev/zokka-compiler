@@ -58,6 +58,10 @@ import qualified Reporting.Annotation as A
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
+import qualified Debug.Trace as Debug
+import Elm.PackageOverrideData (PackageOverrideData(..))
+import Data.Function ((&))
+import Data.Map ((!))
 
 
 
@@ -81,6 +85,7 @@ type BuildID = Word64
 data ValidOutline
   = ValidApp (NE.List Outline.SrcDir)
   | ValidPkg Pkg.Name [ModuleName.Raw] (Map.Map Pkg.Name V.Version {- for docs in reactor -})
+  deriving Show
 
 
 -- NOTE: we need two ways to detect if a file must be recompiled:
@@ -105,15 +110,28 @@ data Local =
     , _lastChange :: BuildID
     , _lastCompile :: BuildID
     }
+    deriving Show
 
 
+-- "Foreign" modules, i.e. modules that come from third-party dependencies and
+-- are not from modules in the current project
 data Foreign =
+  -- In normal operation every foreign module should only come from one package.
+  -- It is possible, however, for a module name to be used by multiple different 
+  -- packages. This is currently an error in Elm and will cause an error later 
+  -- on in the build process, but to surface that error we track duplicate 
+  -- packages in the second argument of this constructor.
   Foreign Pkg.Name [Pkg.Name]
+  deriving Show
 
 
 data Extras
   = ArtifactsCached
   | ArtifactsFresh Interfaces Opt.GlobalGraph
+
+instance Show Extras where
+  show ArtifactsCached = "ArtifactsCached"
+  show (ArtifactsFresh i _) = "ArtifactsFresh: " ++ show (Map.keys i)
 
 
 type Interfaces =
@@ -240,22 +258,45 @@ verifyPkg env time (Outline.PkgOutline pkg _ _ _ exposed direct testDirect elm) 
   else
     Task.throw $ Exit.DetailsBadElmInPkg elm
 
+  -- PackageOverrideData
+  --   { _overridePackageName :: !Name
+  --   , _overridePackageVersion :: !Version
+  --   , _originalPackageName :: !Name
+  --   , _originalPackageVersion :: !Version
+  --   }
+overrideSolutionDetails :: PackageOverrideData -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name Solver.Details
+overrideSolutionDetails 
+  PackageOverrideData{ _overridePackageName=overridePackageName, _overridePackageVersion=overridePackageVersion, _originalPackageName=originalPackageName } 
+  originalSolution = originalSolution
+    & Map.delete originalPackageName
+    & Map.insert overridePackageName (Solver.Details overridePackageVersion packageDeps)
+    where
+      Solver.Details _ packageDeps = originalSolution ! originalPackageName
+
+overrideDirectDeps :: PackageOverrideData -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version
+overrideDirectDeps 
+  PackageOverrideData{ _overridePackageName=overridePackageName, _overridePackageVersion=overridePackageVersion, _originalPackageName=originalPackageName } 
+  originalDeps = originalDeps
+    & Map.delete originalPackageName
+    & Map.insert overridePackageName overridePackageVersion
 
 verifyApp :: Env -> File.Time -> Outline.AppOutline -> Task Details
-verifyApp env time outline@(Outline.AppOutline elmVersion srcDirs direct _ _ _) =
+verifyApp env time outline@(Outline.AppOutline elmVersion srcDirs direct _ _ _ packageOverrides) =
   if elmVersion == V.compiler
   then
     do  stated <- checkAppDeps outline
         actual <- verifyConstraints env (Map.map Con.exactly stated)
+        let allDepsWithOverrides = foldr overrideSolutionDetails actual packageOverrides
+        let directDepsWithOverrides = foldr overrideDirectDeps direct packageOverrides
         if Map.size stated == Map.size actual
-          then verifyDependencies env time (ValidApp srcDirs) actual direct
+          then verifyDependencies env time (ValidApp srcDirs) allDepsWithOverrides directDepsWithOverrides
           else Task.throw $ Exit.DetailsHandEditedDependencies
   else
     Task.throw $ Exit.DetailsBadElmInAppOutline elmVersion
 
 
 checkAppDeps :: Outline.AppOutline -> Task (Map.Map Pkg.Name V.Version)
-checkAppDeps (Outline.AppOutline _ _ direct indirect testDirect testIndirect) =
+checkAppDeps (Outline.AppOutline _ _ direct indirect testDirect testIndirect _) =
   do  x <- union allowEqualDups indirect testDirect
       y <- union noDups direct testIndirect
       union noDups x y
@@ -329,7 +370,7 @@ verifyDependencies env@(Env key scope root cache _ _ _) time outline solution di
         Right artifacts ->
           let
             objs = Map.foldr addObjects Opt.empty artifacts
-            ifaces = Map.foldrWithKey (addInterfaces directDeps) Map.empty artifacts
+            ifaces = Map.foldrWithKey (addInterfaces directDeps) Map.empty (Debug.traceShow ("artifacts in ifaces: " ++ show (Map.map (Map.keys . _ifaces) artifacts)) artifacts)
             foreigns = Map.map (OneOrMore.destruct Foreign) $ Map.foldrWithKey gatherForeigns Map.empty $ Map.intersection artifacts directDeps
             details = Details time outline 0 Map.empty foreigns (ArtifactsFresh ifaces objs)
           in

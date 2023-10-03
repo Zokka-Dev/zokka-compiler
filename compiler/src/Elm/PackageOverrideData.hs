@@ -5,8 +5,6 @@ module Elm.PackageOverrideData
   where
 
 import Elm.Version (Version)
-import qualified Data.Utf8 as Utf8
-import Http (Sha)
 import Elm.Package (Name)
 
 data PackageOverrideData = 
