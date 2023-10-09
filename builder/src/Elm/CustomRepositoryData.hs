@@ -1,23 +1,28 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Elm.CustomRepositoryData
-  ( CustomRepositoryData(..)
+  ( CustomSingleRepositoryData(..)
+  , CustomRepositoriesData(..)
   , SinglePackageLocationData(..)
   , RepositoryType(..)
   , RepositoryUrl
   , PackageUrl
   , SinglePackageFileType(..)
+  , customRepostoriesDataDecoder
   )
   where
 
-import Elm.Version (Version)
+import Elm.Version (Version, decoder)
 import qualified Data.Utf8 as Utf8
-import Elm.Package (Name)
+import Elm.Package (Name, decoder)
 import Network.HTTP (RequestMethod(Custom))
 import qualified Json.Decode as D
 import qualified Json.Encode as E
 import qualified Json.String as Json
 import qualified Data.Map as Map
+import qualified Data.Binary as Binary
+import Data.Coerce (coerce)
 
 data REPOSITORYURL
 data PACKAGEURL
@@ -57,8 +62,8 @@ lookupRepositoryType rawTypeStr =
     -- FIXME: See https://github.com/changlinli/zelm-compiler/issues/1
     Nothing -> Left allRepositoryTypeStrings
 
-decodeRepositoryType :: (Json.String -> [Json.String] -> e) -> D.Decoder e RepositoryType
-decodeRepositoryType toError =
+repositoryTypeDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e RepositoryType
+repositoryTypeDecoder toError =
   do
     str <- D.string
     case lookupRepositoryType str of
@@ -66,13 +71,39 @@ decodeRepositoryType toError =
       Left suggestions -> D.failure (toError str suggestions)
 
 type RepositoryUrl = Utf8.Utf8 REPOSITORYURL
+
+instance Binary.Binary (Utf8.Utf8 REPOSITORYURL) where
+  get = Utf8.getVeryLong
+  put = Utf8.putVeryLong
+
+
+repositoryUrlDecoder :: D.Decoder e RepositoryUrl
+repositoryUrlDecoder = fmap coerce D.string
+
+
 type PackageUrl = Utf8.Utf8 PACKAGEURL
 
-data CustomRepositoryData =
-  CustomRepositoryData
+instance Binary.Binary (Utf8.Utf8 PACKAGEURL) where
+  get = Utf8.getVeryLong
+  put = Utf8.putVeryLong
+
+
+packageUrlDecoder :: D.Decoder e PackageUrl
+packageUrlDecoder = fmap coerce D.string
+
+
+data CustomSingleRepositoryData =
+  CustomSingleRepositoryData
     { _repositoryType :: !RepositoryType
     , _repositoryUrl :: !RepositoryUrl
     }
+
+customSingleRepositoryDataDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e CustomSingleRepositoryData
+customSingleRepositoryDataDecoder toError =
+  do
+    repositoryType <- D.field "repository-type" (repositoryTypeDecoder toError)
+    repositoryUrl <- D.field "repository-url" repositoryUrlDecoder
+    pure (CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl})
 
 data SinglePackageFileType
   = TarballType
@@ -108,8 +139,8 @@ singlePackageFileTypeLookup string =
     Just singlePackageFileType -> Right singlePackageFileType
     Nothing -> Left allSinglePackageFileTypeStrings
 
-singlePackageDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e SinglePackageFileType
-singlePackageDecoder toError =
+singlePackageFileTypeDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e SinglePackageFileType
+singlePackageFileTypeDecoder toError =
   do
     string <- D.string
     case singlePackageFileTypeLookup string of
@@ -123,3 +154,34 @@ data SinglePackageLocationData =
     , _version :: !Version
     , _url :: !PackageUrl
     }
+
+singlePackageLocationDataDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e SinglePackageLocationData
+singlePackageLocationDataDecoder toErr =
+  do
+    fileType <- singlePackageFileTypeDecoder toErr
+    packageName <- D.mapError undefined Elm.Package.decoder
+    version <- D.mapError undefined Elm.Version.decoder
+    url <- packageUrlDecoder
+    pure $
+      SinglePackageLocationData
+        { _fileType=fileType
+        , _packageName=packageName
+        , _version=version
+        , _url=url
+        }
+
+data CustomRepositoriesData =
+  CustomRepositoriesData
+    { _customFullRepositories :: [CustomSingleRepositoryData]
+    , _customSinglePackageRepositories :: [SinglePackageLocationData]
+    }
+
+customRepostoriesDataDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e CustomRepositoriesData
+customRepostoriesDataDecoder toErr = do
+  customFullRepositories <- D.field "repositories" (D.list (customSingleRepositoryDataDecoder toErr))
+  customSinglePackageRepositories <- D.field "single-package-locations" (D.list (singlePackageLocationDataDecoder toErr))
+  pure $
+    CustomRepositoriesData
+      { _customFullRepositories=customFullRepositories
+      , _customSinglePackageRepositories=customSinglePackageRepositories
+      }

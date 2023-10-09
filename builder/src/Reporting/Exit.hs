@@ -62,6 +62,7 @@ import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Error as Error
 import qualified Reporting.Render.Code as Code
 import Elm.PackageOverrideData (PackageOverrideData(..))
+import Deps.CustomRepositoryDataIO (CustomRepositoriesError)
 
 
 
@@ -154,8 +155,11 @@ data Diff
   | DiffMustHaveLatestRegistry RegistryProblem
   | DiffBadDetails Details
   | DiffBadBuild BuildProblem
+  -- FIXME: Better comment here This is kind of weird
+  | DiffCustomReposDataProblem CustomRepositoriesError
 
 
+-- FIXME: Make this exhaustive
 diffToReport :: Diff -> Help.Report
 diffToReport diff =
   case diff of
@@ -249,8 +253,10 @@ data Bump
   | BumpBadDetails Details
   | BumpNoExposed
   | BumpBadBuild BuildProblem
+  | BumpCustomRepositoryDataProblem CustomRepositoriesError
 
 
+--FIXME ADD CASE FOR BumpCustomRepositoryDataProblem
 bumpToReport :: Bump -> Help.Report
 bumpToReport bump =
   case bump of
@@ -373,6 +379,11 @@ data Publish
   | PublishZipApplication
   | PublishZipNoExposed
   | PublishZipBuildProblem BuildProblem
+  -- When publishing with Zelm we have to be careful not to publish to the standard
+  -- Elm repository so that we don't end up publishing packages that the vanilla Elm compiler cannot handle
+  | PublishToStandardElmRepositoryUsingZelm
+  | PublishWithNoRepositoryUrl
+  | PublishCustomRepositoryConfigDataError CustomRepositoriesError
 
 
 publishToReport :: Publish -> Help.Report
@@ -652,6 +663,44 @@ publishToReport publish =
 
     PublishZipBuildProblem _ ->
       badZipReport
+
+    PublishToStandardElmRepositoryUsingZelm ->
+      Help.report "PUBLISH TO PROHIBITED REPOSITORY" Nothing
+        "You are trying to use the Zelm compiler to publish to the standard Elm\
+        \ repository (package.elm-lang.org). This is prohibited!"
+        [ D.reflow $
+            "The standard Elm package repository is used by other Elm developers\
+            \ who may not be using the Zelm compiler. Because the Zelm compiler\
+            \ fixes some compiler crashes in the Elm compiler, if you publish a\
+            \ package that compiled crash-free with Zelm to the standard Elm \
+            \ repository, another Elm developer could try to use that package and\
+            \ would be faced with a mysterious compiler crash."
+        , D.reflow $
+            "You might also be using a custom package repository for some of your\
+            \ dependencies. An Elm developer using the standard compiler would not\ 
+            \ have access to that repository and so the package could also fail to\
+            \ build for that reason."
+        , D.reflow $
+            "Zelm therefore prohibits publishing to the standard Elm repository to\
+            \ preserve the integrity of the standard Elm package repository for other Elm developers."
+        , D.toSimpleNote $
+            "As long as none of your dependencies come from a custom package\
+            \ repository you can still develop with Zelm and then use the standard\
+            \ Elm compiler at the last moment to publish!"
+        ]
+
+    PublishWithNoRepositoryUrl ->
+      Help.report "PUBLISH WITH NO REPOSITORY URL" Nothing
+        "When publishing with Zelm you must provide a repository URL as an argument. For example:"
+        [ D.vcat
+            [ D.indent 4 $ D.green "zelm publish https://package.zelm-lang.org"
+            , D.indent 4 $ D.green "zelm publish https://example.com/my-custom-repository"
+            ]
+        , D.reflow $
+            "This is different from the standard Elm publish command because Zelm allows for\
+            \ custom repositories, which means when publishing you have to specify where to publish!"
+        ]
+        
 
 
 toBadReadmeReport :: String -> String -> Help.Report
@@ -1054,7 +1103,7 @@ toOutlineReport problem =
         \ to override "
         [ D.indent 4 $ D.red $ D.fromChars $ Pkg.toChars packageName ++ " " ++ V.toChars packageVersion
         , D.reflow
-            "But this combination of package and version is not used in your direct or indirect \
+            "But this combination of package and version is not used in your direct nor in your indirect \
             \ dependencies." 
         ]
 
@@ -1421,6 +1470,8 @@ data PackageProblem
   | PP_BadArchiveRequest Http.Error
   | PP_BadArchiveContent String
   | PP_BadArchiveHash String String String
+  -- FIXME: Change away from String
+  | PP_PackageNotInRegistry [String] Pkg.Name V.Version
 
 
 toPackageProblemReport :: Pkg.Name -> V.Version -> PackageProblem -> Help.Report
@@ -1480,6 +1531,14 @@ toPackageProblemReport pkg vsn problem =
             \ on Elm slack can probably help as well."
         ]
 
+    -- FIXME
+    PP_PackageNotInRegistry _ _ _->
+      Help.report "PACKAGE NOT FOUND IN REGISTRY" Nothing
+        (
+          ""
+        )
+        []
+
 
 
 -- REGISTRY PROBLEM
@@ -1488,6 +1547,7 @@ toPackageProblemReport pkg vsn problem =
 data RegistryProblem
   = RP_Http Http.Error
   | RP_Data String BS.ByteString
+  | RP_BadCustomReposData CustomRepositoriesError FilePath
 
 
 toRegistryProblemReport :: String -> RegistryProblem -> String -> Help.Report
@@ -1512,6 +1572,12 @@ toRegistryProblemReport title problem context =
             \ internet connection. We have gotten reports that schools, businesses,\
             \ airports, etc. sometimes intercept requests and add things to the body\
             \ or change its contents entirely. Could that be the problem?"
+        ]
+
+    --FIXME make this better!
+    RP_BadCustomReposData err configFilePath ->
+      Help.report title (Just configFilePath) (context)
+        [ "Bad things happened!"
         ]
 
 

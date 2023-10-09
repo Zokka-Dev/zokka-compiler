@@ -185,7 +185,7 @@ makeAppPlan (Solver.Env cache _ connection registry) pkg outline@(Outline.AppOut
 
               Nothing ->
                 -- finally try to add it from scratch
-                case Registry.getVersions' pkg registry of
+                case Registry.getVersions' pkg (Registry.mergeRegistries registry) of
                   Left suggestions ->
                     case connection of
                       Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
@@ -227,7 +227,7 @@ makePkgPlan (Solver.Env cache _ connection registry) pkg outline@(Outline.PkgOut
 
       Nothing ->
         -- try to add a new dependency
-        case Registry.getVersions' pkg registry of
+        case Registry.getVersions' pkg (Registry.mergeRegistries registry) of
           Left suggestions ->
             case connection of
               Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)

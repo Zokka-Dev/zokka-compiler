@@ -313,7 +313,7 @@ appDecoder =
     <*> D.field "dependencies" (D.field "indirect" (depsDecoder versionDecoder))
     <*> D.field "test-dependencies" (D.field "direct" (depsDecoder versionDecoder))
     <*> D.field "test-dependencies" (D.field "indirect" (depsDecoder versionDecoder))
-    <*> D.field "zelm-package-overrides" (D.list packageOverrideDataDecoder)
+    <*> D.oneOf [ D.field "zelm-package-overrides" (D.list packageOverrideDataDecoder), pure [] ]
 
 
 pkgDecoder :: Decoder PkgOutline

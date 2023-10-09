@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE InstanceSigs #-}
 module Terminal.Internal
   ( Command(..)
   , toName
@@ -73,6 +74,10 @@ data Parser a =
     , _examples :: String -> IO [String]
     }
 
+instance Functor Parser where
+  fmap :: (a -> b) -> Parser a -> Parser b
+  fmap f parser = parser {_parser= fmap f . _parser parser}
+
 
 
 -- ARGS
@@ -83,7 +88,7 @@ newtype Args a =
 
 
 data CompleteArgs args where
-  Exactly  :: RequiredArgs args -> CompleteArgs args
+  Exactly  :: RequiredArgs args -> CompleteArgs args
   Multiple :: RequiredArgs ([a] -> args) -> Parser a -> CompleteArgs args
   Optional :: RequiredArgs (Maybe a -> args) -> Parser a -> CompleteArgs args
 

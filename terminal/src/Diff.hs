@@ -34,6 +34,7 @@ import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Render.Type.Localizer as L
 import qualified Reporting.Task as Task
 import qualified Stuff
+import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 
 
 
@@ -64,7 +65,7 @@ data Env =
     { _maybeRoot :: Maybe FilePath
     , _cache :: Stuff.PackageCache
     , _manager :: Http.Manager
-    , _registry :: Registry.Registry
+    , _registry :: Registry.ZelmRegistries
     }
 
 
@@ -72,8 +73,11 @@ getEnv :: Task Env
 getEnv =
   do  maybeRoot <- Task.io $ Stuff.findRoot
       cache     <- Task.io $ Stuff.getPackageCache
+      zelmCache <- Task.io $ Stuff.getZelmCache
       manager   <- Task.io $ Http.getManager
-      registry  <- Task.eio Exit.DiffMustHaveLatestRegistry $ Registry.latest manager cache
+      reposConf <- Task.io $ Stuff.getOrCreateZelmCustomRepositoryConfig
+      reposData <- Task.eio Exit.DiffCustomReposDataProblem $ loadCustomRepositoriesData reposConf
+      registry  <- Task.eio Exit.DiffMustHaveLatestRegistry $ Registry.latest manager reposData zelmCache
       return (Env maybeRoot cache manager registry)
 
 
@@ -89,7 +93,7 @@ diff :: Env -> Args -> Task ()
 diff env@(Env _ _ _ registry) args =
   case args of
     GlobalInquiry name v1 v2 ->
-      case Registry.getVersions' name registry of
+      case Registry.getVersions' name (Registry.mergeRegistries registry) of
         Right vsns ->
           do  oldDocs <- getDocs env name vsns (min v1 v2)
               newDocs <- getDocs env name vsns (max v1 v2)
@@ -122,15 +126,15 @@ diff env@(Env _ _ _ registry) args =
 
 
 getDocs :: Env -> Pkg.Name -> Registry.KnownVersions -> V.Version -> Task Docs.Documentation
-getDocs (Env _ cache manager _) name (Registry.KnownVersions latest previous) version =
+getDocs (Env _ cache manager registry) name (Registry.KnownVersions latest previous) version =
   if latest == version || elem version previous
-  then Task.eio (Exit.DiffDocsProblem version) $ DD.getDocs cache manager name version
+  then Task.eio (Exit.DiffDocsProblem version) $ DD.getDocs cache registry manager name version
   else Task.throw $ Exit.DiffUnknownVersion name version (latest:previous)
 
 
 getLatestDocs :: Env -> Pkg.Name -> Registry.KnownVersions -> Task Docs.Documentation
-getLatestDocs (Env _ cache manager _) name (Registry.KnownVersions latest _) =
-  Task.eio (Exit.DiffDocsProblem latest) $ DD.getDocs cache manager name latest
+getLatestDocs (Env _ cache manager registry) name (Registry.KnownVersions latest _) =
+  Task.eio (Exit.DiffDocsProblem latest) $ DD.getDocs cache registry manager name latest
 
 
 
@@ -155,7 +159,7 @@ readOutline (Env maybeRoot _ _ registry) =
                   Task.throw $ Exit.DiffApplication
 
                 Outline.Pkg (Outline.PkgOutline pkg _ _ _ _ _ _ _) ->
-                  case Registry.getVersions pkg registry of
+                  case Registry.getVersions pkg (Registry.mergeRegistries registry) of
                     Just vsns -> return (pkg, vsns)
                     Nothing   -> Task.throw Exit.DiffUnpublished
 

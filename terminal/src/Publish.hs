@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Publish
   ( run
+  , Args(..)
   )
   where
 
@@ -40,20 +41,33 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Task as Task
 import qualified Stuff
+import Elm.CustomRepositoryData (RepositoryUrl)
+import Deps.Website (standardElmPkgRepoDomain)
+import Data.List (isInfixOf)
+import Reporting.Exit (Publish(PublishWithNoRepositoryUrl, PublishCustomRepositoryConfigDataError))
+import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 
 
 
 -- RUN
 
+data Args
+  = NoArgs
+  | PublishToRepository RepositoryUrl
 
 -- TODO mandate no "exposing (..)" in packages to make
 -- optimization to skip builds in Elm.Details always valid
 
 
-run :: () -> () -> IO ()
-run () () =
+run :: Args -> () -> IO ()
+run args () = 
   Reporting.attempt Exit.publishToReport $
-    Task.run $ publish =<< getEnv
+    case args of
+      NoArgs ->
+        pure $ Left PublishWithNoRepositoryUrl
+      PublishToRepository repositoryUrl ->
+        Reporting.attempt Exit.publishToReport $
+          Task.run $ (\env -> fmap Right $ publish env repositoryUrl) =<< getEnv
 
 
 
@@ -65,7 +79,7 @@ data Env =
     { _root :: FilePath
     , _cache :: Stuff.PackageCache
     , _manager :: Http.Manager
-    , _registry :: Registry.Registry
+    , _registry :: Registry.ZelmRegistries
     , _outline :: Outline.Outline
     }
 
@@ -74,42 +88,49 @@ getEnv :: Task.Task Exit.Publish Env
 getEnv =
   do  root <- Task.mio Exit.PublishNoOutline $ Stuff.findRoot
       cache <- Task.io $ Stuff.getPackageCache
+      zelmCache <- Task.io $ Stuff.getZelmCache
       manager <- Task.io $ Http.getManager
-      registry <- Task.eio Exit.PublishMustHaveLatestRegistry $ Registry.latest manager cache
+      reposConfigLocation <- Task.io $ Stuff.getOrCreateZelmCustomRepositoryConfig
+      customReposData <- Task.eio PublishCustomRepositoryConfigDataError $ loadCustomRepositoriesData reposConfigLocation
+      zelmRegistries <- Task.eio Exit.PublishMustHaveLatestRegistry $ Registry.latest manager customReposData zelmCache
       outline <- Task.eio Exit.PublishBadOutline $ Outline.read root
-      return $ Env root cache manager registry outline
+      return $ Env root cache manager zelmRegistries outline
 
 
 
 -- PUBLISH
 
 
-publish ::  Env -> Task.Task Exit.Publish ()
-publish env@(Env root _ manager registry outline) =
+publish ::  Env -> RepositoryUrl -> Task.Task Exit.Publish ()
+publish env@(Env root _ manager registry outline) repositoryUrl =
   case outline of
     Outline.App _ ->
       Task.throw Exit.PublishApplication
 
     Outline.Pkg (Outline.PkgOutline pkg summary _ vsn exposed _ _ _) ->
-      do  let maybeKnownVersions = Registry.getVersions pkg registry
+      if Utf8.toChars standardElmPkgRepoDomain `isInfixOf` Utf8.toChars repositoryUrl
+        then
+          Task.throw Exit.PublishToStandardElmRepositoryUsingZelm
+        else
+          do  let maybeKnownVersions = Registry.getVersions pkg (Registry.mergeRegistries registry)
 
-          reportPublishStart pkg vsn maybeKnownVersions
+              reportPublishStart pkg vsn maybeKnownVersions
 
-          if noExposed  exposed then Task.throw Exit.PublishNoExposed else return ()
-          if badSummary summary then Task.throw Exit.PublishNoSummary else return ()
+              if noExposed  exposed then Task.throw Exit.PublishNoExposed else return ()
+              if badSummary summary then Task.throw Exit.PublishNoSummary else return ()
 
-          verifyReadme root
-          verifyLicense root
-          docs <- verifyBuild root
-          verifyVersion env pkg vsn docs maybeKnownVersions
-          git <- getGit
-          commitHash <- verifyTag git manager pkg vsn
-          verifyNoChanges git commitHash vsn
-          zipHash <- verifyZip env pkg vsn
+              verifyReadme root
+              verifyLicense root
+              docs <- verifyBuild root
+              verifyVersion env pkg vsn docs maybeKnownVersions
+              git <- getGit
+              commitHash <- verifyTag git manager pkg vsn
+              verifyNoChanges git commitHash vsn
+              zipHash <- verifyZip env pkg vsn
 
-          Task.io $ putStrLn ""
-          register manager pkg vsn docs commitHash zipHash
-          Task.io $ putStrLn "Success!"
+              Task.io $ putStrLn ""
+              register manager repositoryUrl pkg vsn docs commitHash zipHash
+              Task.io $ putStrLn "Success!"
 
 
 
@@ -350,14 +371,14 @@ verifyVersion env pkg vsn newDocs publishedVersions =
 
 
 verifyBump :: Env -> Pkg.Name -> V.Version -> Docs.Documentation -> Registry.KnownVersions -> IO (Either Exit.Publish GoodVersion)
-verifyBump (Env _ cache manager _ _) pkg vsn newDocs knownVersions@(Registry.KnownVersions latest _) =
+verifyBump (Env _ cache manager registry _) pkg vsn newDocs knownVersions@(Registry.KnownVersions latest _) =
   case List.find (\(_ ,new, _) -> vsn == new) (Bump.getPossibilities knownVersions) of
     Nothing ->
       return $ Left $
         Exit.PublishInvalidBump vsn latest
 
     Just (old, new, magnitude) ->
-      do  result <- Diff.getDocs cache manager pkg old
+      do  result <- Diff.getDocs cache registry manager pkg old
           case result of
             Left dp ->
               return $ Left $ Exit.PublishCannotGetDocs old new dp
@@ -378,11 +399,11 @@ verifyBump (Env _ cache manager _ _) pkg vsn newDocs knownVersions@(Registry.Kno
 -- REGISTER PACKAGES
 
 
-register :: Http.Manager -> Pkg.Name -> V.Version -> Docs.Documentation -> String -> Http.Sha -> Task.Task Exit.Publish ()
-register manager pkg vsn docs commitHash sha =
+register :: Http.Manager -> RepositoryUrl -> Pkg.Name -> V.Version -> Docs.Documentation -> String -> Http.Sha -> Task.Task Exit.Publish ()
+register manager repositoryUrl pkg vsn docs commitHash sha =
   let
     url =
-      Website.route "/register"
+      Website.route repositoryUrl "/register"
         [ ("name", Pkg.toChars pkg)
         , ("version", V.toChars vsn)
         , ("commit-hash", commitHash)

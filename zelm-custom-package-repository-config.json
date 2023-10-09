@@ -1,0 +1,26 @@
+{
+    "repositories": [
+        {
+            "type": "elm-package-server",
+            "url": "https://package.elm-lang.org/"
+        },
+        {
+            "type": "elm-package-server",
+            "url": "https://package.zelm-lang.org/"
+        }
+    ],
+    "single-package-locations": [
+        {
+            "file-type": "tarball",
+            "package-name": "zelm/html",
+            "version": "1.0.2",
+            "url": "https://www.example.com/zelm/html/package.tar"
+        },
+        {
+            "file-type": "zipfile",
+            "package-name": "zelm/html",
+            "version": "1.0.3",
+            "url": "https://www.example.com/zelm/html/package.zip"
+        }
+    ]
+}

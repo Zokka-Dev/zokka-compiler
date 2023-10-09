@@ -2,6 +2,7 @@
 module Terminal.Helpers
   ( version
   , elmFile
+  , repositoryUrl
   , package
   )
   where
@@ -21,6 +22,8 @@ import qualified Elm.Version as V
 import qualified Parse.Primitives as P
 import qualified Stuff
 import qualified Reporting.Suggest as Suggest
+import Elm.CustomRepositoryData (RepositoryUrl)
+import Deps.Registry (Registry(Registry))
 
 
 
@@ -66,6 +69,25 @@ exampleVersions chars =
   else
     ["1.0.0", "2.0.3"]
 
+
+-- REPOSITORY URL
+
+
+repositoryUrl :: Parser RepositoryUrl
+repositoryUrl =
+  Parser
+    { _singular = "repository URL"
+    , _plural = "repository URLs"
+    , _parser = parseRepositoryUrl
+    , _suggest = \_ -> return []
+    , _examples = exampleRepositoryUrls
+    }
+
+parseRepositoryUrl :: String -> Maybe RepositoryUrl
+parseRepositoryUrl str = Just $ Utf8.fromChars str
+
+exampleRepositoryUrls :: String -> IO [String]
+exampleRepositoryUrls _ = pure ["https://package.zelm-lang.org", "https://www.example.com/my-package"]
 
 
 -- ELM FILE
@@ -119,10 +141,11 @@ parsePackage chars =
 
 suggestPackages :: String -> IO [String]
 suggestPackages given =
-  do  cache <- Stuff.getPackageCache
+  do  cache <- Stuff.getZelmCache
       maybeRegistry <- Registry.read cache
+      let mergedRegistries = fmap Registry.mergeRegistries maybeRegistry
       return $
-        case maybeRegistry of
+        case mergedRegistries of
           Nothing ->
             []
 
@@ -133,10 +156,11 @@ suggestPackages given =
 
 examplePackages :: String -> IO [String]
 examplePackages given =
-  do  cache <- Stuff.getPackageCache
+  do  cache <- Stuff.getZelmCache
       maybeRegistry <- Registry.read cache
+      let mergedRegistries = fmap Registry.mergeRegistries maybeRegistry
       return $
-        case maybeRegistry of
+        case mergedRegistries of
           Nothing ->
             [ "elm/json"
             , "elm/http"

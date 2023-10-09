@@ -34,6 +34,11 @@ import qualified Http
 import qualified Json.Decode as D
 import qualified Reporting.Exit as Exit
 import qualified Stuff
+import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder)
+import Data.Maybe (fromJust)
+import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
+import Reporting.Exit (RegistryProblem(..))
+import Stuff (ZelmCustomRepositoryConfigFilePath(unZelmCustomRepositoryConfigFilePath))
 
 
 
@@ -56,7 +61,7 @@ data State =
   State
     { _cache :: Stuff.PackageCache
     , _connection :: Connection
-    , _registry :: Registry.Registry
+    , _registry :: Registry.ZelmRegistries
     , _constraints :: Map.Map (Pkg.Name, V.Version) Constraints
     }
 
@@ -92,7 +97,7 @@ data Details =
   Details V.Version (Map.Map Pkg.Name C.Constraint) -- First argument is the version, second is the set of dependencies that the package depends on
 
 
-verify :: Stuff.PackageCache -> Connection -> Registry.Registry -> Map.Map Pkg.Name C.Constraint -> IO (Result (Map.Map Pkg.Name Details))
+verify :: Stuff.PackageCache -> Connection -> Registry.ZelmRegistries -> Map.Map Pkg.Name C.Constraint -> IO (Result (Map.Map Pkg.Name Details))
 verify cache connection registry constraints =
   Stuff.withRegistryLock cache $
   case try constraints of
@@ -129,7 +134,7 @@ data AppSolution =
     }
 
 
-addToApp :: Stuff.PackageCache -> Connection -> Registry.Registry -> Pkg.Name -> Outline.AppOutline -> IO (Result AppSolution)
+addToApp :: Stuff.PackageCache -> Connection -> Registry.ZelmRegistries -> Pkg.Name -> Outline.AppOutline -> IO (Result AppSolution)
 addToApp cache connection registry pkg outline@(Outline.AppOutline _ _ direct indirect testDirect testIndirect _) =
   Stuff.withRegistryLock cache $
   let
@@ -262,7 +267,7 @@ addConstraint solved unsolved (name, newConstraint) =
 getRelevantVersions :: Pkg.Name -> C.Constraint -> Solver (V.Version, [V.Version])
 getRelevantVersions name constraint =
   Solver $ \state@(State _ _ registry _) ok back _ ->
-    case Registry.getVersions name registry of
+    case Registry.getVersions'' name registry of
       Just (Registry.KnownVersions newest previous) ->
         case filter (C.satisfies constraint) (newest:previous) of
           []   -> back state
@@ -313,7 +318,15 @@ getConstraints pkg vsn =
                         back state
 
                       Online manager ->
-                        do  let url = Website.metadata pkg vsn "elm.json"
+                        do  let registryKeyMaybe = Registry.lookupPackageRegistryKey registry pkg vsn
+                            --FIXME
+                            let pullOutFunction r = case r of
+                                  (Registry.RepositoryUrlKey repositoryUrl) -> repositoryUrl
+                                  (Registry.PackageUrlKey packageUrl) -> error "Lololol this is bad!"
+                            let repositoryUrlMaybe = fmap pullOutFunction registryKeyMaybe
+                            let urlMaybe = (\r -> Website.metadata r pkg vsn "elm.json") <$> repositoryUrlMaybe
+                            --FIXME again
+                            let url = fromJust urlMaybe
                             result <- Http.get manager url [] id (return . Right)
                             case result of
                               Left httpProblem ->
@@ -346,7 +359,7 @@ constraintsDecoder =
 
 
 data Env =
-  Env Stuff.PackageCache Http.Manager Connection Registry.Registry
+  Env Stuff.PackageCache Http.Manager Connection Registry.ZelmRegistries
 
 
 initEnv :: IO (Either Exit.RegistryProblem Env)
@@ -354,28 +367,34 @@ initEnv =
   do  mvar  <- newEmptyMVar
       _     <- forkIO $ putMVar mvar =<< Http.getManager
       cache <- Stuff.getPackageCache
-      Stuff.withRegistryLock cache $
-        do  maybeRegistry <- Registry.read cache
-            manager       <- readMVar mvar
+      zelmCache <- Stuff.getZelmCache
+      customRepositoriesConfigLocation <- Stuff.getOrCreateZelmCustomRepositoryConfig
+      customRepositoriesDataOrErr <- loadCustomRepositoriesData customRepositoriesConfigLocation
+      case customRepositoriesDataOrErr of
+        Left err -> pure $ Left (RP_BadCustomReposData err (unZelmCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
+        Right customRepositoriesData ->
+          Stuff.withRegistryLock cache $
+            do  maybeRegistry <- Registry.read zelmCache
+                manager       <- readMVar mvar
 
-            case maybeRegistry of
-              Nothing ->
-                do  eitherRegistry <- Registry.fetch manager cache
-                    case eitherRegistry of
-                      Right latestRegistry ->
-                        return $ Right $ Env cache manager (Online manager) latestRegistry
+                case maybeRegistry of
+                  Nothing ->
+                    do  eitherRegistry <- Registry.fetch manager zelmCache customRepositoriesData
+                        case eitherRegistry of
+                          Right latestRegistry ->
+                            return $ Right $ Env cache manager (Online manager) latestRegistry
 
-                      Left problem ->
-                        return $ Left $ problem
+                          Left problem ->
+                            return $ Left $ problem
 
-              Just cachedRegistry ->
-                do  eitherRegistry <- Registry.update manager cache cachedRegistry
-                    case eitherRegistry of
-                      Right latestRegistry ->
-                        return $ Right $ Env cache manager (Online manager) latestRegistry
+                  Just cachedRegistry ->
+                    do  eitherRegistry <- Registry.update manager zelmCache cachedRegistry
+                        case eitherRegistry of
+                          Right latestRegistry ->
+                            return $ Right $ Env cache manager (Online manager) latestRegistry
 
-                      Left _ ->
-                        return $ Right $ Env cache manager Offline cachedRegistry
+                          Left _ ->
+                            return $ Right $ Env cache manager Offline cachedRegistry
 
 
 

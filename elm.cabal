@@ -78,6 +78,7 @@ Executable elm
         Build
         BackgroundWriter
         Deps.Bump
+        Deps.CustomRepositoryDataIO
         Deps.Diff
         Deps.Registry
         Deps.Solver

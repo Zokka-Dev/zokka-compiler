@@ -26,6 +26,8 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Task as Task
 import qualified Stuff
+import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
+import Reporting.Exit (Bump(BumpCustomRepositoryDataProblem))
 
 
 
@@ -47,7 +49,7 @@ data Env =
     { _root :: FilePath
     , _cache :: Stuff.PackageCache
     , _manager :: Http.Manager
-    , _registry :: Registry.Registry
+    , _registry :: Registry.ZelmRegistries
     , _outline :: Outline.PkgOutline
     }
 
@@ -61,8 +63,11 @@ getEnv =
 
         Just root ->
           do  cache <- Task.io $ Stuff.getPackageCache
+              zelmCache <- Task.io $ Stuff.getZelmCache
               manager <- Task.io $ Http.getManager
-              registry <- Task.eio Exit.BumpMustHaveLatestRegistry $ Registry.latest manager cache
+              reposConfigLocation <- Task.io $ Stuff.getOrCreateZelmCustomRepositoryConfig
+              customReposData <- Task.eio BumpCustomRepositoryDataProblem $ loadCustomRepositoriesData reposConfigLocation
+              registry <- Task.eio Exit.BumpMustHaveLatestRegistry $ Registry.latest manager customReposData zelmCache
               outline <- Task.eio Exit.BumpBadOutline $ Outline.read root
               case outline of
                 Outline.App _ ->
@@ -78,7 +83,7 @@ getEnv =
 
 bump :: Env -> Task.Task Exit.Bump ()
 bump env@(Env root _ _ registry outline@(Outline.PkgOutline pkg _ _ vsn _ _ _ _)) =
-  case Registry.getVersions pkg registry of
+  case Registry.getVersions pkg (Registry.mergeRegistries registry) of
     Just knownVersions ->
       let
         bumpableVersions =
@@ -116,8 +121,8 @@ checkNewPackage root outline@(Outline.PkgOutline _ _ _ version _ _ _ _) =
 
 
 suggestVersion :: Env -> Task.Task Exit.Bump ()
-suggestVersion (Env root cache manager _ outline@(Outline.PkgOutline pkg _ _ vsn _ _ _ _)) =
-  do  oldDocs <- Task.eio (Exit.BumpCannotFindDocs pkg vsn) (Diff.getDocs cache manager pkg vsn)
+suggestVersion (Env root cache manager registry outline@(Outline.PkgOutline pkg _ _ vsn _ _ _ _)) =
+  do  oldDocs <- Task.eio (Exit.BumpCannotFindDocs pkg vsn) (Diff.getDocs cache registry manager pkg vsn)
       newDocs <- generateDocs root outline
       let changes = Diff.diff oldDocs newDocs
       let newVersion = Diff.bump changes vsn

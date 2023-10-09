@@ -62,6 +62,8 @@ import qualified Debug.Trace as Debug
 import Elm.PackageOverrideData (PackageOverrideData(..))
 import Data.Function ((&))
 import Data.Map ((!))
+import Deps.Registry (ZelmRegistries)
+import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl)
 
 
 
@@ -218,7 +220,7 @@ data Env =
     , _cache :: Stuff.PackageCache
     , _manager :: Http.Manager
     , _connection :: Solver.Connection
-    , _registry :: Registry.Registry
+    , _registry :: Registry.ZelmRegistries
     }
 
 
@@ -420,7 +422,7 @@ type Dep =
 
 
 verifyDep :: Env -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Map.Map Pkg.Name Solver.Details -> Pkg.Name -> Solver.Details -> IO Dep
-verifyDep (Env key _ _ cache manager _ _) depsMVar solution pkg details@(Solver.Details vsn directDeps) =
+verifyDep (Env key _ _ cache manager _ zelmRegistry) depsMVar solution pkg details@(Solver.Details vsn directDeps) =
   do  let fingerprint = Map.intersectionWith (\(Solver.Details v _) _ -> v) solution directDeps
       exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn </> "src")
       if exists
@@ -437,7 +439,7 @@ verifyDep (Env key _ _ cache manager _ _) depsMVar solution pkg details@(Solver.
                     else build key cache depsMVar pkg details fingerprint fingerprints
         else
           do  Reporting.report key Reporting.DRequested
-              result <- downloadPackage cache manager pkg vsn
+              result <- downloadPackage cache zelmRegistry manager pkg vsn
               case result of
                 Left problem ->
                   do  Reporting.report key (Reporting.DFailed pkg vsn)
@@ -786,10 +788,27 @@ toDocs result =
 -- DOWNLOAD PACKAGE
 
 
-downloadPackage :: Stuff.PackageCache -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
-downloadPackage cache manager pkg vsn =
+downloadPackage :: Stuff.PackageCache -> ZelmRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackage cache zelmRegistries manager pkg vsn =
+  case Registry.lookupPackageRegistryKey zelmRegistries pkg vsn of
+    Just (Registry.RepositoryUrlKey repositoryUrl) -> downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn
+    Just (Registry.PackageUrlKey packageUrl) -> downloadPackageDirectly cache packageUrl manager pkg vsn
+    Nothing -> 
+      let
+        --FIXME
+        blah = fmap show (Map.keys $ Registry._registries zelmRegistries)
+      in
+      pure (Left $ Exit.PP_PackageNotInRegistry blah pkg vsn)
+
+
+downloadPackageDirectly :: Stuff.PackageCache -> PackageUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackageDirectly cache packageUrl manager pkg vsn = undefined
+
+
+downloadPackageFromElmPackageRepo :: Stuff.PackageCache -> RepositoryUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
   let
-    url = Website.metadata pkg vsn "endpoint.json"
+    url = Website.metadata repositoryUrl pkg vsn "endpoint.json"
   in
   do  eitherByteString <-
         Http.get manager url [] id (return . Right)

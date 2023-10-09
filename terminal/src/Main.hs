@@ -243,33 +243,24 @@ publish :: Terminal.Command
 publish =
   let
     details =
-      "The `publish` command publishes your package on <https://package.elm-lang.org>\
-      \ so that anyone in the Elm community can use it."
+      "The `publish` command publishes your package to a custom repository\
+      \ so that anyone with access to the repository can use it."
 
     example =
       stack
         [ reflow
-            "Think hard if you are ready to publish NEW packages though!"
-        , reflow
-            "Part of what makes Elm great is the packages ecosystem. The fact that\
-            \ there is usually one option (usually very well done) makes it way\
-            \ easier to pick packages and become productive. So having a million\
-            \ packages would be a failure in Elm. We do not need twenty of\
-            \ everything, all coded in a single weekend."
-        , reflow
-            "So as community members gain wisdom through experience, we want\
-            \ them to share that through thoughtful API design and excellent\
-            \ documentation. It is more about sharing ideas and insights than\
-            \ just sharing code! The first step may be asking for advice from\
-            \ people you respect, or in community forums. The second step may\
-            \ be using it at work to see if it is as nice as you think. Maybe\
-            \ it ends up as an experiment on GitHub only. Point is, try to be\
-            \ respectful of the community and package ecosystem!"
-        , reflow
-            "Check out <https://package.elm-lang.org/help/design-guidelines> for guidance on how to create great packages!"
+            "For example, if you have a custom repository located at https://www.example.com/my-custom-repo you can run the following command"
+        , P.indent 4 $ P.green $ P.vcat $
+              [ "zelm publish https://www.example.com/my-custom-repo"
+              ]
         ]
+
+    publishArgs = oneOf 
+      [ require0 Publish.NoArgs
+      , require1 id (Publish.PublishToRepository <$> repositoryUrl)
+      ]
   in
-  Terminal.Command "publish" Uncommon details example noArgs noFlags Publish.run
+  Terminal.Command "publish" Uncommon details example publishArgs noFlags Publish.run
 
 
 

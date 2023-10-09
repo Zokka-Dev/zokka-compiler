@@ -3,12 +3,17 @@
 module Deps.Registry
   ( Registry(..)
   , KnownVersions(..)
+  , ZelmRegistries(..)
+  , RegistryKey(..)
   , read
   , fetch
   , update
   , latest
   , getVersions
   , getVersions'
+  , getVersions''
+  , mergeRegistries
+  , lookupPackageRegistryKey
   )
   where
 
@@ -28,10 +33,70 @@ import qualified Json.Decode as D
 import qualified Parse.Primitives as P
 import qualified Reporting.Exit as Exit
 import qualified Stuff
+import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData(..), RepositoryUrl, RepositoryType(..), SinglePackageLocationData(..), PackageUrl)
+import Data.Binary.Get (Get)
+import Data.Word (Word8)
+import qualified Data.Set as Set
+import qualified Data.NonEmptyList as NE
 
 
 
 -- REGISTRY
+
+-- We need to differentiate among registries created from different repositories
+-- because of how we perform updates of the registry. We need to know how many
+-- packages came from a given repository to pass to the /all-packages/since
+-- endpoint. So we can't start from the outset with all the registries merged.
+data ZelmRegistries = ZelmRegistries
+  { _registries :: !(Map.Map RegistryKey Registry)
+  , _packagesToLocations :: !(Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
+  }
+
+neListConcat :: NE.List a -> NE.List a -> NE.List a
+neListConcat (NE.List x xs) (NE.List y ys) = NE.List x (xs ++ (y : ys))
+
+
+zelmRegistriesFromRegistriesMap :: Map.Map RegistryKey Registry -> ZelmRegistries
+zelmRegistriesFromRegistriesMap registriesMap = 
+  let
+    --FIXME: This just looks awful
+    asListOfLists = Map.toList (Map.map (Map.toList . _versions) registriesMap)
+    flattenedList = sequence =<< asListOfLists
+    flattenedKnownVersions = (\(rKey, (name, KnownVersions newest rest)) -> fmap (\x -> (name, NE.List (x, rKey) [])) (newest : rest)) =<< flattenedList
+    packagesToLocations = Map.map (Map.fromList . NE.toList) (Map.fromListWith neListConcat flattenedKnownVersions)
+  in
+    ZelmRegistries{_registries=registriesMap, _packagesToLocations=packagesToLocations}
+
+
+lookupPackageRegistryKey :: ZelmRegistries -> Pkg.Name -> V.Version -> Maybe RegistryKey
+lookupPackageRegistryKey ZelmRegistries{_packagesToLocations=packagesToLocations} pkgName pkgVersion = 
+  do
+    versions <- Map.lookup pkgName packagesToLocations
+    Map.lookup pkgVersion versions
+
+
+data RegistryKey 
+  = RepositoryUrlKey RepositoryUrl
+  | PackageUrlKey PackageUrl
+  deriving (Eq, Ord, Show)
+
+
+combineKnownVersions :: KnownVersions -> KnownVersions -> KnownVersions
+combineKnownVersions (KnownVersions newest0 previous0) (KnownVersions newest1 previous1) =
+  KnownVersions (max newest0 newest1) (min newest0 newest1 : (previous0 ++ previous1))
+
+
+combineRegistry :: Registry -> Registry -> Registry
+combineRegistry (Registry count0 versions0) (Registry count1 versions1) =
+  Registry (count0 + count1) (Map.unionWith combineKnownVersions versions0 versions1)
+
+
+emptyRegistry :: Registry
+emptyRegistry = Registry 0 Map.empty
+
+
+mergeRegistries :: ZelmRegistries -> Registry
+mergeRegistries ZelmRegistries{_registries=registries} = Map.foldl combineRegistry emptyRegistry registries
 
 
 data Registry =
@@ -52,7 +117,7 @@ data KnownVersions =
 -- READ
 
 
-read :: Stuff.PackageCache -> IO (Maybe Registry)
+read :: Stuff.ZelmSpecificCache -> IO (Maybe ZelmRegistries)
 read cache =
   File.readBinary (Stuff.registry cache)
 
@@ -61,15 +126,42 @@ read cache =
 -- FETCH
 
 
-fetch :: Http.Manager -> Stuff.PackageCache -> IO (Either Exit.RegistryProblem Registry)
-fetch manager cache =
-  post manager "/all-packages" allPkgsDecoder $
+
+fetch :: Http.Manager -> Stuff.ZelmSpecificCache -> CustomRepositoriesData -> IO (Either Exit.RegistryProblem ZelmRegistries)
+fetch manager cache (CustomRepositoriesData customFullRepositories singlePackageLocations) =
+  do
+    let fetchSingleRepo repoData = (,) (RepositoryUrlKey $ _repositoryUrl repoData) <$> fetchSingleCustomRepository manager repoData
+    fullRepositoryFetchResults <- traverse fetchSingleRepo customFullRepositories
+    let singlePackageRegistries = (\locData -> (PackageUrlKey $ _url locData, createRegistryFromSinglePackageLocation locData)) <$> singlePackageLocations
+    let allResults = (++) singlePackageRegistries <$> mapM sequence fullRepositoryFetchResults
+    case allResults of
+      Left err -> pure $ Left err
+      Right registries -> do
+        let path = Stuff.registry cache
+        let registry = Map.fromList registries
+        File.writeBinary path registry
+        pure $ Right (zelmRegistriesFromRegistriesMap registry)
+
+
+createRegistryFromSinglePackageLocation :: SinglePackageLocationData -> Registry
+createRegistryFromSinglePackageLocation SinglePackageLocationData{_packageName=packageName, _version=version} =
+    Registry {_count = 0, _versions = Map.singleton packageName KnownVersions {_newest = version, _previous=[]}}
+
+
+fetchSingleCustomRepository :: Http.Manager -> CustomSingleRepositoryData -> IO (Either Exit.RegistryProblem Registry)
+fetchSingleCustomRepository manager (CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl}) =
+  case repositoryType of
+    DefaultPackageServer -> fetchFromRepositoryUrl manager repositoryUrl
+    -- FIXME
+    BarebonesPackageServer -> error "not yet implemented"
+
+
+fetchFromRepositoryUrl :: Http.Manager -> RepositoryUrl -> IO (Either Exit.RegistryProblem Registry)
+fetchFromRepositoryUrl manager repositoryUrl =
+  post manager repositoryUrl "/all-packages" allPkgsDecoder $
     \versions ->
       do  let size = Map.foldr' addEntry 0 versions
-          let registry = Registry size versions
-          let path = Stuff.registry cache
-          File.writeBinary path registry
-          return registry
+          pure $ Registry size versions
 
 
 addEntry :: KnownVersions -> Int -> Int
@@ -97,14 +189,42 @@ allPkgsDecoder =
 
 -- UPDATE
 
+update :: Http.Manager -> Stuff.ZelmSpecificCache -> ZelmRegistries -> IO (Either Exit.RegistryProblem ZelmRegistries)
+update manager cache zelmRegistries = 
+  do
+    let registriesMap = _registries zelmRegistries
+    let listOfProblemsOrKeyRegistryPairs = traverse (\(k, v) -> fmap (fmap ((,) k)) (updateSingleRegistry manager k v)) (Map.toList registriesMap)
+    newRegistryOrError <- sequence <$> listOfProblemsOrKeyRegistryPairs
+    let newRegistryOrError' = fmap Map.fromList newRegistryOrError
+    case newRegistryOrError' of
+      Left err -> pure $ Left err
+      Right newRegistry ->
+        do
+          -- FIXME: There's gotta be a faster way of doing this
+          let newZelmRegistries = zelmRegistriesFromRegistriesMap newRegistry
+          _ <- File.writeBinary (Stuff.registry cache) newZelmRegistries
+          pure $ Right newZelmRegistries
 
-update :: Http.Manager -> Stuff.PackageCache -> Registry -> IO (Either Exit.RegistryProblem Registry)
-update manager cache oldRegistry@(Registry size packages) =
-  post manager ("/all-packages/since/" ++ show size) (D.list newPkgDecoder) $
+
+  -- = RepositoryUrlKey RepositoryUrl
+  -- | PackageUrlKey PackageUrl
+  -- deriving (Eq, Ord)
+updateSingleRegistry :: Http.Manager -> RegistryKey -> Registry -> IO (Either Exit.RegistryProblem Registry)
+updateSingleRegistry manager registryKey registry =
+  case registryKey of
+    -- FIXME: need to deal with bare repos
+    RepositoryUrlKey repositoryUrl -> updateSingleRegistryFromStandardElmRepo manager repositoryUrl registry
+    -- With package URLs, only one package can correspond to a single URL so there is no sensible notion of "update"
+    PackageUrlKey _ -> pure $ Right registry
+
+
+updateSingleRegistryFromStandardElmRepo :: Http.Manager -> RepositoryUrl -> Registry -> IO (Either Exit.RegistryProblem Registry)
+updateSingleRegistryFromStandardElmRepo manager repositoryUrl oldRegistry@(Registry size packages) =
+  post manager repositoryUrl ("/all-packages/since/" ++ show size) (D.list newPkgDecoder) $
     \news ->
       case news of
         [] ->
-          return oldRegistry
+          pure oldRegistry
 
         _:_ ->
           let
@@ -112,8 +232,7 @@ update manager cache oldRegistry@(Registry size packages) =
             newPkgs = foldr addNew packages news
             newRegistry = Registry newSize newPkgs
           in
-          do  File.writeBinary (Stuff.registry cache) newRegistry
-              return newRegistry
+            pure newRegistry
 
 
 addNew :: (Pkg.Name, V.Version) -> Map.Map Pkg.Name KnownVersions -> Map.Map Pkg.Name KnownVersions
@@ -155,20 +274,52 @@ bail _ _ =
 
 -- LATEST
 
+-- FIXME: This needs to be fixed to allow barebones servers
+customSingleRepositoryDataToRegistryKey :: CustomSingleRepositoryData -> RegistryKey
+customSingleRepositoryDataToRegistryKey CustomSingleRepositoryData{_repositoryUrl=repositoryUrl} = RepositoryUrlKey repositoryUrl
 
-latest :: Http.Manager -> Stuff.PackageCache -> IO (Either Exit.RegistryProblem Registry)
-latest manager cache =
-  do  maybeOldRegistry <- read cache
-      case maybeOldRegistry of
-        Just oldRegistry ->
-          update manager cache oldRegistry
+--FIXME: PackageUrlKey probably needs to include the kind of package it is for decompression reasons
+singlePackageLocationDataToRegistryKey :: SinglePackageLocationData -> RegistryKey
+singlePackageLocationDataToRegistryKey SinglePackageLocationData{_url=url}= PackageUrlKey url
 
-        Nothing ->
-          fetch manager cache
+doesRegistryAgreeWithCustomRepositoriesData :: CustomRepositoriesData -> ZelmRegistries -> Bool
+doesRegistryAgreeWithCustomRepositoriesData (CustomRepositoriesData fullRepositories singlePackages) registry =
+  Set.fromList allRegistryKeys == Map.keysSet (_registries registry)
+    where
+      allRegistryKeys = (customSingleRepositoryDataToRegistryKey <$> fullRepositories) ++ (singlePackageLocationDataToRegistryKey <$> singlePackages)
+
+latest :: Http.Manager -> CustomRepositoriesData -> Stuff.ZelmSpecificCache -> IO (Either Exit.RegistryProblem ZelmRegistries)
+latest manager customRepositoriesData cache =
+  do
+    maybeOldRegistry <- read cache
+    case maybeOldRegistry of
+      Just oldRegistry -> if doesRegistryAgreeWithCustomRepositoriesData customRepositoriesData oldRegistry
+        then update manager cache oldRegistry
+        -- FIXME: This is too conservative
+        else fetch manager cache customRepositoriesData
+      Nothing -> fetch manager cache customRepositoriesData
 
 
 
 -- GET VERSIONS
+
+compareVersionToKnownVersions :: V.Version -> Maybe KnownVersions -> KnownVersions
+compareVersionToKnownVersions version knownVersionsMaybe = 
+  case knownVersionsMaybe of
+    Just (KnownVersions newest others) -> KnownVersions (max newest version) (min newest version : others)
+    Nothing -> KnownVersions version []
+
+
+versionsToKnownVersions :: [V.Version] -> Maybe KnownVersions
+versionsToKnownVersions = foldr (\v acc -> Just $ compareVersionToKnownVersions v acc) Nothing
+
+
+getVersions'' :: Pkg.Name -> ZelmRegistries -> Maybe KnownVersions
+getVersions'' name ZelmRegistries{_packagesToLocations=packagesToLocations} =
+  do
+    versionsMap <- Map.lookup name packagesToLocations
+    let versions = Map.keys versionsMap
+    versionsToKnownVersions versions
 
 
 getVersions :: Pkg.Name -> Registry -> Maybe KnownVersions
@@ -187,10 +338,10 @@ getVersions' name (Registry _ versions) =
 -- POST
 
 
-post :: Http.Manager -> String -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
-post manager path decoder callback =
+post :: Http.Manager -> RepositoryUrl -> String -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
+post manager repositoryUrl path decoder callback =
   let
-    url = Website.route path []
+    url = Website.route repositoryUrl path []
   in
   Http.post manager url [] Exit.RP_Http $
     \body ->
@@ -202,6 +353,25 @@ post manager path decoder callback =
 
 -- BINARY
 
+instance Binary RegistryKey where
+  get = do
+    t <- get :: Get Word8
+    case t of
+      0 -> do
+        repositoryUrl <- get :: Get RepositoryUrl
+        pure $ RepositoryUrlKey repositoryUrl
+      1 -> do
+        repositoryUrl <- get :: Get RepositoryUrl
+        pure $ RepositoryUrlKey repositoryUrl
+
+  put registryKey = case registryKey of
+    RepositoryUrlKey repositoryUrl -> do
+      put (0 :: Word8)
+      put repositoryUrl
+    PackageUrlKey packageUrl -> do
+      put (1 :: Word8)
+      put packageUrl
+
 
 instance Binary Registry where
   get = liftM2 Registry get get
@@ -211,3 +381,14 @@ instance Binary Registry where
 instance Binary KnownVersions where
   get = liftM2 KnownVersions get get
   put (KnownVersions a b) = put a >> put b
+
+
+instance Binary ZelmRegistries where
+  get = do
+    registries <- get :: Get (Map.Map RegistryKey Registry)
+    packagesToLocations <- get :: Get (Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
+    pure $ ZelmRegistries{_registries=registries, _packagesToLocations=packagesToLocations}
+
+  put (ZelmRegistries registries packagesToLocations) = do
+    put registries
+    put packagesToLocations

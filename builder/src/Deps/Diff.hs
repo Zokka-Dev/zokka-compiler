@@ -33,6 +33,8 @@ import qualified Http
 import qualified Json.Decode as D
 import qualified Reporting.Exit as Exit
 import qualified Stuff
+import Deps.Registry (ZelmRegistries)
+import qualified Deps.Registry as Registry
 
 
 
@@ -355,8 +357,8 @@ changeMagnitude (Changes added changed removed) =
 -- GET DOCS
 
 
-getDocs :: Stuff.PackageCache -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.DocsProblem Docs.Documentation)
-getDocs cache manager name version =
+getDocs :: Stuff.PackageCache -> ZelmRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.DocsProblem Docs.Documentation)
+getDocs cache zelmRegistry manager name version =
   do  let home = Stuff.package cache name version
       let path = home </> "docs.json"
       exists <- File.exists path
@@ -371,7 +373,10 @@ getDocs cache manager name version =
                   do  File.remove path
                       return $ Left Exit.DP_Cache
         else
-          do  let url = Website.metadata name version "docs.json"
+          do  let registryKeyMaybe = Registry.lookupPackageRegistryKey zelmRegistry name version
+              -- FIXME
+              let repositoryUrl = case registryKeyMaybe of Just (Registry.RepositoryUrlKey repositoryUrl) -> repositoryUrl
+              let url = Website.metadata repositoryUrl name version "docs.json"
               Http.get manager url [] Exit.DP_Http $ \body ->
                 case D.fromByteString Docs.decoder body of
                   Right docs ->
