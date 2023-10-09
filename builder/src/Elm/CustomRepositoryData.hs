@@ -10,12 +10,14 @@ module Elm.CustomRepositoryData
   , PackageUrl
   , SinglePackageFileType(..)
   , customRepostoriesDataDecoder
+  , customRepostoriesDataEncoder
+  , defaultCustomRepositoriesData
   )
   where
 
-import Elm.Version (Version, decoder)
+import Elm.Version (Version, decoder, encode)
 import qualified Data.Utf8 as Utf8
-import Elm.Package (Name, decoder)
+import Elm.Package (Name, decoder, encode)
 import Network.HTTP (RequestMethod(Custom))
 import qualified Json.Decode as D
 import qualified Json.Encode as E
@@ -70,6 +72,10 @@ repositoryTypeDecoder toError =
       Right repositoryType -> pure repositoryType
       Left suggestions -> D.failure (toError str suggestions)
 
+repositoryTypeEncoder :: RepositoryType -> E.Value
+repositoryTypeEncoder DefaultPackageServer = E.string defaultPackageServerString
+repositoryTypeEncoder BarebonesPackageServer = E.string barebonesPackageServerString
+
 type RepositoryUrl = Utf8.Utf8 REPOSITORYURL
 
 instance Binary.Binary (Utf8.Utf8 REPOSITORYURL) where
@@ -79,6 +85,9 @@ instance Binary.Binary (Utf8.Utf8 REPOSITORYURL) where
 
 repositoryUrlDecoder :: D.Decoder e RepositoryUrl
 repositoryUrlDecoder = fmap coerce D.string
+
+repositoryUrlEncoder :: RepositoryUrl -> E.Value
+repositoryUrlEncoder repositoryUrl = E.string (coerce repositoryUrl)
 
 
 type PackageUrl = Utf8.Utf8 PACKAGEURL
@@ -92,11 +101,27 @@ packageUrlDecoder :: D.Decoder e PackageUrl
 packageUrlDecoder = fmap coerce D.string
 
 
+packageUrlEncoder :: PackageUrl -> E.Value
+packageUrlEncoder packageUrl = E.string (coerce packageUrl)
+
+
 data CustomSingleRepositoryData =
   CustomSingleRepositoryData
     { _repositoryType :: !RepositoryType
     , _repositoryUrl :: !RepositoryUrl
     }
+
+standardElmRepository :: CustomSingleRepositoryData
+standardElmRepository = CustomSingleRepositoryData
+  { _repositoryType = DefaultPackageServer
+  , _repositoryUrl = Utf8.fromChars "https://package.elm-lang.org"
+  }
+
+standardZelmRepository :: CustomSingleRepositoryData
+standardZelmRepository = CustomSingleRepositoryData
+  { _repositoryType = DefaultPackageServer
+  , _repositoryUrl = Utf8.fromChars "https://package-server.zelm-lang.org"
+  }
 
 customSingleRepositoryDataDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e CustomSingleRepositoryData
 customSingleRepositoryDataDecoder toError =
@@ -104,6 +129,13 @@ customSingleRepositoryDataDecoder toError =
     repositoryType <- D.field "repository-type" (repositoryTypeDecoder toError)
     repositoryUrl <- D.field "repository-url" repositoryUrlDecoder
     pure (CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl})
+
+customSingleRepositoryDataEncoder :: CustomSingleRepositoryData -> E.Value
+customSingleRepositoryDataEncoder (CustomSingleRepositoryData repositoryType repositoryUrl) = 
+  E.object
+    [ (Utf8.fromChars "repository-type", repositoryTypeEncoder repositoryType)
+    , (Utf8.fromChars "repository-url", repositoryUrlEncoder repositoryUrl)
+    ]
 
 data SinglePackageFileType
   = TarballType
@@ -147,6 +179,10 @@ singlePackageFileTypeDecoder toError =
       Right singlePackageFileType -> pure singlePackageFileType
       Left suggestions -> D.failure (toError string suggestions)
 
+singlePackageFileTypeEncoder :: SinglePackageFileType -> E.Value
+singlePackageFileTypeEncoder TarballType = E.string tarballTypeString
+singlePackageFileTypeEncoder ZipfileType = E.string zipfileTypeString
+
 data SinglePackageLocationData =
   SinglePackageLocationData
     { _fileType :: !SinglePackageFileType
@@ -158,10 +194,10 @@ data SinglePackageLocationData =
 singlePackageLocationDataDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e SinglePackageLocationData
 singlePackageLocationDataDecoder toErr =
   do
-    fileType <- singlePackageFileTypeDecoder toErr
-    packageName <- D.mapError undefined Elm.Package.decoder
-    version <- D.mapError undefined Elm.Version.decoder
-    url <- packageUrlDecoder
+    fileType <- D.field "file-type" (singlePackageFileTypeDecoder toErr)
+    packageName <- D.field "package-name" (D.mapError undefined Elm.Package.decoder)
+    version <- D.field "version" (D.mapError undefined Elm.Version.decoder)
+    url <- D.field "url" packageUrlDecoder
     pure $
       SinglePackageLocationData
         { _fileType=fileType
@@ -169,6 +205,15 @@ singlePackageLocationDataDecoder toErr =
         , _version=version
         , _url=url
         }
+
+singlePackageLocationDataEncoder :: SinglePackageLocationData -> E.Value
+singlePackageLocationDataEncoder (SinglePackageLocationData fileType packageName version url) =
+  E.object
+    [ (Utf8.fromChars "file-type", singlePackageFileTypeEncoder fileType)
+    , (Utf8.fromChars "package-name", Elm.Package.encode packageName)
+    , (Utf8.fromChars "version", Elm.Version.encode version)
+    , (Utf8.fromChars "url", packageUrlEncoder url)
+    ]
 
 data CustomRepositoriesData =
   CustomRepositoriesData
@@ -185,3 +230,19 @@ customRepostoriesDataDecoder toErr = do
       { _customFullRepositories=customFullRepositories
       , _customSinglePackageRepositories=customSinglePackageRepositories
       }
+
+defaultCustomRepositoriesData :: CustomRepositoriesData
+defaultCustomRepositoriesData = CustomRepositoriesData
+  { _customFullRepositories =
+    [ standardElmRepository
+    , standardZelmRepository
+    ]
+  , _customSinglePackageRepositories = []
+  }
+
+customRepostoriesDataEncoder :: CustomRepositoriesData -> E.Value
+customRepostoriesDataEncoder (CustomRepositoriesData customFullRepositories customSinglePackageRepositories) =
+  E.object
+    [ (Utf8.fromChars "repositories", E.list customSingleRepositoryDataEncoder customFullRepositories)
+    , (Utf8.fromChars "single-package-locations", E.list singlePackageLocationDataEncoder customSinglePackageRepositories)
+    ]

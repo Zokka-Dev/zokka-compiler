@@ -1,3 +1,4 @@
+Cabal-version: 3.4
 
 Name: elm
 Version: 0.19.1
@@ -11,7 +12,7 @@ Description:
 
 Homepage: https://elm-lang.org
 
-License: BSD3
+License: BSD-3-Clause
 License-file: LICENSE
 
 Author:     Evan Czaplicki
@@ -20,7 +21,6 @@ Copyright:  Copyright (c) 2011-present, Evan Czaplicki
 
 Category: Compiler, Language
 
-Cabal-version: >=1.9
 Build-type: Simple
 
 source-repository head
@@ -34,7 +34,7 @@ Flag dev {
 }
 
 
-Executable elm
+Common zelm-common
         ghc-options: -O2 -rtsopts -threaded "-with-rtsopts=-N -qg -A128m"
         -- add -eventlog for (elm make src/Main.elm +RTS -l; threadscope elm.eventlog)
         -- https://www.oreilly.com/library/view/parallel-and-concurrent/9781449335939/
@@ -47,9 +47,6 @@ Executable elm
 
     other-extensions:
         TemplateHaskell
-
-    Main-Is:
-        Main.hs
 
     other-modules:
         Bump
@@ -236,3 +233,31 @@ Executable elm
         utf8-string,
         vector,
         zip-archive
+
+Executable zelm
+    Import:
+        zelm-common
+    
+    Main-Is:
+        Main.hs
+
+Test-Suite zelm-tests
+    Import:
+        zelm-common
+    
+    Main-Is:
+        TestMain.hs
+
+    Type:
+        exitcode-stdio-1.0
+    
+    Hs-Source-Dirs:
+        tests
+
+    Build-Depends:
+        tasty,
+        tasty-smallcheck,
+        tasty-hunit,
+        tasty-quickcheck,
+        tasty-hedgehog,
+        hedgehog

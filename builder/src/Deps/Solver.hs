@@ -267,7 +267,7 @@ addConstraint solved unsolved (name, newConstraint) =
 getRelevantVersions :: Pkg.Name -> C.Constraint -> Solver (V.Version, [V.Version])
 getRelevantVersions name constraint =
   Solver $ \state@(State _ _ registry _) ok back _ ->
-    case Registry.getVersions'' name registry of
+    case Registry.getVersions name registry of
       Just (Registry.KnownVersions newest previous) ->
         case filter (C.satisfies constraint) (newest:previous) of
           []   -> back state

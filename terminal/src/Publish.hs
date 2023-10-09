@@ -112,7 +112,7 @@ publish env@(Env root _ manager registry outline) repositoryUrl =
         then
           Task.throw Exit.PublishToStandardElmRepositoryUsingZelm
         else
-          do  let maybeKnownVersions = Registry.getVersions pkg (Registry.mergeRegistries registry)
+          do  let maybeKnownVersions = Registry.getVersions pkg registry
 
               reportPublishStart pkg vsn maybeKnownVersions
 

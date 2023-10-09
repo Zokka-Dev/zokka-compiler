@@ -11,7 +11,6 @@ module Deps.Registry
   , latest
   , getVersions
   , getVersions'
-  , getVersions''
   , mergeRegistries
   , lookupPackageRegistryKey
   )
@@ -38,6 +37,7 @@ import Data.Binary.Get (Get)
 import Data.Word (Word8)
 import qualified Data.Set as Set
 import qualified Data.NonEmptyList as NE
+import Data.Vector.Internal.Check (HasCallStack)
 
 
 
@@ -51,6 +51,7 @@ data ZelmRegistries = ZelmRegistries
   { _registries :: !(Map.Map RegistryKey Registry)
   , _packagesToLocations :: !(Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
   }
+  deriving (Show, Eq)
 
 neListConcat :: NE.List a -> NE.List a -> NE.List a
 neListConcat (NE.List x xs) (NE.List y ys) = NE.List x (xs ++ (y : ys))
@@ -104,6 +105,7 @@ data Registry =
     { _count :: !Int
     , _versions :: !(Map.Map Pkg.Name KnownVersions)
     }
+    deriving (Eq, Show)
 
 
 data KnownVersions =
@@ -111,13 +113,14 @@ data KnownVersions =
     { _newest :: V.Version
     , _previous :: ![V.Version]
     }
+    deriving (Eq, Show)
 
 
 
 -- READ
 
 
-read :: Stuff.ZelmSpecificCache -> IO (Maybe ZelmRegistries)
+read :: HasCallStack => Stuff.ZelmSpecificCache -> IO (Maybe ZelmRegistries)
 read cache =
   File.readBinary (Stuff.registry cache)
 
@@ -130,6 +133,7 @@ read cache =
 fetch :: Http.Manager -> Stuff.ZelmSpecificCache -> CustomRepositoriesData -> IO (Either Exit.RegistryProblem ZelmRegistries)
 fetch manager cache (CustomRepositoriesData customFullRepositories singlePackageLocations) =
   do
+    -- FIXME: this is pretty awful
     let fetchSingleRepo repoData = (,) (RepositoryUrlKey $ _repositoryUrl repoData) <$> fetchSingleCustomRepository manager repoData
     fullRepositoryFetchResults <- traverse fetchSingleRepo customFullRepositories
     let singlePackageRegistries = (\locData -> (PackageUrlKey $ _url locData, createRegistryFromSinglePackageLocation locData)) <$> singlePackageLocations
@@ -139,7 +143,7 @@ fetch manager cache (CustomRepositoriesData customFullRepositories singlePackage
       Right registries -> do
         let path = Stuff.registry cache
         let registry = Map.fromList registries
-        File.writeBinary path registry
+        File.writeBinary path (zelmRegistriesFromRegistriesMap registry)
         pure $ Right (zelmRegistriesFromRegistriesMap registry)
 
 
@@ -314,24 +318,19 @@ versionsToKnownVersions :: [V.Version] -> Maybe KnownVersions
 versionsToKnownVersions = foldr (\v acc -> Just $ compareVersionToKnownVersions v acc) Nothing
 
 
-getVersions'' :: Pkg.Name -> ZelmRegistries -> Maybe KnownVersions
-getVersions'' name ZelmRegistries{_packagesToLocations=packagesToLocations} =
+getVersions :: Pkg.Name -> ZelmRegistries -> Maybe KnownVersions
+getVersions name ZelmRegistries{_packagesToLocations=packagesToLocations} =
   do
     versionsMap <- Map.lookup name packagesToLocations
     let versions = Map.keys versionsMap
     versionsToKnownVersions versions
 
-
-getVersions :: Pkg.Name -> Registry -> Maybe KnownVersions
-getVersions name (Registry _ versions) =
-  Map.lookup name versions
-
-
-getVersions' :: Pkg.Name -> Registry -> Either [Pkg.Name] KnownVersions
-getVersions' name (Registry _ versions) =
-  case Map.lookup name versions of
+getVersions' :: Pkg.Name -> ZelmRegistries -> Either [Pkg.Name] KnownVersions
+getVersions' name zelmRegistry = 
+  case getVersions name zelmRegistry of
     Just kvs -> Right kvs
-    Nothing -> Left $ Pkg.nearbyNames name (Map.keys versions)
+    -- FIXME: Maybe a faster way than just brute-force merging?
+    Nothing -> Left $ Pkg.nearbyNames name (Map.keys (_versions $ mergeRegistries zelmRegistry))
 
 
 
@@ -361,8 +360,8 @@ instance Binary RegistryKey where
         repositoryUrl <- get :: Get RepositoryUrl
         pure $ RepositoryUrlKey repositoryUrl
       1 -> do
-        repositoryUrl <- get :: Get RepositoryUrl
-        pure $ RepositoryUrlKey repositoryUrl
+        packageUrl <- get :: Get PackageUrl
+        pure $ PackageUrlKey packageUrl
 
   put registryKey = case registryKey of
     RepositoryUrlKey repositoryUrl -> do

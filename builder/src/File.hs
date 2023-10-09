@@ -33,6 +33,9 @@ import qualified System.FilePath as FP
 import System.FilePath ((</>))
 import qualified System.IO as IO
 import System.IO.Error (ioeGetErrorType, annotateIOError, modifyIOError)
+import Data.Vector.Internal.Check (HasCallStack)
+import GHC.Exception (prettyCallStack)
+import GHC.Stack (callStack)
 
 
 
@@ -64,14 +67,14 @@ instance Binary.Binary Time where
 -- BINARY
 
 
-writeBinary :: (Binary.Binary a) => FilePath -> a -> IO ()
+writeBinary :: (HasCallStack, Binary.Binary a) => FilePath -> a -> IO ()
 writeBinary path value =
   do  let dir = FP.dropFileName path
       Dir.createDirectoryIfMissing True dir
       Binary.encodeFile path value
 
 
-readBinary :: (Binary.Binary a) => FilePath -> IO (Maybe a)
+readBinary :: (HasCallStack, (Binary.Binary a)) => FilePath -> IO (Maybe a)
 readBinary path =
   do  pathExists <- Dir.doesFileExist path
       if pathExists
@@ -91,6 +94,7 @@ readBinary path =
                         , "| Please report this to https://github.com/elm/compiler/issues"
                         , "| Trying to continue anyway."
                         , "+-------------------------------------------------------------------------------"
+                        , prettyCallStack callStack
                         ]
                       return Nothing
         else

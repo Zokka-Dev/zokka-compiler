@@ -83,7 +83,7 @@ getEnv =
 
 bump :: Env -> Task.Task Exit.Bump ()
 bump env@(Env root _ _ registry outline@(Outline.PkgOutline pkg _ _ vsn _ _ _ _)) =
-  case Registry.getVersions pkg (Registry.mergeRegistries registry) of
+  case Registry.getVersions pkg registry of
     Just knownVersions ->
       let
         bumpableVersions =

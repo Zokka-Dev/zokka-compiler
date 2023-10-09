@@ -93,7 +93,7 @@ diff :: Env -> Args -> Task ()
 diff env@(Env _ _ _ registry) args =
   case args of
     GlobalInquiry name v1 v2 ->
-      case Registry.getVersions' name (Registry.mergeRegistries registry) of
+      case Registry.getVersions' name registry of
         Right vsns ->
           do  oldDocs <- getDocs env name vsns (min v1 v2)
               newDocs <- getDocs env name vsns (max v1 v2)
@@ -159,7 +159,7 @@ readOutline (Env maybeRoot _ _ registry) =
                   Task.throw $ Exit.DiffApplication
 
                 Outline.Pkg (Outline.PkgOutline pkg _ _ _ _ _ _ _) ->
-                  case Registry.getVersions pkg (Registry.mergeRegistries registry) of
+                  case Registry.getVersions pkg registry of
                     Just vsns -> return (pkg, vsns)
                     Nothing   -> Task.throw Exit.DiffUnpublished
 
