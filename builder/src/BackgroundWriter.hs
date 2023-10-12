@@ -13,6 +13,7 @@ import qualified Data.Binary as Binary
 import Data.Foldable (traverse_)
 
 import qualified File
+import Data.Typeable (Typeable)
 
 
 

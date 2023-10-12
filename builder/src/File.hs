@@ -36,6 +36,7 @@ import System.IO.Error (ioeGetErrorType, annotateIOError, modifyIOError)
 import Data.Vector.Internal.Check (HasCallStack)
 import GHC.Exception (prettyCallStack)
 import GHC.Stack (callStack)
+import Data.Typeable (Typeable, typeOf)
 
 
 

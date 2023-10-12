@@ -62,7 +62,10 @@ import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Error as Error
 import qualified Reporting.Render.Code as Code
 import Elm.PackageOverrideData (PackageOverrideData(..))
-import Deps.CustomRepositoryDataIO (CustomRepositoriesError)
+import Deps.CustomRepositoryDataIO (CustomRepositoriesError(..))
+import qualified Json.Decode as D
+import qualified Reporting.Error.Json
+import Elm.CustomRepositoryData (CustomRepositoryDataParseError (..))
 
 
 
@@ -1576,9 +1579,10 @@ toRegistryProblemReport title problem context =
 
     --FIXME make this better!
     RP_BadCustomReposData err configFilePath ->
-      Help.report title (Just configFilePath) (context)
-        [ "Bad things happened!"
-        ]
+      case err of
+        CREJsonDecodeError jsonErr ->
+          Json.toReport configFilePath (Json.FailureToReport toCustomPackageRepositoryProblemReport) jsonErr $
+            Json.ExplicitReason "I ran into a problem with your elm.json file."
 
 
 toHttpErrorReport :: String -> Http.Error -> String -> Help.Report
@@ -2147,3 +2151,125 @@ replToReport problem =
 
     ReplBlocked ->
       corruptCacheReport
+
+
+
+      -- toSnippet "INVALID PACKAGE NAME" (toHighlight row col)
+      --   ( D.reflow $
+      --       "I got stuck while reading your elm.json file. I ran into trouble with the package name:"
+      --   , D.stack
+      --       [ D.fillSep
+      --           ["Package","names","are","always","written","as"
+      --           ,D.green "\"author/project\""
+      --           ,"so","I","am","expecting","to","see","something","like:"
+      --           ]
+      --       , D.dullyellow $ D.indent 4 $ D.vcat $
+      --           [ "\"mdgriffith/elm-ui\""
+      --           , "\"w0rm/elm-physics\""
+      --           , "\"Microsoft/elm-json-tree-view\""
+      --           , "\"FordLabs/elm-star-rating\""
+      --           , "\"1602/json-schema\""
+      --           ]
+      --       , D.reflow
+      --           "The author name should match your GitHub name exactly, and the project name\
+      --           \ needs to follow these rules:"
+      --       , D.indent 4 $ D.vcat $
+      --           [ "+--------------------------------------+-----------+-----------+"
+      --           , "| RULE                                 | BAD       | GOOD      |"
+      --           , "+--------------------------------------+-----------+-----------+"
+      --           , "| only lower case, digits, and hyphens | elm-HTTP  | elm-http  |"
+      --           , "| no leading digits                    | 3D        | elm-3d    |"
+      --           , "| no non-ASCII characters              | elm-bjørn | elm-bear  |"
+      --           , "| no underscores                       | elm_ui    | elm-ui    |"
+      --           , "| no double hyphens                    | elm--hash | elm-hash  |"
+      --           , "| no starting or ending hyphen         | -elm-tar- | elm-tar   |"
+      --           , "+--------------------------------------+-----------+-----------+"
+      --           ]
+      --       , D.toSimpleNote $
+      --           "These rules only apply to the project name, so you should never need\
+      --           \ to change your GitHub name!"
+      --       ]
+      --   )
+-- CUSTOM PACKAGE REPOSITORIES CONFIG
+
+toCustomPackageRepositoryProblemReport :: FilePath -> Code.Source -> Json.Context -> A.Region -> CustomRepositoryDataParseError -> Help.Report
+toCustomPackageRepositoryProblemReport path source _ region problem =
+  let
+    toHighlight row col =
+      Just $ A.Region (A.Position row col) (A.Position row col)
+
+    toSnippet title highlight pair =
+      Help.jsonReport title (Just path) $
+        Code.toSnippet source region highlight pair
+  in
+  case problem of
+    UnsupportedFileTypeError submittedFileType fileTypeSuggestions ->
+      toSnippet "UNKNOWN FILE TYPE" Nothing
+        ( D.reflow $
+            "You created a single-package-locations entry with an invalid file type."
+        ,
+          D.stack
+            [ D.reflow "You wrote "
+            , D.red $ D.indent 4 $ D.fromChars (Json.toChars submittedFileType)
+            , D.reflow "Did you mean one of the following options?"
+            , D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Json.toChars) fileTypeSuggestions
+            ]
+        )
+    InvalidPackageName (row, col) ->
+      toSnippet "INVALID PACKAGE NAME" (toHighlight row col)
+        ( D.reflow $
+            "I got stuck while reading your custom-repositories-config.json file. I ran into trouble with the package name:"
+        , D.stack
+            [ D.fillSep
+                ["Package","names","are","always","written","as"
+                ,D.green "\"author/project\""
+                ,"so","I","am","expecting","to","see","something","like:"
+                ]
+            , D.dullyellow $ D.indent 4 $ D.vcat $
+                [ "\"mdgriffith/elm-ui\""
+                , "\"w0rm/elm-physics\""
+                , "\"Microsoft/elm-json-tree-view\""
+                , "\"FordLabs/elm-star-rating\""
+                , "\"1602/json-schema\""
+                ]
+            , D.reflow
+                "The author name should match your GitHub name exactly, and the project name\
+                \ needs to follow these rules:"
+            , D.indent 4 $ D.vcat $
+                [ "+--------------------------------------+-----------+-----------+"
+                , "| RULE                                 | BAD       | GOOD      |"
+                , "+--------------------------------------+-----------+-----------+"
+                , "| only lower case, digits, and hyphens | elm-HTTP  | elm-http  |"
+                , "| no leading digits                    | 3D        | elm-3d    |"
+                , "| no non-ASCII characters              | elm-bjørn | elm-bear  |"
+                , "| no underscores                       | elm_ui    | elm-ui    |"
+                , "| no double hyphens                    | elm--hash | elm-hash  |"
+                , "| no starting or ending hyphen         | -elm-tar- | elm-tar   |"
+                , "+--------------------------------------+-----------+-----------+"
+                ]
+            , D.toSimpleNote $
+                "These rules only apply to the project name, so you should never need\
+                \ to change your GitHub name!"
+            ]
+        )
+    InvalidVersionString (row, col) ->
+      toSnippet "PROBLEM WITH VERSION" (toHighlight row col)
+        ( D.reflow $
+            "I got stuck while reading your custom-repositories-config.json file. I was expecting a version number here:"
+        , D.fillSep
+            ["I","need","something","like",D.green "\"1.0.0\"","or",D.green "\"2.0.4\""
+            ,"that","explicitly","states","all","three","numbers!"
+            ]
+        )
+    UnsupportedRepositoryType submittedRepoType repoTypeSuggestions ->
+      toSnippet "UNKNOWN REPOSITORY TYPE" Nothing
+        ( D.reflow $
+            "You created a repositories entry with an invalid file type."
+        ,
+          D.stack
+            [ D.reflow "You wrote that the repository-type was "
+            , D.red $ D.indent 4 $ D.fromChars (Json.toChars submittedRepoType)
+            , D.reflow "Did you mean one of the following options?"
+            , D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Json.toChars) repoTypeSuggestions
+            ]
+        )

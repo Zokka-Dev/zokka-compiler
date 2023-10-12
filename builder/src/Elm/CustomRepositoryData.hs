@@ -12,6 +12,7 @@ module Elm.CustomRepositoryData
   , customRepostoriesDataDecoder
   , customRepostoriesDataEncoder
   , defaultCustomRepositoriesData
+  , CustomRepositoryDataParseError(..)
   )
   where
 
@@ -25,6 +26,7 @@ import qualified Json.String as Json
 import qualified Data.Map as Map
 import qualified Data.Binary as Binary
 import Data.Coerce (coerce)
+import Parse.Primitives (Col, Row)
 
 data REPOSITORYURL
 data PACKAGEURL
@@ -123,10 +125,10 @@ standardZelmRepository = CustomSingleRepositoryData
   , _repositoryUrl = Utf8.fromChars "https://package-server.zelm-lang.org"
   }
 
-customSingleRepositoryDataDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e CustomSingleRepositoryData
-customSingleRepositoryDataDecoder toError =
+customSingleRepositoryDataDecoder :: D.Decoder CustomRepositoryDataParseError CustomSingleRepositoryData
+customSingleRepositoryDataDecoder =
   do
-    repositoryType <- D.field "repository-type" (repositoryTypeDecoder toError)
+    repositoryType <- D.field "repository-type" (repositoryTypeDecoder UnsupportedRepositoryType)
     repositoryUrl <- D.field "repository-url" repositoryUrlDecoder
     pure (CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl})
 
@@ -191,12 +193,19 @@ data SinglePackageLocationData =
     , _url :: !PackageUrl
     }
 
-singlePackageLocationDataDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e SinglePackageLocationData
-singlePackageLocationDataDecoder toErr =
+data CustomRepositoryDataParseError
+  -- UnsupportedFileTypeError, first string is the string that a user tried to input as a file type, list of strings are suggestions of syntactically close filetypes
+  = UnsupportedFileTypeError Json.String [Json.String]
+  | InvalidVersionString (Row, Col)
+  | InvalidPackageName (Row, Col)
+  | UnsupportedRepositoryType Json.String [Json.String]
+
+singlePackageLocationDataDecoder :: D.Decoder CustomRepositoryDataParseError SinglePackageLocationData
+singlePackageLocationDataDecoder =
   do
-    fileType <- D.field "file-type" (singlePackageFileTypeDecoder toErr)
-    packageName <- D.field "package-name" (D.mapError undefined Elm.Package.decoder)
-    version <- D.field "version" (D.mapError undefined Elm.Version.decoder)
+    fileType <- D.field "file-type" (singlePackageFileTypeDecoder UnsupportedFileTypeError)
+    packageName <- D.field "package-name" (D.mapError InvalidVersionString Elm.Package.decoder)
+    version <- D.field "version" (D.mapError InvalidPackageName Elm.Version.decoder)
     url <- D.field "url" packageUrlDecoder
     pure $
       SinglePackageLocationData
@@ -221,10 +230,10 @@ data CustomRepositoriesData =
     , _customSinglePackageRepositories :: [SinglePackageLocationData]
     }
 
-customRepostoriesDataDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e CustomRepositoriesData
-customRepostoriesDataDecoder toErr = do
-  customFullRepositories <- D.field "repositories" (D.list (customSingleRepositoryDataDecoder toErr))
-  customSinglePackageRepositories <- D.field "single-package-locations" (D.list (singlePackageLocationDataDecoder toErr))
+customRepostoriesDataDecoder :: D.Decoder CustomRepositoryDataParseError CustomRepositoriesData
+customRepostoriesDataDecoder = do
+  customFullRepositories <- D.field "repositories" (D.list customSingleRepositoryDataDecoder)
+  customSinglePackageRepositories <- D.field "single-package-locations" (D.list singlePackageLocationDataDecoder)
   pure $
     CustomRepositoriesData
       { _customFullRepositories=customFullRepositories

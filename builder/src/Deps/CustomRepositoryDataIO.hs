@@ -1,10 +1,10 @@
 module Deps.CustomRepositoryDataIO
   ( loadCustomRepositoriesData
-  , CustomRepositoriesError
+  , CustomRepositoriesError(..)
   )
   where
 
-import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, customRepostoriesDataEncoder, defaultCustomRepositoriesData)
+import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, customRepostoriesDataEncoder, defaultCustomRepositoriesData, CustomRepositoryDataParseError)
 import qualified Stuff
 import qualified File
 import qualified Json.Decode as D
@@ -13,12 +13,7 @@ import qualified Json.String as Json
 import Data.Bifunctor (first)
 import Stuff (ZelmCustomRepositoryConfigFilePath (..))
 
-data CustomRepositoriesError = CREJsonDecodeError (D.Error IncorrectKeywordInJson)
-
-data IncorrectKeywordInJson = IncorrectKeywordInJson
-  { _expectedKeyword :: Json.String
-  , _suggestions :: [Json.String]
-  }
+data CustomRepositoriesError = CREJsonDecodeError (D.Error CustomRepositoryDataParseError)
 
 createCustomRepositoriesData :: ZelmCustomRepositoryConfigFilePath -> IO (Either e CustomRepositoriesData)
 createCustomRepositoriesData (ZelmCustomRepositoryConfigFilePath filePath) = do
@@ -31,6 +26,6 @@ loadCustomRepositoriesData z@(ZelmCustomRepositoryConfigFilePath filePath) = do
   if customReposDataDoesExist
     then do
       bytes <- File.readUtf8 filePath
-      pure $ first CREJsonDecodeError (D.fromByteString (customRepostoriesDataDecoder IncorrectKeywordInJson) bytes)
+      pure $ first CREJsonDecodeError (D.fromByteString customRepostoriesDataDecoder bytes)
     else
       createCustomRepositoriesData z
