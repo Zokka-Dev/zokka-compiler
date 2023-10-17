@@ -3,6 +3,8 @@ module Data.NonEmptyList
   , singleton
   , toList
   , sortBy
+  , head
+  , append
   )
   where
 
@@ -10,6 +12,7 @@ module Data.NonEmptyList
 import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put)
 import qualified Data.List as List
+import Prelude hiding (head)
 
 
 
@@ -29,6 +32,11 @@ toList :: List a -> [a]
 toList (List x xs) =
   x:xs
 
+head :: List a -> a
+head (List x _) = x
+
+append :: List a -> List a -> List a
+append (List x xs) ys = List x (xs ++ toList ys)
 
 
 -- INSTANCES

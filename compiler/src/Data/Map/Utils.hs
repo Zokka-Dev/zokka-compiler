@@ -1,8 +1,11 @@
+{-# LANGUAGE TupleSections #-}
 module Data.Map.Utils
   ( fromKeys
   , fromKeysA
   , fromValues
   , any
+  , invertMap
+  , exchangeKeys
   )
   where
 
@@ -10,6 +13,8 @@ module Data.Map.Utils
 import Prelude hiding (any)
 import qualified Data.Map as Map
 import Data.Map.Internal (Map(..))
+import qualified Data.NonEmptyList as NE
+import Control.Monad (join)
 
 
 
@@ -41,3 +46,39 @@ any isGood = go
   where
     go Tip = False
     go (Bin _ _ v l r) = isGood v || go l || go r
+
+-- FOR TRANSFORMING NESTED MAPS
+
+addToTuple :: a -> (b, c) -> (a, b, c)
+addToTuple k (k1, v) = (k, k1, v)
+
+flattenMaps :: Map.Map k0 (Map.Map k1 v) -> [(k0, k1, v)]
+flattenMaps nestedMaps =
+  --FIXME let's not just have a, b, c as names
+  let
+    mapAsList = Map.toList nestedMaps
+    listOfLists = fmap (\(k, innerMap) -> fmap (addToTuple k) (Map.toList innerMap)) mapAsList
+    result = join listOfLists
+  in
+    result
+
+exchangeKeys :: (Ord k1, Ord k0) => Map.Map k0 (Map.Map k1 v) -> Map.Map k1 (Map.Map k0 v)
+exchangeKeys nestedMap = 
+  let
+    asTriples = flattenMaps nestedMap
+    rearrangedTriples = fmap (\(a, b, c) -> (b, [(a, c)])) asTriples
+    outerMap = Map.fromListWith (++) rearrangedTriples
+  in
+    fmap Map.fromList outerMap
+
+
+invertMap :: (Ord v) => Map.Map k (NE.List v) -> Map.Map v (NE.List k)
+invertMap mapOfLists = 
+  let 
+    mapAsList = Map.toList mapOfLists
+    listOfLists = fmap (\(k, vs) -> fmap (k,) vs) mapAsList
+    listOfLists' = NE.toList =<< listOfLists
+    swappedList = fmap (\(x, y) -> (y, NE.singleton x)) listOfLists'
+    result = Map.fromListWith NE.append swappedList
+  in 
+    result

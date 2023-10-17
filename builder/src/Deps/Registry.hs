@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
-{-# LANGUAGE BangPatterns, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, OverloadedStrings, TupleSections #-}
 module Deps.Registry
   ( Registry(..)
   , KnownVersions(..)
@@ -18,7 +18,7 @@ module Deps.Registry
 
 
 import Prelude hiding (read)
-import Control.Monad (liftM2)
+import Control.Monad (liftM2, join)
 import Data.Binary (Binary, get, put)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
@@ -38,6 +38,7 @@ import Data.Word (Word8)
 import qualified Data.Set as Set
 import qualified Data.NonEmptyList as NE
 import Data.Vector.Internal.Check (HasCallStack)
+import Data.Map.Utils (exchangeKeys, invertMap)
 
 
 
@@ -53,30 +54,35 @@ data ZelmRegistries = ZelmRegistries
   }
   deriving (Show, Eq)
 
-neListConcat :: NE.List a -> NE.List a -> NE.List a
-neListConcat (NE.List x xs) (NE.List y ys) = NE.List x (xs ++ (y : ys))
+-- MAP HELPERS
+
+knownVersionsToNEListOfVersions :: KnownVersions -> NE.List V.Version
+knownVersionsToNEListOfVersions (KnownVersions newest rest) = NE.List newest rest
 
 
 zelmRegistriesFromRegistriesMap :: Map.Map RegistryKey Registry -> ZelmRegistries
-zelmRegistriesFromRegistriesMap registriesMap = 
+zelmRegistriesFromRegistriesMap registriesMap =
   let
-    --FIXME: This just looks awful
-    asListOfLists = Map.toList (Map.map (Map.toList . _versions) registriesMap)
-    flattenedList = sequence =<< asListOfLists
-    flattenedKnownVersions = (\(rKey, (name, KnownVersions newest rest)) -> fmap (\x -> (name, NE.List (x, rKey) [])) (newest : rest)) =<< flattenedList
-    packagesToLocations = Map.map (Map.fromList . NE.toList) (Map.fromListWith neListConcat flattenedKnownVersions)
+    --FIXME: Deal with what happens when we have multiple registries with the same
+    -- version of a package. Right now we just essentially randomly choose one
+    -- (subject to the ordering of maps)
+    registryKeysToPkgVersions = Map.map _versions registriesMap
+    pkgNamesToRegistryAndKnownVersions = exchangeKeys registryKeysToPkgVersions
+    pkgNamesToRegistryAndAllVersions = (fmap . fmap) knownVersionsToNEListOfVersions pkgNamesToRegistryAndKnownVersions
+    pkgNamesToAllVersionsAndRegistry = fmap invertMap pkgNamesToRegistryAndAllVersions
+    pkgNamesToSingleVersionAndRegistry = (fmap . fmap) NE.head pkgNamesToAllVersionsAndRegistry
   in
-    ZelmRegistries{_registries=registriesMap, _packagesToLocations=packagesToLocations}
+    ZelmRegistries{_registries=registriesMap, _packagesToLocations=pkgNamesToSingleVersionAndRegistry}
 
 
 lookupPackageRegistryKey :: ZelmRegistries -> Pkg.Name -> V.Version -> Maybe RegistryKey
-lookupPackageRegistryKey ZelmRegistries{_packagesToLocations=packagesToLocations} pkgName pkgVersion = 
+lookupPackageRegistryKey ZelmRegistries{_packagesToLocations=packagesToLocations} pkgName pkgVersion =
   do
     versions <- Map.lookup pkgName packagesToLocations
     Map.lookup pkgVersion versions
 
 
-data RegistryKey 
+data RegistryKey
   = RepositoryUrlKey RepositoryUrl
   | PackageUrlKey PackageUrl
   deriving (Eq, Ord, Show)
@@ -194,7 +200,7 @@ allPkgsDecoder =
 -- UPDATE
 
 update :: Http.Manager -> Stuff.ZelmSpecificCache -> ZelmRegistries -> IO (Either Exit.RegistryProblem ZelmRegistries)
-update manager cache zelmRegistries = 
+update manager cache zelmRegistries =
   do
     let registriesMap = _registries zelmRegistries
     let listOfProblemsOrKeyRegistryPairs = traverse (\(k, v) -> fmap (fmap ((,) k)) (updateSingleRegistry manager k v)) (Map.toList registriesMap)
@@ -308,7 +314,7 @@ latest manager customRepositoriesData cache =
 -- GET VERSIONS
 
 compareVersionToKnownVersions :: V.Version -> Maybe KnownVersions -> KnownVersions
-compareVersionToKnownVersions version knownVersionsMaybe = 
+compareVersionToKnownVersions version knownVersionsMaybe =
   case knownVersionsMaybe of
     Just (KnownVersions newest others) -> KnownVersions (max newest version) (min newest version : others)
     Nothing -> KnownVersions version []
@@ -326,7 +332,7 @@ getVersions name ZelmRegistries{_packagesToLocations=packagesToLocations} =
     versionsToKnownVersions versions
 
 getVersions' :: Pkg.Name -> ZelmRegistries -> Either [Pkg.Name] KnownVersions
-getVersions' name zelmRegistry = 
+getVersions' name zelmRegistry =
   case getVersions name zelmRegistry of
     Just kvs -> Right kvs
     -- FIXME: Maybe a faster way than just brute-force merging?
