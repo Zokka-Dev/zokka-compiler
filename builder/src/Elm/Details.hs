@@ -14,7 +14,7 @@ module Elm.Details
   where
 
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO, forkFinally)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar)
 import Control.Monad (liftM, liftM2, liftM3)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
@@ -64,6 +64,7 @@ import Data.Function ((&))
 import Data.Map ((!))
 import Deps.Registry (ZelmRegistries)
 import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl)
+import Control.Exception (SomeException)
 
 
 
@@ -180,6 +181,7 @@ load :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.Details Detai
 load style scope root =
   do  newTime <- File.getTime (root </> "elm.json")
       maybeDetails <- File.readBinary (Stuff.details root)
+      print "Made it to LOAD 1"
       case maybeDetails of
         Nothing ->
           generate style scope root newTime
@@ -198,6 +200,7 @@ generate :: Reporting.Style -> BW.Scope -> FilePath -> File.Time -> IO (Either E
 generate style scope root time =
   Reporting.trackDetails style $ \key ->
     do  result <- initEnv key scope root
+        print "Made it to GENERATE 1"
         case result of
           Left exit ->
             return (Left exit)
@@ -267,8 +270,8 @@ verifyPkg env time (Outline.PkgOutline pkg _ _ _ exposed direct testDirect elm) 
   --   , _originalPackageVersion :: !Version
   --   }
 overrideSolutionDetails :: PackageOverrideData -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name Solver.Details
-overrideSolutionDetails 
-  PackageOverrideData{ _overridePackageName=overridePackageName, _overridePackageVersion=overridePackageVersion, _originalPackageName=originalPackageName } 
+overrideSolutionDetails
+  PackageOverrideData{ _overridePackageName=overridePackageName, _overridePackageVersion=overridePackageVersion, _originalPackageName=originalPackageName }
   originalSolution = originalSolution
     & Map.delete originalPackageName
     & Map.insert overridePackageName (Solver.Details overridePackageVersion packageDeps)
@@ -276,8 +279,8 @@ overrideSolutionDetails
       Solver.Details _ packageDeps = originalSolution ! originalPackageName
 
 overrideDirectDeps :: PackageOverrideData -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version
-overrideDirectDeps 
-  PackageOverrideData{ _overridePackageName=overridePackageName, _overridePackageVersion=overridePackageVersion, _originalPackageName=originalPackageName } 
+overrideDirectDeps
+  PackageOverrideData{ _overridePackageName=overridePackageName, _overridePackageVersion=overridePackageVersion, _originalPackageName=originalPackageName }
   originalDeps = originalDeps
     & Map.delete originalPackageName
     & Map.insert overridePackageName overridePackageVersion
@@ -287,7 +290,15 @@ verifyApp env time outline@(Outline.AppOutline elmVersion srcDirs direct _ _ _ p
   if elmVersion == V.compiler
   then
     do  stated <- checkAppDeps outline
+        noredinkexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/NoRedInk/elm-json-decode-pipeline/1.0.0"
+        Task.io $ print (show noredinkexists ++ "does the NoRedInk file path exist before verifying constraints")
+        zelmexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/zelm/core-1-0/1.0.5"
+        Task.io $ print (show zelmexists ++ "does the zelm file path exist before verifying constraints")
         actual <- verifyConstraints env (Map.map Con.exactly stated)
+        noredinkexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/NoRedInk/elm-json-decode-pipeline/1.0.0"
+        Task.io $ print (show noredinkexists ++ "does the NoRedInk file path exist after verifying constraints")
+        zelmexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/zelm/core-1-0/1.0.5"
+        Task.io $ print (show zelmexists ++ "does the zelm file path exist after verifying constraints")
         let allDepsWithOverrides = foldr overrideSolutionDetails actual packageOverrides
         let directDepsWithOverrides = foldr overrideDirectDeps direct packageOverrides
         if Map.size stated == Map.size actual
@@ -342,11 +353,16 @@ allowEqualDups _ v1 v2 =
 
 -- FORK
 
+forkHandler :: Either SomeException a -> IO ()
+forkHandler threadResult = case threadResult of
+  Left err -> print ("FORK HANDLER SAW AN ERROR: " ++ show err)
+  Right _ -> pure ()
+
 
 fork :: IO a -> IO (MVar a)
 fork work =
   do  mvar <- newEmptyMVar
-      _ <- forkIO $ putMVar mvar =<< work
+      _ <- forkFinally (putMVar mvar =<< work) forkHandler
       return mvar
 
 
@@ -358,11 +374,16 @@ verifyDependencies :: Env -> File.Time -> ValidOutline -> Map.Map Pkg.Name Solve
 verifyDependencies env@(Env key scope root cache _ _ _) time outline solution directDeps =
   Task.eio id $
   do  Reporting.report key (Reporting.DStart (Map.size solution))
+      print "Made it to VERIFYDEPENDENCIES 0"
       mvar <- newEmptyMVar
+      print "Made it to VERIFYDEPENDENCIES 1"
       mvars <- Stuff.withRegistryLock cache $
         Map.traverseWithKey (\k v -> fork (verifyDep env mvar solution k v)) solution
+      print "Made it to VERIFYDEPENDENCIES 2"
       putMVar mvar mvars
+      print "Made it to VERIFYDEPENDENCIES 3"
       deps <- traverse readMVar mvars
+      print "Made it to VERIFYDEPENDENCIES 4"
       case sequence deps of
         Left _ ->
           do  home <- Stuff.getElmHome
@@ -424,6 +445,8 @@ type Dep =
 verifyDep :: Env -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Map.Map Pkg.Name Solver.Details -> Pkg.Name -> Solver.Details -> IO Dep
 verifyDep (Env key _ _ cache manager _ zelmRegistry) depsMVar solution pkg details@(Solver.Details vsn directDeps) =
   do  let fingerprint = Map.intersectionWith (\(Solver.Details v _) _ -> v) solution directDeps
+      exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
+      print (show exists ++ "A0" ++ Stuff.package cache pkg vsn)
       exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn </> "src")
       if exists
         then
@@ -439,6 +462,27 @@ verifyDep (Env key _ _ cache manager _ zelmRegistry) depsMVar solution pkg detai
                     else build key cache depsMVar pkg details fingerprint fingerprints
         else
           do  Reporting.report key Reporting.DRequested
+              -- Normally we don't need to create the directory because it's created during the
+              -- constraint solving process (to put an elm.json there), but in Zelm's case we 
+              -- might be looking at a dependency that showed up after the constraint solving
+              -- process was completed via an override, so the directory might not actually exist,
+              -- so we better create it here just in case.
+              --
+              -- Note that the ...IfMissing part is used because this directory might actually
+              -- exist (if it wasn't used as an override), just without a src directory.
+              --
+              -- Also the reason we don't shift overrides to happen during constraint solving is
+              -- that we want to eventually in the future download both the original package
+              -- and the package that is being used to override the original, both to help with
+              -- Elm IDE integrations (which may be unaware of Zelm and so we still want to
+              -- support click-to-definition, which is usually based on the cache, even if the
+              -- integration is unaware of Zelm overrides) and to help with error messages, where
+              -- we can rigorously check that the APIs of the original package and the override 
+              -- match. So we want to make sure that we keep the information about what original
+              -- package was used around and we want that to drive the constraint process in
+              -- the bad case that the override package is malformed and doesn't follow the
+              -- same dependencies as the original package.
+              Dir.createDirectoryIfMissing True (Stuff.package cache pkg vsn)
               result <- downloadPackage cache zelmRegistry manager pkg vsn
               case result of
                 Left problem ->
@@ -791,9 +835,17 @@ toDocs result =
 downloadPackage :: Stuff.PackageCache -> ZelmRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
 downloadPackage cache zelmRegistries manager pkg vsn =
   case Registry.lookupPackageRegistryKey zelmRegistries pkg vsn of
-    Just (Registry.RepositoryUrlKey repositoryUrl) -> downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn
-    Just (Registry.PackageUrlKey packageUrl) -> downloadPackageDirectly cache packageUrl manager pkg vsn
-    Nothing -> 
+    Just (Registry.RepositoryUrlKey repositoryUrl) ->
+      do
+        exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
+        print (show exists ++ "A" ++ Stuff.package cache pkg vsn)
+        downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn
+    Just (Registry.PackageUrlKey packageUrl) -> 
+      do
+        exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
+        print (show exists ++ "B" ++ Stuff.package cache pkg vsn)
+        downloadPackageDirectly cache packageUrl manager pkg vsn
+    Nothing ->
       let
         --FIXME
         blah = fmap show (Map.keys $ Registry._registries zelmRegistries)
@@ -802,7 +854,16 @@ downloadPackage cache zelmRegistries manager pkg vsn =
 
 
 downloadPackageDirectly :: Stuff.PackageCache -> PackageUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
-downloadPackageDirectly cache packageUrl manager pkg vsn = undefined
+downloadPackageDirectly cache packageUrl manager pkg vsn =
+  let
+    urlString = Utf8.toChars packageUrl
+  in
+    Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
+    -- FIXME: Deal with the SHA hash instead of ignoring it
+      \(_, archive) ->
+        Right <$> do 
+          print "hello world 2! FIXME"
+          File.writePackage (Stuff.package cache pkg vsn) archive
 
 
 downloadPackageFromElmPackageRepo :: Stuff.PackageCache -> RepositoryUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
@@ -812,6 +873,8 @@ downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
   in
   do  eitherByteString <-
         Http.get manager url [] id (return . Right)
+      exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
+      print (show exists ++ "B0" ++ Stuff.package cache pkg vsn)
 
       case eitherByteString of
         Left err ->
@@ -826,7 +889,10 @@ downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
               Http.getArchive manager endpoint Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                 \(sha, archive) ->
                   if expectedHash == Http.shaToChars sha
-                  then Right <$> File.writePackage (Stuff.package cache pkg vsn) archive
+                  then Right <$> do
+                    exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
+                    print (show exists ++ "C" ++ Stuff.package cache pkg vsn)
+                    File.writePackage (Stuff.package cache pkg vsn) archive
                   else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
 
 

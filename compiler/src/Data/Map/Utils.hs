@@ -54,7 +54,6 @@ addToTuple k (k1, v) = (k, k1, v)
 
 flattenMaps :: Map.Map k0 (Map.Map k1 v) -> [(k0, k1, v)]
 flattenMaps nestedMaps =
-  --FIXME let's not just have a, b, c as names
   let
     mapAsList = Map.toList nestedMaps
     listOfLists = fmap (\(k, innerMap) -> fmap (addToTuple k) (Map.toList innerMap)) mapAsList

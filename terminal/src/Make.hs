@@ -83,7 +83,9 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
   BW.withScope $ \scope ->
   Stuff.withRootLock root $ Task.run $
   do  desiredMode <- Debug.traceShowId <$> getMode debug optimize
+      _ <- Task.io (print "Made it to RUN 1")
       details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
+      _ <- Task.io (print "Made it to RUN 2")
       case paths of
         [] ->
           do  exposed <- getExposed details

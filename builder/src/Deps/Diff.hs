@@ -35,6 +35,7 @@ import qualified Reporting.Exit as Exit
 import qualified Stuff
 import Deps.Registry (ZelmRegistries)
 import qualified Deps.Registry as Registry
+import qualified Data.Utf8 as Utf8
 
 
 
@@ -374,8 +375,10 @@ getDocs cache zelmRegistry manager name version =
                       return $ Left Exit.DP_Cache
         else
           do  let registryKeyMaybe = Registry.lookupPackageRegistryKey zelmRegistry name version
-              -- FIXME
-              let repositoryUrl = case registryKeyMaybe of Just (Registry.RepositoryUrlKey repositoryUrl) -> repositoryUrl
+              -- FIXME: Handle the non-repository URL case better
+              repositoryUrl <- case registryKeyMaybe of
+                Just (Registry.RepositoryUrlKey repositoryUrl) -> pure repositoryUrl
+                _ -> print "Had a bad thing happen in getDocs" >> pure (Utf8.fromChars "https://example.com/badbadbad")
               let url = Website.metadata repositoryUrl name version "docs.json"
               Http.get manager url [] Exit.DP_Http $ \body ->
                 case D.fromByteString Docs.decoder body of

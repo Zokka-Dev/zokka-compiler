@@ -11,6 +11,7 @@ module File
   , exists
   , remove
   , removeDir
+  , writePackageReturnElmJson
   )
   where
 
@@ -36,7 +37,7 @@ import System.IO.Error (ioeGetErrorType, annotateIOError, modifyIOError)
 import Data.Vector.Internal.Check (HasCallStack)
 import GHC.Exception (prettyCallStack)
 import GHC.Stack (callStack)
-import Data.Typeable (Typeable, typeOf)
+import Control.Monad (msum)
 
 
 
@@ -186,7 +187,11 @@ writePackage destination archive =
       return ()
 
     entry:entries ->
-      do  let root = length (Zip.eRelativePath entry)
+      do  print ("writePackage to "  ++ destination)
+          destinationExists <- Dir.doesDirectoryExist destination
+          print ("destination: " ++ destination ++ " exists: " ++ (show destinationExists))
+          let root = length (Zip.eRelativePath entry)
+          print ("this is our entry: " ++ (Zip.eRelativePath entry))
           mapM_ (writeEntry destination root) entries
 
 
@@ -201,12 +206,56 @@ writeEntry destination root entry =
     || path == "elm.json"
   then
       if not (null path) && last path == '/'
-      then Dir.createDirectoryIfMissing True (destination </> path)
-      else LBS.writeFile (destination </> path) (Zip.fromEntry entry)
+      then do
+        print ("writeEntry 0: " ++ path)
+        Dir.createDirectoryIfMissing True (destination </> path)
+      else do 
+        print ("writeEntry 1: " ++ path)
+        LBS.writeFile (destination </> path) (Zip.fromEntry entry)
   else
       return ()
 
 
+-- FIXME: Is this needed? This basically duplicates writePackage
+writePackageReturnElmJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)
+writePackageReturnElmJson destination archive =
+  case Zip.zEntries archive of
+    [] ->
+      return Nothing
+
+    entry:entries ->
+      do  let root = length (Zip.eRelativePath entry)
+          print ("writePackageReturnElmJson to "  ++ destination)
+          exists <- Dir.doesDirectoryExist destination
+          print ("writePackageReturnElmJson destination: " ++ destination ++ " exists: " ++ (show exists))
+          listOfMaybeElmJsons <- traverse (writeEntryReturnElmJson destination root) entries
+          let firstElmJson = msum listOfMaybeElmJsons
+          pure firstElmJson
+
+writeEntryReturnElmJson :: FilePath -> Int -> Zip.Entry -> IO (Maybe BS.ByteString)
+writeEntryReturnElmJson destination root entry =
+  let
+    path = drop root (Zip.eRelativePath entry)
+  in
+  if List.isPrefixOf "src/" path
+    || path == "LICENSE"
+    || path == "README.md"
+    || path == "elm.json"
+  then
+      if not (null path) && last path == '/'
+      then 
+        do
+          print ("writeEntryReturnElmJson 0: " ++ path)
+          Dir.createDirectoryIfMissing True (destination </> path)
+          pure Nothing
+      else 
+        do
+          print ("writeEntryReturnElmJson 1: " ++ path)
+          let bytestring = Zip.fromEntry entry
+          LBS.writeFile (destination </> path) bytestring
+          pure (if path == "elm.json" then Just (BS.toStrict bytestring) else Nothing)
+  else
+      pure Nothing
 
 -- EXISTS
 

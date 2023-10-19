@@ -5,11 +5,9 @@ module Deps.CustomRepositoryDataIO
   where
 
 import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, customRepostoriesDataEncoder, defaultCustomRepositoriesData, CustomRepositoryDataParseError)
-import qualified Stuff
 import qualified File
 import qualified Json.Decode as D
 import qualified Json.Encode as E
-import qualified Json.String as Json
 import Data.Bifunctor (first)
 import Stuff (ZelmCustomRepositoryConfigFilePath (..))
 

@@ -39,6 +39,7 @@ import qualified Data.Set as Set
 import qualified Data.NonEmptyList as NE
 import Data.Vector.Internal.Check (HasCallStack)
 import Data.Map.Utils (exchangeKeys, invertMap)
+import qualified Debug.Trace as Debug
 
 
 
@@ -368,6 +369,9 @@ instance Binary RegistryKey where
       1 -> do
         packageUrl <- get :: Get PackageUrl
         pure $ PackageUrlKey packageUrl
+      _ -> 
+        -- FIXME: Better error message
+        Debug.trace "Had a bad registry key" (error "Corrupt registry key! We should only have a 0 or 1 here.")
 
   put registryKey = case registryKey of
     RepositoryUrlKey repositoryUrl -> do

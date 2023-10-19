@@ -13,12 +13,12 @@ To accomplish this, compared to the standard Elm compiler, Zelm adds:
    versions of your own
 
 In addition to providing a method to incorporate bug fixes and patches, Zelm
-also provides them directly. That means it includes:
+also provides them directly. That means it includes on an ongoing basis:
 
 1. A collection of API-identical versions of foundational Elm packages that
    incorporate bug fixes that can be used to override their usual counterparts
 2. A minimal alternative package repository that hosts these packages
-3. Compiler bug fixes and quality of life improvements *that do not change
+3. Minor compiler bug fixes and quality of life improvements *that do not change
    the Elm language* (ongoing)
 
 This aims to be the entirety of Zelm's mission through the end of 2024. This
@@ -37,23 +37,35 @@ means Zelm is a quite conservative extension of Elm. What this implies is:
   the fence (and likely not considered to be part of Zelm's current mission).
   Common candidates for compiler bug fixes that would be considered acceptable
   are compiler crashes and improved error messages.
-+ No feature development that is not directly related to custom package
-  repositories or dependency overridability will be given a standard Zelm
-  compiler Github release before 2025. Some experimentation may happen on side
++ **Very little actual feature development.** Some experimentation may happen on side
   branches that may show up in both private and public channels, but those will
   not be given an actual Github release until 2025 (if Zelm is still relevant
   then).
 
+**Again, Zelm's main function in the wider Elm community (at least until 2025)
+is to collect bug fixes submitted by the community and merge them, not to do
+major Elm development itself.** As a (substantial) side effect of that Zelm
+provides private repositories as well, largely in part because this allows
+individuals to fix bugs privately and use those bug fixes without exposing them
+to the wider world if they would like.
+
 # How do I use Zelm?
 
-## Getting Started
+## Quick Start
 
-Download the Zelm binary from Github releases. `zelm` aims to be command-line
-compatible with the usual `elm` binary (except for the `publish` command), so
-all `elm` subcommands are usable in `zelm` as well with their usual flags. So
-for example you can immediately run `zelm make $YOUR_ELM_MAIN_FILE` in the root
-of a pre-existing Elm project and it should run fine. Indeed if you wanted you
-could alias `zelm` as `elm`.
+1. Download the Zelm binary from Github releases. 
+2. Run `zelm make $YOUR_ELM_MAIN_FILE` with whatever flags you usually pass to
+   the Elm compiler.
+3. Everything should work just the exact same as it did before!
+
+### Explanation of quick start
+
+`zelm` aims to be command-line compatible with the usual `elm` binary (except
+for the `publish` command), so all `elm` subcommands are usable in `zelm` as
+well with their usual flags. So for example you can immediately run `zelm make
+$YOUR_ELM_MAIN_FILE` in the root of a pre-existing Elm project and it should run
+fine. Indeed if you wanted you could alias `zelm` as `elm`.
+
 
 ## Using Custom Repositories
 

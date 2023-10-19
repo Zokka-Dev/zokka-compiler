@@ -162,7 +162,6 @@ data Diff
   | DiffCustomReposDataProblem CustomRepositoriesError
 
 
--- FIXME: Make this exhaustive
 diffToReport :: Diff -> Help.Report
 diffToReport diff =
   case diff of
@@ -241,6 +240,12 @@ diffToReport diff =
     DiffBadBuild buildProblem ->
       toBuildProblemReport buildProblem
 
+    DiffCustomReposDataProblem _ ->
+      -- FIXME: Add actual error message here
+      Help.report "DIFF WITH BAD CUSTOM REPOSITORY CONFIGURATION" Nothing
+        "blah blah blah"
+        []
+
 
 
 -- BUMP
@@ -259,7 +264,6 @@ data Bump
   | BumpCustomRepositoryDataProblem CustomRepositoriesError
 
 
---FIXME ADD CASE FOR BumpCustomRepositoryDataProblem
 bumpToReport :: Bump -> Help.Report
 bumpToReport bump =
   case bump of
@@ -322,6 +326,12 @@ bumpToReport bump =
 
     BumpBadBuild problem ->
       toBuildProblemReport problem
+
+    BumpCustomRepositoryDataProblem _ ->
+      --FIXME: Add better error message
+      Help.report "BUMP WITH BAD CUSTOM REPOSITORY CONFIGURATION" Nothing
+        "blah blah blah"
+        []
 
 
 
@@ -703,6 +713,12 @@ publishToReport publish =
             "This is different from the standard Elm publish command because Zelm allows for\
             \ custom repositories, which means when publishing you have to specify where to publish!"
         ]
+
+    PublishCustomRepositoryConfigDataError _ ->
+      -- FIXME: Add actual error message here
+      Help.report "PUBLISH WITH BAD CUSTOM REPOSITORY CONFIGURATION" Nothing
+        "blah blah blah"
+        []
         
 
 
@@ -957,6 +973,7 @@ data Solver
   = SolverBadCacheData Pkg.Name V.Version
   | SolverBadHttpData Pkg.Name V.Version String
   | SolverBadHttp Pkg.Name V.Version Http.Error
+  | SolverNonexistentPackage Pkg.Name V.Version
 
 
 toSolverReport :: Solver -> Help.Report
@@ -993,6 +1010,19 @@ toSolverReport problem =
       toHttpErrorReport "PROBLEM SOLVING PACKAGE CONSTRAINTS" httpError $
         "I need the elm.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
         ++ " to help me search for a set of compatible packages"
+
+    SolverNonexistentPackage pkg vsn ->
+      Help.report "PROBLEM SOLVING PACKAGE CONSTRAINTS" Nothing
+        (
+          -- FIXME: Make this error message better
+          "One of your dependencies depends on this package, but it doesn't exist in any of your package repositories."
+        )
+        -- [ D.indent 4 $ D.dullyellow $ D.fromChars url
+        [ D.indent 4 $ D.dullyellow $ D.fromChars $ Pkg.toChars pkg ++ " " ++ V.toChars vsn
+        , D.reflow $
+        -- FIXME: Get the full location of this file
+            "Did you forget to add a package repository to custom-repositories-config.json?"
+        ]
 
 
 

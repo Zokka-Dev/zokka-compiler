@@ -348,6 +348,9 @@ sgrToStyle sgrs style@(Style bold underline color) =
           Ansi.SetSwapForegroundBackground _ -> style
           Ansi.SetColor l i c                -> Style bold underline (toColor l i c)
           Ansi.SetRGBColor _ _               -> style
+          -- FIXME: Why were these not matched to begin with? What should these be?
+          Ansi.SetPaletteColor _ _           -> style
+          Ansi.SetDefaultColor _             -> style
 
 
 isBold :: Ansi.ConsoleIntensity -> Bool

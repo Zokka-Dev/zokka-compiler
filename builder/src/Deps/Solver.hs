@@ -39,6 +39,7 @@ import Data.Maybe (fromJust)
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import Reporting.Exit (RegistryProblem(..))
 import Stuff (ZelmCustomRepositoryConfigFilePath(unZelmCustomRepositoryConfigFilePath))
+import qualified Data.Utf8 as Utf8
 
 
 
@@ -319,28 +320,57 @@ getConstraints pkg vsn =
 
                       Online manager ->
                         do  let registryKeyMaybe = Registry.lookupPackageRegistryKey registry pkg vsn
-                            --FIXME
-                            let pullOutFunction r = case r of
-                                  (Registry.RepositoryUrlKey repositoryUrl) -> repositoryUrl
-                                  (Registry.PackageUrlKey packageUrl) -> error "Lololol this is bad!"
-                            let repositoryUrlMaybe = fmap pullOutFunction registryKeyMaybe
-                            let urlMaybe = (\r -> Website.metadata r pkg vsn "elm.json") <$> repositoryUrlMaybe
-                            --FIXME again
-                            let url = fromJust urlMaybe
-                            result <- Http.get manager url [] id (return . Right)
-                            case result of
-                              Left httpProblem ->
-                                err (Exit.SolverBadHttp pkg vsn httpProblem)
+                            -- FIXME: I feel like this entire case should be nicer
+                            case registryKeyMaybe of
+                              Just (Registry.RepositoryUrlKey repositoryUrl) ->
+                                let
+                                  url = Website.metadata repositoryUrl pkg vsn "elm.json"
+                                in do
+                                  result <- Http.get manager url [] id (return . Right)
+                                  case result of
+                                    Left httpProblem ->
+                                      err (Exit.SolverBadHttp pkg vsn httpProblem)
 
-                              Right body ->
-                                case D.fromByteString constraintsDecoder body of
-                                  Right cs ->
-                                    do  Dir.createDirectoryIfMissing True home
-                                        File.writeUtf8 path body
-                                        ok (toNewState cs) cs back
+                                    Right body ->
+                                      case D.fromByteString constraintsDecoder body of
+                                        Right cs ->
+                                          do  Dir.createDirectoryIfMissing True home
+                                              File.writeUtf8 path body
+                                              ok (toNewState cs) cs back
 
-                                  Left _ ->
-                                    err (Exit.SolverBadHttpData pkg vsn url)
+                                        Left _ ->
+                                          err (Exit.SolverBadHttpData pkg vsn url)
+                              Just (Registry.PackageUrlKey packageUrl) ->
+                                do
+                                  let url = Utf8.toChars packageUrl
+                                  result <-
+                                    -- FIXME: Use custom error instead of SolverBadHttpData for bad ZIP data
+                                    Http.getArchive manager url (Exit.SolverBadHttp pkg vsn) (Exit.SolverBadHttpData pkg vsn url) $
+                                    -- FIXME: Deal with the SHA hash instead of ignoring it
+                                      \(_, archive) ->
+                                        -- FIXME: Do I need to do this createDirectoryIfMissing?
+                                        Right <$> do { print "hello world! FIXME"; Dir.createDirectoryIfMissing True home; File.writePackageReturnElmJson (Stuff.package cache pkg vsn) archive }
+                                  case result of
+                                    -- In this case we should've successfully written elm.json to our cache so let's take a look
+                                    -- FIXME: I don't like this implicit dependence
+                                    Right (Just body) ->
+                                      case D.fromByteString constraintsDecoder body of
+                                        Right cs ->
+                                          do  Dir.createDirectoryIfMissing True home
+                                              File.writeUtf8 path body
+                                              ok (toNewState cs) cs back
+
+                                        Left _ ->
+                                          err (Exit.SolverBadHttpData pkg vsn url)
+                                    Right Nothing ->
+                                      -- FIXME: Maybe want a custom error for this?
+                                      err (Exit.SolverBadHttpData pkg vsn url)
+                                    Left archiveErr -> 
+                                      err archiveErr
+                              Nothing ->
+                                -- FIXME: I'm only ~70% sure you can actually hit this error case... should verify
+                                -- I think you hit this if we have a transitive dependency on a package that doesn't exist?
+                                err (Exit.SolverNonexistentPackage pkg vsn)
 
 
 constraintsDecoder :: D.Decoder () Constraints
