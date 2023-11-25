@@ -1,3 +1,4 @@
+
 {-# LANGUAGE EmptyDataDecls #-}
 module Elm.PackageOverrideData
   ( PackageOverrideData(..)
@@ -14,3 +15,4 @@ data PackageOverrideData =
     , _originalPackageName :: !Name
     , _originalPackageVersion :: !Version
     }
+    deriving Show

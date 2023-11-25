@@ -27,6 +27,7 @@ data Error
   = BadType A.Region Can.Type
   | BadCycle A.Region Name.Name [Name.Name]
   | BadFlags A.Region Can.Type E.InvalidPayload
+  deriving Show
 
 
 

@@ -1037,6 +1037,7 @@ data Outline
   | OutlineNoAppCore
   | OutlineNoAppJson
   | OutlinePkgOverridesDoNotMatchDeps Pkg.Name V.Version
+  deriving Show
 
 
 data OutlineProblem
@@ -1050,6 +1051,7 @@ data OutlineProblem
   | OP_BadLicense Json.String [Json.String]
   | OP_BadSummaryTooLong
   | OP_NoSrcDirs
+  deriving Show
 
 
 toOutlineReport :: Outline -> Help.Report
@@ -1368,6 +1370,7 @@ data Details
 data DetailsBadDep
   = BD_BadDownload Pkg.Name V.Version PackageProblem
   | BD_BadBuild Pkg.Name V.Version (Map.Map Pkg.Name V.Version)
+  deriving Show
 
 
 toDetailsReport :: Details -> Help.Report
@@ -1505,6 +1508,7 @@ data PackageProblem
   | PP_BadArchiveHash String String String
   -- FIXME: Change away from String
   | PP_PackageNotInRegistry [String] Pkg.Name V.Version
+  deriving Show
 
 
 toPackageProblemReport :: Pkg.Name -> V.Version -> PackageProblem -> Help.Report

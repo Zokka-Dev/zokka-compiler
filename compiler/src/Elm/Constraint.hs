@@ -37,13 +37,13 @@ import Parse.Primitives (Row, Col)
 
 data Constraint
     = Range V.Version Op Op V.Version
-    deriving (Eq)
+    deriving (Eq, Show)
 
 
 data Op
   = Less
   | LessOrEqual
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 
@@ -226,6 +226,7 @@ instance Binary Op where
 data Error
   = BadFormat Row Col
   | InvalidRange V.Version V.Version
+  deriving Show
 
 
 parser :: P.Parser Error Constraint

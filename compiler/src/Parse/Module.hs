@@ -50,7 +50,7 @@ data ProjectType
 isCore :: ProjectType -> Bool
 isCore projectType =
   case projectType of
-    Package pkg -> pkg == Pkg.core
+    Package pkg -> Pkg.isCore pkg
     Application -> False
 
 

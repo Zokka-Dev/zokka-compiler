@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module AST.Optimized
   ( Def(..)
   , Expr(..)
@@ -72,9 +73,11 @@ data Expr
   | Unit
   | Tuple Expr Expr (Maybe Expr)
   | Shader Shader.Source (Set.Set Name) (Set.Set Name)
+  deriving Show
 
 
 data Global = Global ModuleName.Canonical Name
+  deriving Show
 
 
 
@@ -84,10 +87,12 @@ data Global = Global ModuleName.Canonical Name
 data Def
   = Def Name Expr
   | TailDef Name [Name] Expr
+  deriving Show
 
 
 data Destructor =
   Destructor Name Path
+  deriving Show
 
 
 data Path
@@ -95,6 +100,7 @@ data Path
   | Field Name Path
   | Unbox Path
   | Root Name
+  deriving Show
 
 
 
@@ -115,10 +121,13 @@ data Decider a
       }
   deriving (Eq)
 
+deriving instance Show a => Show (Decider a)
+
 
 data Choice
   = Inline Expr
   | Jump Int
+  deriving Show
 
 
 
@@ -130,6 +139,7 @@ data GlobalGraph =
     { _g_nodes :: Map.Map Global Node
     , _g_fields :: Map.Map Name Int
     }
+    deriving Show
 
 
 data LocalGraph =
@@ -160,9 +170,11 @@ data Node
   | Kernel [K.Chunk] (Set.Set Global)
   | PortIncoming Expr (Set.Set Global)
   | PortOutgoing Expr (Set.Set Global)
+  deriving Show
 
 
 data EffectsType = Cmd | Sub | Fx
+  deriving Show
 
 
 

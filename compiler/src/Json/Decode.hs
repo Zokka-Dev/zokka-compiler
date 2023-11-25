@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wall -fno-warn-unused-do-bind -fno-warn-name-shadowing #-}
 {-# LANGUAGE BangPatterns, Rank2Types, OverloadedStrings, UnboxedTuples #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Json.Decode
   ( fromByteString
   , Decoder
@@ -80,6 +81,8 @@ data Error x
   = DecodeProblem B.ByteString (Problem x)
   | ParseProblem B.ByteString ParseError
 
+deriving instance Show a => Show (Error a)
+
 
 
 -- DECODE PROBLEMS
@@ -92,6 +95,8 @@ data Problem x
   | Failure A.Region x
   | Expecting A.Region DecodeExpectation
 
+deriving instance Show a => Show (Problem a)
+
 
 data DecodeExpectation
   = TObject
@@ -101,6 +106,7 @@ data DecodeExpectation
   | TInt
   | TObjectWith B.ByteString
   | TArrayPair Int
+  deriving Show
 
 
 
@@ -480,6 +486,7 @@ data ParseError
   | NoLeadingZeros Row Col
   | NoFloats Row Col
   | BadEnd Row Col
+  deriving Show
 
 --  PIndex Int ParseError Row Col
 --  PField Json.String ParseError Row Col
@@ -490,6 +497,7 @@ data StringProblem
   | BadStringControlChar
   | BadStringEscapeChar
   | BadStringEscapeHex
+  deriving Show
 
 
 

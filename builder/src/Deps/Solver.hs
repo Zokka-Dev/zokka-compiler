@@ -96,6 +96,7 @@ data Result a
 
 data Details =
   Details V.Version (Map.Map Pkg.Name C.Constraint) -- First argument is the version, second is the set of dependencies that the package depends on
+  deriving Show
 
 
 verify :: Stuff.PackageCache -> Connection -> Registry.ZelmRegistries -> Map.Map Pkg.Name C.Constraint -> IO (Result (Map.Map Pkg.Name Details))

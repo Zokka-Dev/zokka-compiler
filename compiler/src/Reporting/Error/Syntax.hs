@@ -73,6 +73,7 @@ data Error
   | NoPortModulesInPackage A.Region
   | NoEffectsOutsideKernel A.Region
   | ParseError Module
+  deriving Show
 
 
 
@@ -110,6 +111,7 @@ data Module
   | Infix Row Col
   --
   | Declarations Decl Row Col
+  deriving Show
 
 
 data Exposing
@@ -124,6 +126,7 @@ data Exposing
   --
   | ExposingIndentEnd Row Col
   | ExposingIndentValue Row Col
+  deriving Show
 
 
 
@@ -139,6 +142,7 @@ data Decl
   | DeclDef Name.Name DeclDef Row Col
   --
   | DeclFreshLineAfterDocComment Row Col
+  deriving Show
 
 
 data DeclDef
@@ -153,6 +157,7 @@ data DeclDef
   | DeclDefIndentType Row Col
   | DeclDefIndentEquals Row Col
   | DeclDefIndentBody Row Col
+  deriving Show
 
 
 data Port
@@ -163,6 +168,7 @@ data Port
   | PortIndentName Row Col
   | PortIndentColon Row Col
   | PortIndentType Row Col
+  deriving Show
 
 
 
@@ -176,6 +182,7 @@ data DeclType
   | DT_Union CustomType Row Col
   --
   | DT_IndentName Row Col
+  deriving Show
 
 
 data TypeAlias
@@ -186,6 +193,7 @@ data TypeAlias
   --
   | AliasIndentEquals Row Col
   | AliasIndentBody Row Col
+  deriving Show
 
 
 data CustomType
@@ -200,6 +208,7 @@ data CustomType
   | CT_IndentBar Row Col
   | CT_IndentAfterBar Row Col
   | CT_IndentAfterEquals Row Col
+  deriving Show
 
 
 
@@ -228,6 +237,7 @@ data Expr
   | EndlessShader Row Col
   | ShaderProblem [Char.Char] Row Col
   | IndentOperatorRight Name.Name Row Col
+  deriving Show
 
 
 data Record
@@ -243,6 +253,7 @@ data Record
   | RecordIndentField Row Col
   | RecordIndentEquals Row Col
   | RecordIndentExpr Row Col
+  deriving Show
 
 
 data Tuple
@@ -255,6 +266,7 @@ data Tuple
   | TupleIndentExpr1 Row Col
   | TupleIndentExprN Row Col
   | TupleIndentEnd Row Col
+  deriving Show
 
 
 data List
@@ -266,6 +278,7 @@ data List
   | ListIndentOpen Row Col
   | ListIndentEnd Row Col
   | ListIndentExpr Row Col
+  deriving Show
 
 
 data Func
@@ -277,6 +290,7 @@ data Func
   | FuncIndentArg Row Col
   | FuncIndentArrow Row Col
   | FuncIndentBody Row Col
+  deriving Show
 
 
 data Case
@@ -293,6 +307,7 @@ data Case
   | CaseIndentArrow Row Col
   | CaseIndentBranch Row Col
   | CasePatternAlignment Word16 Row Col
+  deriving Show
 
 
 data If
@@ -310,6 +325,7 @@ data If
   | IfIndentThenBranch Row Col
   | IfIndentElseBranch Row Col
   | IfIndentElse Row Col
+  deriving Show
 
 
 data Let
@@ -323,6 +339,7 @@ data Let
   | LetIndentDef Row Col
   | LetIndentIn Row Col
   | LetIndentBody Row Col
+  deriving Show
 
 
 data Def
@@ -337,6 +354,7 @@ data Def
   | DefIndentType Row Col
   | DefIndentBody Row Col
   | DefAlignment Word16 Row Col
+  deriving Show
 
 
 data Destruct
@@ -346,6 +364,7 @@ data Destruct
   | DestructBody Expr Row Col
   | DestructIndentEquals Row Col
   | DestructIndentBody Row Col
+  deriving Show
 
 
 
@@ -368,6 +387,7 @@ data Pattern
   --
   | PIndentStart Row Col
   | PIndentAlias Row Col
+  deriving Show
 
 
 data PRecord
@@ -379,6 +399,7 @@ data PRecord
   | PRecordIndentOpen Row Col
   | PRecordIndentEnd Row Col
   | PRecordIndentField Row Col
+  deriving Show
 
 
 data PTuple
@@ -390,6 +411,7 @@ data PTuple
   | PTupleIndentEnd Row Col
   | PTupleIndentExpr1 Row Col
   | PTupleIndentExprN Row Col
+  deriving Show
 
 
 data PList
@@ -401,6 +423,7 @@ data PList
   | PListIndentOpen Row Col
   | PListIndentEnd Row Col
   | PListIndentExpr Row Col
+  deriving Show
 
 
 
@@ -415,6 +438,7 @@ data Type
   | TSpace Space Row Col
   --
   | TIndentStart Row Col
+  deriving Show
 
 
 data TRecord
@@ -432,6 +456,7 @@ data TRecord
   | TRecordIndentColon Row Col
   | TRecordIndentType Row Col
   | TRecordIndentEnd Row Col
+  deriving Show
 
 
 data TTuple
@@ -443,6 +468,7 @@ data TTuple
   | TTupleIndentType1 Row Col
   | TTupleIndentTypeN Row Col
   | TTupleIndentEnd Row Col
+  deriving Show
 
 
 
@@ -453,12 +479,14 @@ data Char
   = CharEndless
   | CharEscape Escape
   | CharNotString Word16
+  deriving Show
 
 
 data String
   = StringEndless_Single
   | StringEndless_Multi
   | StringEscape Escape
+  deriving Show
 
 
 data Escape
@@ -466,6 +494,7 @@ data Escape
   | BadUnicodeFormat Word16
   | BadUnicodeCode Word16
   | BadUnicodeLength Word16 Int Int
+  deriving Show
 
 
 data Number
@@ -473,6 +502,7 @@ data Number
   | NumberDot Int
   | NumberHexDigit
   | NumberNoLeadingZero
+  deriving Show
 
 
 
@@ -482,6 +512,7 @@ data Number
 data Space
   = HasTab
   | EndlessMultiComment
+  deriving Show
 
 
 

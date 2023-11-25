@@ -28,6 +28,7 @@ import qualified Reporting.Annotation as A
 
 newtype Localizer =
   Localizer (Map.Map Name.Name Import)
+  deriving Show
 
 
 data Import =
@@ -35,11 +36,13 @@ data Import =
     { _alias :: Maybe Name.Name
     , _exposing :: Exposing
     }
+    deriving Show
 
 
 data Exposing
   = All
   | Only (Set.Set Name.Name)
+  deriving Show
 
 
 empty :: Localizer

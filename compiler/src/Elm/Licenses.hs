@@ -24,6 +24,7 @@ import qualified Reporting.Suggest as Suggest
 
 newtype License =
   License Json.String
+  deriving Show
 
 
 bsd3 :: License

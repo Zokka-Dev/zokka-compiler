@@ -47,6 +47,7 @@ data Type
   | Unit
   | Tuple Type Type (Maybe Type)
   | Alias ModuleName.Canonical Name.Name [(Name.Name, Type)] Type
+  deriving Show
 
 
 data Super
@@ -54,13 +55,14 @@ data Super
   | Comparable
   | Appendable
   | CompAppend
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 data Extension
   = Closed
   | FlexOpen Name.Name
   | RigidOpen Name.Name
+  deriving Show
 
 
 iteratedDealias :: Type -> Type

@@ -161,6 +161,9 @@ getKernel name@(Utf8.Utf8 ba#) =
 isKernel :: Name -> Bool
 isKernel = Utf8.startsWith prefix_kernel
 
+isBasics :: Name -> Bool
+isBasics name = name == basics
+
 isNumberType :: Name -> Bool
 isNumberType = Utf8.startsWith prefix_number
 

@@ -51,6 +51,7 @@ import Data.Maybe (mapMaybe)
 data Outline
   = App AppOutline
   | Pkg PkgOutline
+  deriving Show
 
 
 data AppOutline =
@@ -63,6 +64,7 @@ data AppOutline =
     , _app_test_indirect :: Map.Map Pkg.Name V.Version
     , _app_zelm_package_overrides :: [PkgOverride.PackageOverrideData]
     }
+    deriving Show
 
 
 data PkgOutline =
@@ -76,11 +78,13 @@ data PkgOutline =
     , _pkg_test_deps :: Map.Map Pkg.Name Con.Constraint
     , _pkg_elm_version :: Con.Constraint
     }
+    deriving Show
 
 
 data Exposed
   = ExposedList [ModuleName.Raw]
   | ExposedDict [(Json.String, [ModuleName.Raw])]
+  deriving Show
 
 
 data SrcDir

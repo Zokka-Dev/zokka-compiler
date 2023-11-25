@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Reporting.Annotation
   ( Located(..)
   , Position(..)
@@ -29,6 +30,8 @@ data Located a =
   At Region a  -- PERF see if unpacking region is helpful
 
 
+deriving instance Show a => Show (Located a)
+
 instance Functor Located where
   fmap f (At region a) =
     At region (f a)
@@ -57,7 +60,7 @@ data Position =
   Position
     {-# UNPACK #-} !Word16
     {-# UNPACK #-} !Word16
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 at :: Position -> Position -> a -> Located a
@@ -70,7 +73,7 @@ at start end a =
 
 
 data Region = Region Position Position
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 toRegion :: Located a -> Region

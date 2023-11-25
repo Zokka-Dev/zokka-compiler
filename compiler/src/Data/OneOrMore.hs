@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Data.OneOrMore
   ( OneOrMore(..)
   , one
@@ -20,6 +21,8 @@ import Prelude hiding (map)
 data OneOrMore a
   = One a
   | More (OneOrMore a) (OneOrMore a)
+
+deriving instance Show a => Show (OneOrMore a)
 
 
 one :: a -> OneOrMore a

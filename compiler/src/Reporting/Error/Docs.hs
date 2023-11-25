@@ -30,6 +30,7 @@ data Error
   | SyntaxProblem SyntaxProblem
   | NameProblems (NE.List NameProblem)
   | DefProblems (NE.List DefProblem)
+  deriving Show
 
 
 data SyntaxProblem
@@ -39,17 +40,20 @@ data SyntaxProblem
   | Space E.Space Row Col
   | Comma Row Col
   | BadEnd Row Col
+  deriving Show
 
 
 data NameProblem
   = NameDuplicate Name.Name A.Region A.Region
   | NameOnlyInDocs Name.Name A.Region
   | NameOnlyInExports Name.Name A.Region
+  deriving Show
 
 
 data DefProblem
   = NoComment Name.Name A.Region
   | NoAnnotation Name.Name A.Region
+  deriving Show
 
 
 

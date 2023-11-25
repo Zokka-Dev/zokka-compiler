@@ -25,7 +25,7 @@ import Data.Binary
 
 
 newtype ZeroBased = ZeroBased Int
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 
 first :: ZeroBased

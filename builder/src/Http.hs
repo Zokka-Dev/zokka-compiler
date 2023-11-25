@@ -116,6 +116,7 @@ data Error
   = BadUrl String String
   | BadHttp String HttpExceptionContent
   | BadMystery String SomeException
+  deriving Show
 
 
 handleHttpException :: String -> (Error -> e) -> HttpException -> IO (Either e a)

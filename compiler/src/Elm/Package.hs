@@ -5,13 +5,14 @@ module Elm.Package
   , Author
   , Project
   , Canonical(..)
+  , isCore
   , isKernel
   , toChars
   , toUrl
   , toFilePath
   , toJsonString
   --
-  , dummyName, kernel, core
+  , dummyName, kernel, core, zelmCore
   , browser, virtualDom, html
   , json, http, url
   , webgl, linearAlgebra
@@ -84,6 +85,10 @@ isKernel :: Name -> Bool
 isKernel (Name author _) =
   author == elm || author == elm_explorations || author == zelm || author == zelm_explorations
 
+-- FIXME: Need to think about how to make this better
+isCore :: Name -> Bool
+isCore name = name == core || name == zelmCore
+
 
 toChars :: Name -> String
 toChars (Name author project) =
@@ -130,6 +135,10 @@ kernel =
 core :: Name
 core =
   toName elm "core"
+
+zelmCore :: Name
+zelmCore =
+  toName zelm "core-1-0"
 
 
 {-# NOINLINE browser #-}

@@ -80,14 +80,14 @@ data Test
   | IsChr ES.String
   | IsStr ES.String
   | IsBool Bool
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 
 data Path
   = Index Index.ZeroBased Path
   | Unbox Path
   | Empty
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 

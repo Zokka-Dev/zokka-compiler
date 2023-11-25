@@ -386,7 +386,7 @@ funcHelpers =
 generateCall :: Mode.Mode -> Opt.Expr -> [Opt.Expr] -> JS.Expr
 generateCall mode func args =
   case func of
-    Opt.VarGlobal global@(Opt.Global (ModuleName.Canonical pkg _) _) | pkg == Pkg.core ->
+    Opt.VarGlobal global@(Opt.Global (ModuleName.Canonical pkg _) _) | Pkg.isCore pkg ->
       generateCoreCall mode global args
 
     Opt.VarBox _ ->

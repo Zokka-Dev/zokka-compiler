@@ -38,13 +38,14 @@ data Pattern
   = Anything
   | Literal Literal
   | Ctor Can.Union Name.Name [Pattern]
+  deriving Show
 
 
 data Literal
   = Chr ES.String
   | Str ES.String
   | Int Int
-  deriving (Eq)
+  deriving (Show, Eq)
 
 
 
@@ -191,12 +192,14 @@ nilName = "[]"
 data Error
   = Incomplete A.Region Context [Pattern]
   | Redundant A.Region A.Region Int
+  deriving Show
 
 
 data Context
   = BadArg
   | BadDestruct
   | BadCase
+  deriving Show
 
 
 
