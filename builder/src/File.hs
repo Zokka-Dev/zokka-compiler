@@ -38,6 +38,7 @@ import Data.Vector.Internal.Check (HasCallStack)
 import GHC.Exception (prettyCallStack)
 import GHC.Stack (callStack)
 import Control.Monad (msum)
+import Logging.Logger (printLog)
 
 
 
@@ -172,11 +173,11 @@ encodingError path ioErr =
 writeBuilder :: FilePath -> B.Builder -> IO ()
 writeBuilder path builder =
   IO.withBinaryFile path IO.WriteMode $ \handle ->
-    do  print "writeBuilder 1"
+    do  printLog "writeBuilder 1"
         IO.hSetBuffering handle (IO.BlockBuffering Nothing)
-        print "writeBuilder 2"
+        printLog "writeBuilder 2"
         B.hPutBuilder handle builder
-        print "writeBuilder 3"
+        printLog "writeBuilder 3"
 
 
 
@@ -190,11 +191,11 @@ writePackage destination archive =
       return ()
 
     entry:entries ->
-      do  print ("writePackage to "  ++ destination)
+      do  printLog ("writePackage to "  ++ destination)
           destinationExists <- Dir.doesDirectoryExist destination
-          print ("destination: " ++ destination ++ " exists: " ++ (show destinationExists))
+          printLog ("destination: " ++ destination ++ " exists: " ++ (show destinationExists))
           let root = length (Zip.eRelativePath entry)
-          print ("this is our entry: " ++ (Zip.eRelativePath entry))
+          printLog ("this is our entry: " ++ (Zip.eRelativePath entry))
           mapM_ (writeEntry destination root) entries
 
 
@@ -210,10 +211,10 @@ writeEntry destination root entry =
   then
       if not (null path) && last path == '/'
       then do
-        print ("writeEntry 0: " ++ path)
+        printLog ("writeEntry 0: " ++ path)
         Dir.createDirectoryIfMissing True (destination </> path)
       else do 
-        print ("writeEntry 1: " ++ path)
+        printLog ("writeEntry 1: " ++ path)
         LBS.writeFile (destination </> path) (Zip.fromEntry entry)
   else
       return ()
@@ -228,9 +229,9 @@ writePackageReturnElmJson destination archive =
 
     entry:entries ->
       do  let root = length (Zip.eRelativePath entry)
-          print ("writePackageReturnElmJson to "  ++ destination)
+          printLog ("writePackageReturnElmJson to "  ++ destination)
           exists <- Dir.doesDirectoryExist destination
-          print ("writePackageReturnElmJson destination: " ++ destination ++ " exists: " ++ (show exists))
+          printLog ("writePackageReturnElmJson destination: " ++ destination ++ " exists: " ++ (show exists))
           listOfMaybeElmJsons <- traverse (writeEntryReturnElmJson destination root) entries
           let firstElmJson = msum listOfMaybeElmJsons
           pure firstElmJson
@@ -248,12 +249,12 @@ writeEntryReturnElmJson destination root entry =
       if not (null path) && last path == '/'
       then 
         do
-          print ("writeEntryReturnElmJson 0: " ++ path)
+          printLog ("writeEntryReturnElmJson 0: " ++ path)
           Dir.createDirectoryIfMissing True (destination </> path)
           pure Nothing
       else 
         do
-          print ("writeEntryReturnElmJson 1: " ++ path)
+          printLog ("writeEntryReturnElmJson 1: " ++ path)
           let bytestring = Zip.fromEntry entry
           LBS.writeFile (destination </> path) bytestring
           pure (if path == "elm.json" then Just (BS.toStrict bytestring) else Nothing)

@@ -40,6 +40,7 @@ import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import Reporting.Exit (RegistryProblem(..))
 import Stuff (ZelmCustomRepositoryConfigFilePath(unZelmCustomRepositoryConfigFilePath))
 import qualified Data.Utf8 as Utf8
+import Logging.Logger (printLog)
 
 
 
@@ -350,7 +351,7 @@ getConstraints pkg vsn =
                                     -- FIXME: Deal with the SHA hash instead of ignoring it
                                       \(_, archive) ->
                                         -- FIXME: Do I need to do this createDirectoryIfMissing?
-                                        Right <$> do { print "hello world! FIXME"; Dir.createDirectoryIfMissing True home; File.writePackageReturnElmJson (Stuff.package cache pkg vsn) archive }
+                                        Right <$> do { printLog "hello world! FIXME"; Dir.createDirectoryIfMissing True home; File.writePackageReturnElmJson (Stuff.package cache pkg vsn) archive }
                                   case result of
                                     -- In this case we should've successfully written elm.json to our cache so let's take a look
                                     -- FIXME: I don't like this implicit dependence

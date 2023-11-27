@@ -199,6 +199,9 @@ Common zelm-common
         Type.UnionFind
         Paths_elm
 
+        -- Logging
+        Logging.Logger
+
     Build-depends:
         ansi-terminal,
         ansi-wl-pprint < 1,

@@ -30,12 +30,13 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
 import Terminal (Parser(..))
-import qualified Debug.Trace as Debug
 import qualified Data.Map as Map
 import Elm.Details (Foreign(..))
 import qualified Data.Utf8 as Utf8
 import Elm.Package (Name(..))
 import qualified Elm.Package as Pkg
+import Control.Monad (when)
+import Logging.Logger (setLogFlag, printLog)
 
 
 
@@ -49,6 +50,7 @@ data Flags =
     , _output :: Maybe Output
     , _report :: Maybe ReportType
     , _docs :: Maybe FilePath
+    , _verbose :: Bool
     }
 
 
@@ -70,8 +72,9 @@ type Task a = Task.Task Exit.Make a
 
 
 run :: [FilePath] -> Flags -> IO ()
-run paths flags@(Flags _ _ _ report _) =
-  do  style <- getStyle report
+run paths flags@(Flags _ _ _ report _ verbose) =
+  do  when verbose (setLogFlag True)
+      style <- getStyle report
       maybeRoot <- Stuff.findRoot
       Reporting.attemptWithStyle style Exit.makeToReport $
         case maybeRoot of
@@ -80,13 +83,13 @@ run paths flags@(Flags _ _ _ report _) =
 
 
 runHelp :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> IO (Either Exit.Make ())
-runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
+runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs _) =
   BW.withScope $ \scope ->
   Stuff.withRootLock root $ Task.run $
-  do  desiredMode <- Debug.traceShowId <$> getMode debug optimize
-      _ <- Task.io (print "Made it to RUN 1")
+  do  desiredMode <- getMode debug optimize
+      _ <- Task.io (printLog "Made it to RUN 1")
       details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
-      _ <- Task.io (print "Made it to RUN 2")
+      _ <- Task.io (printLog "Made it to RUN 2")
       case paths of
         [] ->
           do  exposed <- getExposed details
@@ -94,7 +97,7 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
 
         p:ps ->
           do  artifacts <- buildPaths style root details (NE.List p ps)
-              Task.io (print "Made it to RUN 3")
+              Task.io (printLog "Made it to RUN 3")
               case maybeOutput of
                 Nothing ->
                   case getMains artifacts of
@@ -116,9 +119,9 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
                   case getNoMains artifacts of
                     [] ->
                       do  builder <- toBuilder root details desiredMode artifacts
-                          Task.io (print "Made it to RUN 4")
+                          Task.io (printLog "Made it to RUN 4")
                           generate style target builder (Build.getRootNames artifacts)
-                          Task.io (print "Made it to RUN 5")
+                          Task.io (printLog "Made it to RUN 5")
 
                     name:names ->
                       Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
@@ -255,11 +258,11 @@ generate :: Reporting.Style -> FilePath -> B.Builder -> NE.List ModuleName.Raw -
 generate style target builder names =
   Task.io $
     do  Dir.createDirectoryIfMissing True (FP.takeDirectory target)
-        print "generate 1"
+        printLog "generate 1"
         File.writeBuilder target builder
-        print "generate 2"
+        printLog "generate 2"
         Reporting.reportGenerate style names target
-        print "generate 3"
+        printLog "generate 3"
 
 
 

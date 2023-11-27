@@ -58,7 +58,6 @@ import qualified Reporting.Annotation as A
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
-import qualified Debug.Trace as Debug
 import Elm.PackageOverrideData (PackageOverrideData(..))
 import Data.Function ((&))
 import Data.Map ((!))
@@ -69,6 +68,7 @@ import qualified Reporting.Annotation as Report.Annotation
 import qualified Elm.PackageOverrideData as PackageOverrideData
 import Data.Tuple (swap)
 import qualified Elm.Constraint as C
+import Logging.Logger (printLog)
 
 
 
@@ -185,7 +185,7 @@ load :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.Details Detai
 load style scope root =
   do  newTime <- File.getTime (root </> "elm.json")
       maybeDetails <- File.readBinary (Stuff.details root)
-      print "Made it to LOAD 1"
+      printLog "Made it to LOAD 1"
       case maybeDetails of
         Nothing ->
           generate style scope root newTime
@@ -204,7 +204,7 @@ generate :: Reporting.Style -> BW.Scope -> FilePath -> File.Time -> IO (Either E
 generate style scope root time =
   Reporting.trackDetails style $ \key ->
     do  result <- initEnv key scope root
-        print "Made it to GENERATE 1"
+        printLog "Made it to GENERATE 1"
         case result of
           Left exit ->
             return (Left exit)
@@ -271,28 +271,6 @@ verifyPkg env time (Outline.PkgOutline pkg _ _ _ exposed direct testDirect elm) 
   else
     Task.throw $ Exit.DetailsBadElmInPkg elm
 
-  -- PackageOverrideData
-  --   { _overridePackageName :: !Name
-  --   , _overridePackageVersion :: !Version
-  --   , _originalPackageName :: !Name
-  --   , _originalPackageVersion :: !Version
-  --   }
-overrideSolutionDetails :: PackageOverrideData -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name Solver.Details
-overrideSolutionDetails
-  PackageOverrideData{ _overridePackageName=overridePackageName, _overridePackageVersion=overridePackageVersion, _originalPackageName=originalPackageName }
-  originalSolution = originalSolution
-    & Map.delete originalPackageName
-    & Map.insert overridePackageName (Solver.Details overridePackageVersion packageDeps)
-    where
-      Solver.Details _ packageDeps = originalSolution ! originalPackageName
-
-overrideDirectDeps :: PackageOverrideData -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version
-overrideDirectDeps
-  PackageOverrideData{ _overridePackageName=overridePackageName, _overridePackageVersion=overridePackageVersion, _originalPackageName=originalPackageName }
-  originalDeps = originalDeps
-    & Map.delete originalPackageName
-    & Map.insert overridePackageName overridePackageVersion
-
 groupByOriginalPkg :: [PackageOverrideData] -> Map.Map Pkg.Name (Pkg.Name, V.Version)
 groupByOriginalPkg packageOverrides =
   Map.fromListWith 
@@ -305,16 +283,8 @@ verifyApp env time outline@(Outline.AppOutline elmVersion srcDirs direct _ _ _ p
   then
     do  stated <- checkAppDeps outline
         noredinkexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/NoRedInk/elm-json-decode-pipeline/1.0.0"
-        Task.io $ print (show noredinkexists ++ "does the NoRedInk file path exist before verifying constraints")
-        zelmexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/zelm/core-1-0/1.0.5"
-        Task.io $ print (show zelmexists ++ "does the zelm file path exist before verifying constraints")
+        Task.io $ printLog (show noredinkexists ++ "does the NoRedInk file path exist before verifying constraints")
         actual <- verifyConstraints env (Map.map Con.exactly stated)
-        noredinkexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/NoRedInk/elm-json-decode-pipeline/1.0.0"
-        Task.io $ print (show noredinkexists ++ "does the NoRedInk file path exist after verifying constraints")
-        zelmexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/zelm/core-1-0/1.0.5"
-        Task.io $ print (show zelmexists ++ "does the zelm file path exist after verifying constraints")
-        let allDepsWithOverrides = foldr overrideSolutionDetails actual packageOverrides
-        let directDepsWithOverrides = foldr overrideDirectDeps direct packageOverrides
         -- FIXME: Think about what to do with multiple packageOverrides that have the same keys (probably shouldn't be possible?)
         let originalPkgToOverridingPkg = groupByOriginalPkg packageOverrides
         if Map.size stated == Map.size actual
@@ -382,7 +352,7 @@ hasLocked msg action =
   ]
   where
     handler :: BlockedIndefinitelyOnMVar -> IO a
-    handler exception = print ("MVAR: " ++ msg) >> throwIO exception
+    handler exception = printLog ("MVAR: " ++ msg) >> throwIO exception
 
 genericErrorHandler :: String -> IO a -> IO a
 genericErrorHandler msg action =
@@ -391,14 +361,10 @@ genericErrorHandler msg action =
   ]
   where
     handler :: SomeException -> IO a
-    handler exception = print ("SOME EXCEPTION: " ++ msg ++ " | exception was: " ++ show exception) >> throwIO exception
+    handler exception = printLog ("SOME EXCEPTION: " ++ msg ++ " | exception was: " ++ show exception) >> throwIO exception
 
 
 -- VERIFY DEPENDENCIES
-
--- Think about how to merge this in
-invertMap :: (Ord k, Ord v) => Map.Map k v -> Map.Map v k
-invertMap forwardMap = Map.fromList (fmap swap (Map.toList forwardMap))
 
 verifyDependencies :: Env -> File.Time -> ValidOutline -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name a -> Map.Map Pkg.Name (Pkg.Name, V.Version) -> Task Details
 verifyDependencies (Env key scope root cache manager _ zelmRegistries packageOverridesCache) time outline solution directDeps originalPkgToOverridingPkg =
@@ -425,17 +391,17 @@ verifyDependencies (Env key scope root cache manager _ zelmRegistries packageOve
   in
   Task.eio id $
   do  Reporting.report key (Reporting.DStart (Map.size solution))
-      print "Made it to VERIFYDEPENDENCIES 0"
+      printLog "Made it to VERIFYDEPENDENCIES 0"
       mvar <- newEmptyMVar
-      print "Made it to VERIFYDEPENDENCIES 1"
-      print ("SOLUTION: " ++ show solution)
+      printLog "Made it to VERIFYDEPENDENCIES 1"
+      printLog ("SOLUTION: " ++ show solution)
       mvars <- Stuff.withRegistryLock cache $
         Map.traverseWithKey (\k details -> fork (verifyDep key (generateBuildData k (extractVersionFromDetails details)) manager zelmRegistries mvar solution (extractConstraintsFromDetails details))) solution
-      print ("Made it to VERIFYDEPENDENCIES 2: " ++ show (Map.keys mvars))
+      printLog ("Made it to VERIFYDEPENDENCIES 2: " ++ show (Map.keys mvars))
       putMVar mvar mvars
-      print "Made it to VERIFYDEPENDENCIES 3"
-      deps <- Map.traverseWithKey (\n m -> hasLocked (show n) (do { r <- readMVar m; print ("deps result for " ++ show n); pure r })) mvars
-      print "Made it to VERIFYDEPENDENCIES 4"
+      printLog "Made it to VERIFYDEPENDENCIES 3"
+      deps <- Map.traverseWithKey (\n m -> hasLocked (show n) (do { r <- readMVar m; printLog ("deps result for " ++ show n); pure r })) mvars
+      printLog "Made it to VERIFYDEPENDENCIES 4"
       case sequence deps of
         Left _ ->
           do  home <- Stuff.getElmHome
@@ -445,7 +411,7 @@ verifyDependencies (Env key scope root cache manager _ zelmRegistries packageOve
         Right artifacts ->
           let
             objs = Map.foldr addObjects Opt.empty artifacts
-            ifaces = Map.foldrWithKey (addInterfaces directDeps) Map.empty (Debug.traceShow ("artifacts in ifaces: " ++ show (Map.map (Map.keys . _ifaces) artifacts)) artifacts)
+            ifaces = Map.foldrWithKey (addInterfaces directDeps) Map.empty artifacts
             foreigns = Map.map (OneOrMore.destruct Foreign) $ Map.foldrWithKey gatherForeigns Map.empty $ Map.intersection artifacts directDeps
             details = Details time outline 0 Map.empty foreigns (ArtifactsFresh ifaces objs)
           in
@@ -511,7 +477,7 @@ verifyDep key buildData manager zelmRegistry depsMVar solution directDeps =
     downloadPackageAction = downloadPackageToFilePath cacheFilePath zelmRegistry manager primaryPkg primaryPkgVersion
   in
   do  exists <- Dir.doesDirectoryExist cacheFilePath
-      print (show exists ++ "A0" ++ cacheFilePath)
+      printLog (show exists ++ "A0" ++ cacheFilePath)
       exists <- Dir.doesDirectoryExist (cacheFilePath </> "src")
       if exists
         then
@@ -623,7 +589,7 @@ build key buildData depsMVar f fs =
 
   in
   do  eitherOutline <- Outline.read cacheFilePath
-      print ("COMPILING: " ++ show pkg ++ show vsn ++ " OUTLINE: " ++ show eitherOutline)
+      printLog ("COMPILING: " ++ show pkg ++ show vsn ++ " OUTLINE: " ++ show eitherOutline)
       case eitherOutline of
         Left _ ->
           do  Reporting.report key Reporting.DBroken
@@ -635,22 +601,22 @@ build key buildData depsMVar f fs =
 
         Right (Outline.Pkg (Outline.PkgOutline _ _ _ _ exposed deps _ _)) ->
           do  allDeps <- readMVar depsMVar
-              when (isZelm pkg) (print $ "zelm package: allDeps keys are" ++ show (Map.keys allDeps))
+              when (isZelm pkg) (printLog $ "zelm package: allDeps keys are" ++ show (Map.keys allDeps))
               -- FIXME: Think about whether there is a more elegant way of doing this
-              when (isZelm pkg) (print $ "zelm package: deps keys are" ++ show (Map.keys deps))
+              when (isZelm pkg) (printLog $ "zelm package: deps keys are" ++ show (Map.keys deps))
               directDeps <- traverse readMVar (Map.intersection allDeps deps)
-              when (isZelm pkg) (print $ "zelm package: directDeps are" ++ show directDeps)
+              when (isZelm pkg) (printLog $ "zelm package: directDeps are" ++ show directDeps)
               case sequence directDeps of
                 Left x ->
                   do  Reporting.report key Reporting.DBroken
-                      print ("bad dep! while building: " ++ show pkg ++ "|" ++ show x)
+                      printLog ("bad dep! while building: " ++ show pkg ++ "|" ++ show x)
                       return $ Left $ Nothing
 
                 Right directArtifacts ->
                   do  let src = cacheFilePath </> "src"
                       let foreignDeps = gatherForeignInterfaces directArtifacts
-                      when (isZelm pkg) (print ("zelm package: directArtifacts" ++ show directArtifacts))
-                      when (isZelm pkg) (print ("zelm package: foreignDeps" ++ show foreignDeps))
+                      when (isZelm pkg) (printLog ("zelm package: directArtifacts" ++ show directArtifacts))
+                      when (isZelm pkg) (printLog ("zelm package: foreignDeps" ++ show foreignDeps))
                       let exposedDict = Map.fromKeys (\_ -> ()) (Outline.flattenExposed exposed)
                       docsStatus <- getDocsStatusFromFilePath cacheFilePath
                       mvar <- newEmptyMVar
@@ -658,26 +624,26 @@ build key buildData depsMVar f fs =
                       putMVar mvar mvars
                       mapM_ readMVar mvars
                       maybeStatuses <- traverse readMVar =<< readMVar mvar
-                      when (isZelm pkg) (print "zelm package: past maybe statuses")
-                      when (isZelm pkg) (print ("zelm package: maybeStatuses that were Nothing" ++ show (Map.filter Maybe.isNothing maybeStatuses)))
+                      when (isZelm pkg) (printLog "zelm package: past maybe statuses")
+                      when (isZelm pkg) (printLog ("zelm package: maybeStatuses that were Nothing" ++ show (Map.filter Maybe.isNothing maybeStatuses)))
                       case sequence maybeStatuses of
                         Nothing ->
                           do  Reporting.report key Reporting.DBroken
-                              when (isZelm pkg) (print "zelm package: maybeStatuses were Nothing")
+                              when (isZelm pkg) (printLog "zelm package: maybeStatuses were Nothing")
                               return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
 
                         Just statuses ->
                           do  rmvar <- newEmptyMVar
-                              when (isZelm pkg) (print "zelm package: past rmvar")
+                              when (isZelm pkg) (printLog "zelm package: past rmvar")
                               let extractDepsFromStatus status = case status of (SLocal _ deps _) -> deps; _ -> Map.empty
-                              when (isZelm pkg) (print ("statuses: " ++ show (fmap extractDepsFromStatus statuses)))
+                              when (isZelm pkg) (printLog ("statuses: " ++ show (fmap extractDepsFromStatus statuses)))
                               let compileAction status = genericErrorHandler ("This package failed: " ++ show pkg) (compile pkg rmvar status)
                               rmvars <- traverse (fork . compileAction) statuses
-                              when (isZelm pkg) (print "zelm package: past rmvars")
+                              when (isZelm pkg) (printLog "zelm package: past rmvars")
                               putMVar rmvar rmvars
-                              when (isZelm pkg) (print "zelm package: past putMVar")
+                              when (isZelm pkg) (printLog "zelm package: past putMVar")
                               maybeResults <- traverse readMVar rmvars
-                              when (isZelm pkg) (print "zelm package: past just statuses")
+                              when (isZelm pkg) (printLog "zelm package: past just statuses")
                               case sequence maybeResults of
                                 Nothing ->
                                   do  Reporting.report key Reporting.DBroken
@@ -798,12 +764,12 @@ crawlModule foreignDeps mvar pkg src docsStatus name =
         Nothing ->
           if exists then
             do
-              when (isZelm pkg) (print $ "module " ++ show name ++ " is in exists branch")
+              when (isZelm pkg) (printLog $ "module " ++ show name ++ " is in exists branch")
               crawlFile foreignDeps mvar pkg src docsStatus name path
 
           else if Pkg.isKernel pkg && Name.isKernel name then
             do
-              when (isZelm pkg) (print $ "module " ++ show name ++ " is in kernel branch")
+              when (isZelm pkg) (printLog $ "module " ++ show name ++ " is in kernel branch")
               crawlKernel foreignDeps mvar pkg src name
 
           else
@@ -816,9 +782,9 @@ crawlFile foreignDeps mvar pkg src docsStatus expectedName path =
       case Parse.fromByteString (Parse.Package pkg) bytes of
         Right modul@(Src.Module (Just (A.At _ actualName)) _ _ imports _ _ _ _ _) | expectedName == actualName ->
           do
-              when (isZelm pkg) (print $ "crawlFile (imports) " ++ show src ++ "|" ++ show path ++ " imports are " ++ show (fmap (Src._import) imports))
+              when (isZelm pkg) (printLog $ "crawlFile (imports) " ++ show src ++ "|" ++ show path ++ " imports are " ++ show (fmap (Src._import) imports))
               deps <- crawlImports foreignDeps mvar pkg src imports
-              when (isZelm pkg) (print $ "crawlFile (deps) " ++ show src ++ "|" ++ show path ++ " deps are " ++ show deps)
+              when (isZelm pkg) (printLog $ "crawlFile (deps) " ++ show src ++ "|" ++ show path ++ " deps are " ++ show deps)
               return (Just (SLocal docsStatus deps modul))
 
         _ ->
@@ -829,7 +795,7 @@ crawlImports :: Map.Map ModuleName.Raw ForeignInterface -> MVar StatusDict -> Pk
 crawlImports foreignDeps mvar pkg src imports =
   do  statusDict <- takeMVar mvar
       let deps = Map.fromList (map (\i -> (Src.getImportName i, ())) imports)
-      when (isZelm pkg) (print $ "crawlImports " ++ show src ++ " deps are " ++ show deps)
+      when (isZelm pkg) (printLog $ "crawlImports " ++ show src ++ " deps are " ++ show deps)
       let news = Map.difference deps statusDict
       mvars <- Map.traverseWithKey (const . fork . crawlModule foreignDeps mvar pkg src DocsNotNeeded) news
       putMVar mvar (Map.union mvars statusDict)
@@ -879,23 +845,23 @@ compile pkg mvar status =
   case status of
     SLocal docsStatus deps modul ->
       do  resultsDict <- readMVar mvar
-          when (isZelm pkg) (print "made it past resultsDict")
-          when (isZelm pkg ) (print ("all keys in resultsDict: " ++ show (Map.keys resultsDict)))
-          when (isZelm pkg ) (print ("all keys in deps: " ++ show (Map.keys deps)))
+          when (isZelm pkg) (printLog "made it past resultsDict")
+          when (isZelm pkg ) (printLog ("all keys in resultsDict: " ++ show (Map.keys resultsDict)))
+          when (isZelm pkg ) (printLog ("all keys in deps: " ++ show (Map.keys deps)))
           let thingToRead = Map.intersection resultsDict deps
-          when (isZelm pkg ) (print ("all keys in thingToRead: " ++ show (Map.keys thingToRead)))
+          when (isZelm pkg ) (printLog ("all keys in thingToRead: " ++ show (Map.keys thingToRead)))
           maybeResults <- Map.traverseWithKey (\k v -> hasLocked ("compiling this pkg: " ++ show pkg ++ "reading this module: " ++ show k) (readMVar v)) (Map.intersection resultsDict deps)
-          when (isZelm pkg) (print "made it past maybeResults")
+          when (isZelm pkg) (printLog "made it past maybeResults")
           case sequence maybeResults of
             Nothing -> do
-              when (isZelm pkg) (print "nothing branch of sequence maybeResults")
+              when (isZelm pkg) (printLog "nothing branch of sequence maybeResults")
               return Nothing
 
             Just results ->
               case Compile.compile pkg (Map.mapMaybe getInterface results) modul of
                 Left compileError ->
                   do
-                    print ("compileError for " ++ show pkg ++ " pkg " ++ show pkg ++ "module: " ++ show modul ++ ": " ++ show compileError)
+                    printLog ("compileError for " ++ show pkg ++ " pkg " ++ show pkg ++ "module: " ++ show modul ++ ": " ++ show compileError)
                     return Nothing
 
                 Right (Compile.Artifacts canonical annotations objects) ->
@@ -1018,12 +984,12 @@ downloadPackage cache zelmRegistries manager pkg vsn =
     Just (Registry.RepositoryUrlKey repositoryUrl) ->
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-        print (show exists ++ "A" ++ Stuff.package cache pkg vsn)
+        printLog (show exists ++ "A" ++ Stuff.package cache pkg vsn)
         downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn
     Just (Registry.PackageUrlKey packageUrl) ->
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-        print (show exists ++ "B" ++ Stuff.package cache pkg vsn)
+        printLog (show exists ++ "B" ++ Stuff.package cache pkg vsn)
         downloadPackageDirectly cache packageUrl manager pkg vsn
     Nothing ->
       let
@@ -1040,12 +1006,12 @@ downloadPackageToFilePath filePath zelmRegistries manager pkg vsn =
     Just (Registry.RepositoryUrlKey repositoryUrl) ->
       do
         exists <- Dir.doesDirectoryExist filePath
-        print (show exists ++ "A (toFilePath)" ++ filePath)
+        printLog (show exists ++ "A (toFilePath)" ++ filePath)
         downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl manager pkg vsn
     Just (Registry.PackageUrlKey packageUrl) ->
       do
         exists <- Dir.doesDirectoryExist filePath
-        print (show exists ++ "B (toFilePath)" ++ filePath)
+        printLog (show exists ++ "B (toFilePath)" ++ filePath)
         downloadPackageDirectlyToFilePath filePath packageUrl manager
     Nothing ->
       let
@@ -1064,7 +1030,7 @@ downloadPackageDirectly cache packageUrl manager pkg vsn =
     -- FIXME: Deal with the SHA hash instead of ignoring it
       \(_, archive) ->
         Right <$> do
-          print "hello world 2! FIXME"
+          printLog "hello world 2! FIXME"
           File.writePackage (Stuff.package cache pkg vsn) archive
 
 downloadPackageDirectlyToFilePath :: FilePath -> PackageUrl -> Http.Manager -> IO (Either Exit.PackageProblem ())
@@ -1076,7 +1042,7 @@ downloadPackageDirectlyToFilePath filePath packageUrl manager =
     -- FIXME: Deal with the SHA hash instead of ignoring it
       \(_, archive) ->
         Right <$> do
-          print "hello world 2! FIXME (toFilePath)"
+          printLog "hello world 2! FIXME (toFilePath)"
           File.writePackage filePath archive
 
 
@@ -1088,7 +1054,7 @@ downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
   do  eitherByteString <-
         Http.get manager url [] id (return . Right)
       exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-      print (show exists ++ "B0" ++ Stuff.package cache pkg vsn)
+      printLog (show exists ++ "B0" ++ Stuff.package cache pkg vsn)
 
       case eitherByteString of
         Left err ->
@@ -1105,7 +1071,7 @@ downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
                   if expectedHash == Http.shaToChars sha
                   then Right <$> do
                     exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-                    print (show exists ++ "C" ++ Stuff.package cache pkg vsn)
+                    printLog (show exists ++ "C" ++ Stuff.package cache pkg vsn)
                     File.writePackage (Stuff.package cache pkg vsn) archive
                   else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
 
@@ -1119,7 +1085,7 @@ downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl manager pkg v
   do  eitherByteString <-
         Http.get manager url [] id (return . Right)
       exists <- Dir.doesDirectoryExist filePath
-      print (show exists ++ "B0 (toFilePath)" ++ filePath)
+      printLog (show exists ++ "B0 (toFilePath)" ++ filePath)
 
       case eitherByteString of
         Left err ->
@@ -1136,7 +1102,7 @@ downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl manager pkg v
                   if expectedHash == Http.shaToChars sha
                   then Right <$> do
                     exists <- Dir.doesDirectoryExist filePath
-                    print (show exists ++ "C (toFilePath)" ++ filePath)
+                    printLog (show exists ++ "C (toFilePath)" ++ filePath)
                     File.writePackage filePath archive
                   else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
 
