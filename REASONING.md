@@ -86,7 +86,7 @@ file is generated the first time you successfully run a `zelm` subcommand (e.g.
         {
             "type": "elm-package-server",
             "url": "https://package.zelm-lang.org/"
-        },
+        }
     ],
     "single-package-locations": []
 }
