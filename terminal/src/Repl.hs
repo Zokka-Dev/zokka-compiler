@@ -67,6 +67,7 @@ import qualified Reporting.Render.Code as Code
 import qualified Reporting.Report as Report
 import qualified Reporting.Task as Task
 import qualified Stuff
+import qualified Elm.Details as ModuleName
 
 
 

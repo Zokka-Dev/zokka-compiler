@@ -35,6 +35,7 @@ import qualified Data.Map as Map
 import Elm.Details (Foreign(..))
 import qualified Data.Utf8 as Utf8
 import Elm.Package (Name(..))
+import qualified Elm.Package as Pkg
 
 
 
@@ -93,6 +94,7 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
 
         p:ps ->
           do  artifacts <- buildPaths style root details (NE.List p ps)
+              Task.io (print "Made it to RUN 3")
               case maybeOutput of
                 Nothing ->
                   case getMains artifacts of
@@ -114,7 +116,9 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
                   case getNoMains artifacts of
                     [] ->
                       do  builder <- toBuilder root details desiredMode artifacts
+                          Task.io (print "Made it to RUN 4")
                           generate style target builder (Build.getRootNames artifacts)
+                          Task.io (print "Made it to RUN 5")
 
                     name:names ->
                       Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
@@ -251,8 +255,11 @@ generate :: Reporting.Style -> FilePath -> B.Builder -> NE.List ModuleName.Raw -
 generate style target builder names =
   Task.io $
     do  Dir.createDirectoryIfMissing True (FP.takeDirectory target)
+        print "generate 1"
         File.writeBuilder target builder
+        print "generate 2"
         Reporting.reportGenerate style names target
+        print "generate 3"
 
 
 

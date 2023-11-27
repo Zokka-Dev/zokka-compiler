@@ -274,7 +274,6 @@ As such Zelm hopes to
 **These are hopes not commitments.** But I do consider them valid barometers of
 whether Zelm has a project has succeeded.
 
-
 Because Zelm does not intend (at least not until 2025) to do feature
 development on the Elm language itself, Zelm makes a different set of social
 trade-offs compared to Elm itself.
@@ -287,13 +286,18 @@ and no changes to any APIs.
 **Much like the technical goals, the social goals of Zelm are very tightly
 scoped to this goal of responsiveness**.
 
-I hope that by intentionally side-stepping questions of 
+To achieve this goal of timeliness, Zelm makes two trade-offs that are very
+different from Elm itself.
 
-Zelm prefers to lead by committee rather than individual.
+1. We intentionally are side-stepping many fundamental design questions around
+   the language itself, at least until 2025.
+2. We intend to lead by committee rather than individual.
 
-We hope to have a stable roster of at least five people managing `zelm` and
-`zelm-explorations`, maybe more (although for tie-breaking purposes I'd like to
-keep the number odd).
+The first point hopefully will allow us 
+
+In particular, our eventual goal is to have a stable roster of at least five
+people managing `zelm` and `zelm-explorations`, maybe more (although for
+tie-breaking purposes I'd like to keep the number odd).
 
 # FAQ
 

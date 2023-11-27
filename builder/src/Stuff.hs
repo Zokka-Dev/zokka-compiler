@@ -12,10 +12,13 @@ module Stuff
   , withRegistryLock
   , PackageCache
   , ZelmSpecificCache
+  , PackageOverridesCache
   , getPackageCache
   , getZelmCache
+  , getPackageOverridesCache
   , registry
   , package
+  , packageOverride
   , getReplCache
   , getElmHome
   , getOrCreateZelmCustomRepositoryConfig
@@ -163,10 +166,19 @@ newtype PackageCache = PackageCache FilePath
 
 newtype ZelmSpecificCache = ZelmSpecificCache FilePath
 
+newtype PackageOverridesCache = PackageOverridesCache FilePath
+
 
 getPackageCache :: IO PackageCache
 getPackageCache =
   PackageCache <$> getCacheDir "packages"
+
+
+getPackageOverridesCache :: IO PackageOverridesCache
+getPackageOverridesCache =
+  do
+    (ZelmSpecificCache zelmSpecificCache) <- getZelmCache
+    pure $ PackageOverridesCache zelmSpecificCache
 
 
 getZelmCache :: IO ZelmSpecificCache
@@ -182,6 +194,11 @@ registry (ZelmSpecificCache dir) =
 package :: PackageCache -> Pkg.Name -> V.Version -> FilePath
 package (PackageCache dir) name version =
   dir </> Pkg.toFilePath name </> V.toChars version
+
+
+packageOverride :: PackageOverridesCache -> Pkg.Name -> V.Version -> Pkg.Name -> V.Version -> FilePath
+packageOverride (PackageOverridesCache dir) originalPkgName originalPkgVersion overridingPkgName overridingPkgVersion =
+  dir </> Pkg.toFilePath originalPkgName </> V.toChars originalPkgVersion </> Pkg.toFilePath overridingPkgName </> V.toChars overridingPkgVersion
 
 
 

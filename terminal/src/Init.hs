@@ -70,7 +70,7 @@ init =
         Left problem ->
           return (Left (Exit.InitRegistryProblem problem))
 
-        Right (Solver.Env cache _ connection registry) ->
+        Right (Solver.Env cache _ connection registry _) ->
           do  result <- Solver.verify cache connection registry defaults
               case result of
                 Solver.Err exit ->

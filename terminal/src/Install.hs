@@ -149,7 +149,7 @@ attemptChangesHelp root env oldOutline newOutline question =
 
 
 makeAppPlan :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
-makeAppPlan (Solver.Env cache _ connection registry) pkg outline@(Outline.AppOutline _ _ direct indirect testDirect testIndirect _) =
+makeAppPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.AppOutline _ _ direct indirect testDirect testIndirect _) =
   if Map.member pkg direct then
     return AlreadyInstalled
 
@@ -212,7 +212,7 @@ makeAppPlan (Solver.Env cache _ connection registry) pkg outline@(Outline.AppOut
 
 
 makePkgPlan :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
-makePkgPlan (Solver.Env cache _ connection registry) pkg outline@(Outline.PkgOutline _ _ _ _ _ deps test _) =
+makePkgPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.PkgOutline _ _ _ _ _ deps test _) =
   if Map.member pkg deps then
     return AlreadyInstalled
   else

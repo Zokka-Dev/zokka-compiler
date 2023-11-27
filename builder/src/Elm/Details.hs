@@ -68,6 +68,7 @@ import Control.Exception (SomeException, catches, Handler (..), BlockedIndefinit
 import qualified Reporting.Annotation as Report.Annotation
 import qualified Elm.PackageOverrideData as PackageOverrideData
 import Data.Tuple (swap)
+import qualified Elm.Constraint as C
 
 
 
@@ -167,10 +168,10 @@ loadInterfaces root (Details _ _ _ _ _ extras) =
 
 
 verifyInstall :: BW.Scope -> FilePath -> Solver.Env -> Outline.Outline -> IO (Either Exit.Details ())
-verifyInstall scope root (Solver.Env cache manager connection registry) outline =
+verifyInstall scope root (Solver.Env cache manager connection registry packageOverridesCache) outline =
   do  time <- File.getTime (root </> "elm.json")
       let key = Reporting.ignorer
-      let env = Env key scope root cache manager connection registry
+      let env = Env key scope root cache manager connection registry packageOverridesCache
       case outline of
         Outline.Pkg pkg -> Task.run (verifyPkg env time pkg >> return ())
         Outline.App app -> Task.run (verifyApp env time app >> return ())
@@ -227,6 +228,7 @@ data Env =
     , _manager :: Http.Manager
     , _connection :: Solver.Connection
     , _registry :: Registry.ZelmRegistries
+    , _packageOverridesCache :: Stuff.PackageOverridesCache
     }
 
 
@@ -244,8 +246,8 @@ initEnv key scope root =
                 Left problem ->
                   return $ Left $ Exit.DetailsCannotGetRegistry problem
 
-                Right (Solver.Env cache manager connection registry) ->
-                  return $ Right (Env key scope root cache manager connection registry, outline)
+                Right (Solver.Env cache manager connection registry packageOverridesCache) ->
+                  return $ Right (Env key scope root cache manager connection registry packageOverridesCache, outline)
 
 
 
@@ -291,11 +293,11 @@ overrideDirectDeps
     & Map.delete originalPackageName
     & Map.insert overridePackageName overridePackageVersion
 
-groupByOverridingPkg :: [PackageOverrideData] -> Map.Map Pkg.Name Pkg.Name
-groupByOverridingPkg packageOverrides =
+groupByOriginalPkg :: [PackageOverrideData] -> Map.Map Pkg.Name (Pkg.Name, V.Version)
+groupByOriginalPkg packageOverrides =
   Map.fromListWith 
     const 
-    (fmap (\po -> (PackageOverrideData._overridePackageName po, PackageOverrideData._originalPackageName po)) packageOverrides)
+    (fmap (\po -> (PackageOverrideData._originalPackageName po, (PackageOverrideData._overridePackageName po, PackageOverrideData._overridePackageVersion po))) packageOverrides)
 
 verifyApp :: Env -> File.Time -> Outline.AppOutline -> Task Details
 verifyApp env time outline@(Outline.AppOutline elmVersion srcDirs direct _ _ _ packageOverrides) =
@@ -314,9 +316,9 @@ verifyApp env time outline@(Outline.AppOutline elmVersion srcDirs direct _ _ _ p
         let allDepsWithOverrides = foldr overrideSolutionDetails actual packageOverrides
         let directDepsWithOverrides = foldr overrideDirectDeps direct packageOverrides
         -- FIXME: Think about what to do with multiple packageOverrides that have the same keys (probably shouldn't be possible?)
-        let pkgToOverridingPkg = groupByOverridingPkg packageOverrides
+        let originalPkgToOverridingPkg = groupByOriginalPkg packageOverrides
         if Map.size stated == Map.size actual
-          then verifyDependencies env time (ValidApp srcDirs) allDepsWithOverrides directDepsWithOverrides pkgToOverridingPkg
+          then verifyDependencies env time (ValidApp srcDirs) actual direct originalPkgToOverridingPkg
           else Task.throw $ Exit.DetailsHandEditedDependencies
   else
     Task.throw $ Exit.DetailsBadElmInAppOutline elmVersion
@@ -334,7 +336,7 @@ checkAppDeps (Outline.AppOutline _ _ direct indirect testDirect testIndirect _) 
 
 
 verifyConstraints :: Env -> Map.Map Pkg.Name Con.Constraint -> Task (Map.Map Pkg.Name Solver.Details)
-verifyConstraints (Env _ _ _ cache _ connection registry) constraints =
+verifyConstraints (Env _ _ _ cache _ connection registry _) constraints =
   do  result <- Task.io $ Solver.verify cache connection registry constraints
       case result of
         Solver.Ok details        -> return details
@@ -398,8 +400,29 @@ genericErrorHandler msg action =
 invertMap :: (Ord k, Ord v) => Map.Map k v -> Map.Map v k
 invertMap forwardMap = Map.fromList (fmap swap (Map.toList forwardMap))
 
-verifyDependencies :: Env -> File.Time -> ValidOutline -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name a -> Map.Map Pkg.Name Pkg.Name -> Task Details
-verifyDependencies env@(Env key scope root cache _ _ _) time outline solution directDeps overridingPkgToOriginalPkg =
+verifyDependencies :: Env -> File.Time -> ValidOutline -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name a -> Map.Map Pkg.Name (Pkg.Name, V.Version) -> Task Details
+verifyDependencies (Env key scope root cache manager _ zelmRegistries packageOverridesCache) time outline solution directDeps originalPkgToOverridingPkg =
+  let
+    generateBuildData :: Pkg.Name -> V.Version -> BuildData
+    generateBuildData pkgName pkgVersion = case Map.lookup pkgName originalPkgToOverridingPkg of
+      Nothing -> BuildOriginalPackage $
+        OriginalPackageBuildData
+          { _pkg = pkgName
+          , _version = pkgVersion
+          , _buildCache = cache
+          }
+      Just (overridingPkgName, overridingPkgVersion) -> BuildWithOverridingPackage $
+        OverridingPackageBuildData
+          { _originalPkg = pkgName
+          , _originalPkgVersion = pkgVersion
+          , _overridingPkg = overridingPkgName
+          , _overridingPkgVersion = overridingPkgVersion
+          , _overridingCache = packageOverridesCache
+          }
+
+    extractVersionFromDetails (Solver.Details vsn _) = vsn
+    extractConstraintsFromDetails (Solver.Details _ constraints) = constraints
+  in
   Task.eio id $
   do  Reporting.report key (Reporting.DStart (Map.size solution))
       print "Made it to VERIFYDEPENDENCIES 0"
@@ -407,7 +430,7 @@ verifyDependencies env@(Env key scope root cache _ _ _) time outline solution di
       print "Made it to VERIFYDEPENDENCIES 1"
       print ("SOLUTION: " ++ show solution)
       mvars <- Stuff.withRegistryLock cache $
-        Map.traverseWithKey (\k v -> fork (verifyDep env mvar solution k (Map.lookup k overridingPkgToOriginalPkg) (invertMap overridingPkgToOriginalPkg) v)) solution
+        Map.traverseWithKey (\k details -> fork (verifyDep key (generateBuildData k (extractVersionFromDetails details)) manager zelmRegistries mvar solution (extractConstraintsFromDetails details))) solution
       print ("Made it to VERIFYDEPENDENCIES 2: " ++ show (Map.keys mvars))
       putMVar mvar mvars
       print "Made it to VERIFYDEPENDENCIES 3"
@@ -472,25 +495,36 @@ type Dep =
   Either (Maybe Exit.DetailsBadDep) Artifacts
 
 
--- FIXME: Look at comment on build and bubble transitively
-verifyDep :: Env -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Map.Map Pkg.Name Solver.Details -> Pkg.Name -> Maybe Pkg.Name -> Map.Map Pkg.Name Pkg.Name -> Solver.Details -> IO Dep
-verifyDep (Env key _ _ cache manager _ zelmRegistry) depsMVar solution pkg originalPkgMaybe originalPkgToOverridingPkg details@(Solver.Details vsn directDeps) =
-  do  let fingerprint = Map.intersectionWith (\(Solver.Details v _) _ -> v) solution directDeps
-      exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-      print (show exists ++ "A0" ++ Stuff.package cache pkg vsn)
-      exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn </> "src")
+verifyDep :: Reporting.DKey -> BuildData -> Http.Manager -> ZelmRegistries -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name C.Constraint -> IO Dep
+verifyDep key buildData manager zelmRegistry depsMVar solution directDeps =
+  let 
+    fingerprint = Map.intersectionWith (\(Solver.Details v _) _ -> v) solution directDeps
+    cacheFilePath = cacheFilePathFromBuildData buildData
+    -- These are the pkg names and versions that we actually perform downloading and error reporting on
+    (primaryPkg, primaryPkgVersion) =
+      case buildData of
+        BuildOriginalPackage (OriginalPackageBuildData { _pkg=pkg, _version=vsn }) ->
+          (pkg, vsn)
+        BuildWithOverridingPackage 
+          (OverridingPackageBuildData {_overridingPkg=overridingPkg, _overridingPkgVersion=overridingPkgVer}) ->
+            (overridingPkg, overridingPkgVer)
+    downloadPackageAction = downloadPackageToFilePath cacheFilePath zelmRegistry manager primaryPkg primaryPkgVersion
+  in
+  do  exists <- Dir.doesDirectoryExist cacheFilePath
+      print (show exists ++ "A0" ++ cacheFilePath)
+      exists <- Dir.doesDirectoryExist (cacheFilePath </> "src")
       if exists
         then
           do  Reporting.report key Reporting.DCached
-              maybeCache <- File.readBinary (Stuff.package cache pkg vsn </> "artifacts.dat")
+              maybeCache <- File.readBinary (cacheFilePath </> "artifacts.dat")
               case maybeCache of
                 Nothing ->
-                  build key cache depsMVar pkg originalPkgMaybe originalPkgToOverridingPkg details fingerprint Set.empty
+                  build key buildData depsMVar fingerprint Set.empty
 
                 Just (ArtifactCache fingerprints artifacts) ->
                   if Set.member fingerprint fingerprints
                     then Reporting.report key Reporting.DBuilt >> return (Right artifacts)
-                    else build key cache depsMVar pkg originalPkgMaybe originalPkgToOverridingPkg details fingerprint fingerprints
+                    else build key buildData depsMVar fingerprint fingerprints
         else
           do  Reporting.report key Reporting.DRequested
               -- Normally we don't need to create the directory because it's created during the
@@ -513,16 +547,16 @@ verifyDep (Env key _ _ cache manager _ zelmRegistry) depsMVar solution pkg origi
               -- package was used around and we want that to drive the constraint process in
               -- the bad case that the override package is malformed and doesn't follow the
               -- same dependencies as the original package.
-              Dir.createDirectoryIfMissing True (Stuff.package cache pkg vsn)
-              result <- downloadPackage cache zelmRegistry manager pkg vsn
+              Dir.createDirectoryIfMissing True cacheFilePath
+              result <- downloadPackageAction
               case result of
                 Left problem ->
-                  do  Reporting.report key (Reporting.DFailed pkg vsn)
-                      return $ Left $ Just $ Exit.BD_BadDownload pkg vsn problem
+                  do  Reporting.report key (Reporting.DFailed primaryPkg primaryPkgVersion)
+                      return $ Left $ Just $ Exit.BD_BadDownload primaryPkg primaryPkgVersion problem
 
                 Right () ->
-                  do  Reporting.report key (Reporting.DReceived pkg vsn)
-                      build key cache depsMVar pkg originalPkgMaybe originalPkgToOverridingPkg details fingerprint Set.empty
+                  do  Reporting.report key (Reporting.DReceived primaryPkg primaryPkgVersion)
+                      build key buildData depsMVar fingerprint Set.empty
 
 
 
@@ -547,10 +581,48 @@ isZelm :: Pkg.Name -> Bool
 isZelm name = take 4 (Utf8.toChars (Pkg._project name)) == "time"
 
 
--- FIXME: I don't think I need pkg originalPkgMaybe and originalPkgToOverridingPkg, maybe pass in bidirectional map?
-build :: Reporting.DKey -> Stuff.PackageCache -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Pkg.Name -> Maybe Pkg.Name -> Map.Map Pkg.Name Pkg.Name -> Solver.Details -> Fingerprint -> Set.Set Fingerprint -> IO Dep
-build key cache depsMVar pkg originalPkgMaybe originalPkgToOverridingPkg (Solver.Details vsn _) f fs =
-  do  eitherOutline <- Outline.read (Stuff.package cache pkg vsn)
+data OverridingPackageBuildData = OverridingPackageBuildData
+  { _originalPkg :: Pkg.Name
+  , _originalPkgVersion :: V.Version
+  , _overridingPkg :: Pkg.Name
+  , _overridingPkgVersion :: V.Version
+  , _overridingCache :: Stuff.PackageOverridesCache
+  }
+
+data OriginalPackageBuildData = OriginalPackageBuildData
+  { _pkg :: Pkg.Name
+  , _version :: V.Version
+  , _buildCache :: Stuff.PackageCache
+  }
+
+data BuildData
+  = BuildOriginalPackage OriginalPackageBuildData
+  | BuildWithOverridingPackage OverridingPackageBuildData
+  
+
+cacheFilePathFromBuildData :: BuildData -> FilePath
+cacheFilePathFromBuildData buildData =
+  case buildData of
+    BuildOriginalPackage (OriginalPackageBuildData { _pkg=pkg, _version=vsn, _buildCache=cache }) ->
+      Stuff.package cache pkg vsn
+    BuildWithOverridingPackage 
+      (OverridingPackageBuildData {_originalPkg=origPkg, _originalPkgVersion=origPkgVer, _overridingPkg=overPkg, _overridingPkgVersion=overPkgVer, _overridingCache=cache}) ->
+        Stuff.packageOverride cache origPkg origPkgVer overPkg overPkgVer
+
+
+build :: Reporting.DKey -> BuildData -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Fingerprint -> Set.Set Fingerprint -> IO Dep
+build key buildData depsMVar f fs =
+  let
+    cacheFilePath = cacheFilePathFromBuildData buildData
+    (pkg, vsn) = case buildData of
+      BuildOriginalPackage (OriginalPackageBuildData { _pkg=pkg, _version=vsn, _buildCache=cache }) ->
+        (pkg, vsn)
+      BuildWithOverridingPackage 
+        (OverridingPackageBuildData {_originalPkg=origPkg, _originalPkgVersion=origPkgVer, _overridingPkg=overPkg, _overridingPkgVersion=overPkgVer, _overridingCache=cache}) ->
+          (origPkg, origPkgVer)
+
+  in
+  do  eitherOutline <- Outline.read cacheFilePath
       print ("COMPILING: " ++ show pkg ++ show vsn ++ " OUTLINE: " ++ show eitherOutline)
       case eitherOutline of
         Left _ ->
@@ -565,10 +637,8 @@ build key cache depsMVar pkg originalPkgMaybe originalPkgToOverridingPkg (Solver
           do  allDeps <- readMVar depsMVar
               when (isZelm pkg) (print $ "zelm package: allDeps keys are" ++ show (Map.keys allDeps))
               -- FIXME: Think about whether there is a more elegant way of doing this
-              let depsWithOverrides = Map.fromList (fmap (\n -> (Maybe.fromMaybe n (Map.lookup n originalPkgToOverridingPkg), ())) (Map.keys deps))
               when (isZelm pkg) (print $ "zelm package: deps keys are" ++ show (Map.keys deps))
-              when (isZelm pkg) (print $ "zelm package: depsWithOverrides keys are" ++ show (Map.keys depsWithOverrides))
-              directDeps <- traverse readMVar (Map.intersection allDeps depsWithOverrides)
+              directDeps <- traverse readMVar (Map.intersection allDeps deps)
               when (isZelm pkg) (print $ "zelm package: directDeps are" ++ show directDeps)
               case sequence directDeps of
                 Left x ->
@@ -577,12 +647,12 @@ build key cache depsMVar pkg originalPkgMaybe originalPkgToOverridingPkg (Solver
                       return $ Left $ Nothing
 
                 Right directArtifacts ->
-                  do  let src = Stuff.package cache pkg vsn </> "src"
+                  do  let src = cacheFilePath </> "src"
                       let foreignDeps = gatherForeignInterfaces directArtifacts
                       when (isZelm pkg) (print ("zelm package: directArtifacts" ++ show directArtifacts))
                       when (isZelm pkg) (print ("zelm package: foreignDeps" ++ show foreignDeps))
                       let exposedDict = Map.fromKeys (\_ -> ()) (Outline.flattenExposed exposed)
-                      docsStatus <- getDocsStatus cache pkg vsn
+                      docsStatus <- getDocsStatusFromFilePath cacheFilePath
                       mvar <- newEmptyMVar
                       mvars <- Map.traverseWithKey (const . fork . crawlModule foreignDeps mvar pkg src docsStatus) exposedDict
                       putMVar mvar mvars
@@ -601,7 +671,7 @@ build key cache depsMVar pkg originalPkgMaybe originalPkgToOverridingPkg (Solver
                               when (isZelm pkg) (print "zelm package: past rmvar")
                               let extractDepsFromStatus status = case status of (SLocal _ deps _) -> deps; _ -> Map.empty
                               when (isZelm pkg) (print ("statuses: " ++ show (fmap extractDepsFromStatus statuses)))
-                              let compileAction status = genericErrorHandler ("This package failed: " ++ show pkg) (compile pkg originalPkgMaybe rmvar status)
+                              let compileAction status = genericErrorHandler ("This package failed: " ++ show pkg) (compile pkg rmvar status)
                               rmvars <- traverse (fork . compileAction) statuses
                               when (isZelm pkg) (print "zelm package: past rmvars")
                               putMVar rmvar rmvars
@@ -615,13 +685,13 @@ build key cache depsMVar pkg originalPkgMaybe originalPkgToOverridingPkg (Solver
 
                                 Just results ->
                                   let
-                                    path = Stuff.package cache pkg vsn </> "artifacts.dat"
+                                    path = cacheFilePath </> "artifacts.dat"
                                     ifaces = gatherInterfaces exposedDict results
                                     objects = gatherObjects results
                                     artifacts = Artifacts ifaces objects
                                     fingerprints = Set.insert f fs
                                   in
-                                  do  writeDocs cache pkg vsn docsStatus results
+                                  do  writeDocsToFilePath cacheFilePath docsStatus results
                                       File.writeBinary path (ArtifactCache fingerprints artifacts)
                                       Reporting.report key Reporting.DBuilt
                                       return (Right artifacts)
@@ -804,38 +874,8 @@ data Result
 
 
 
--- We need to use the package override data when compiling because the compiler
--- special-cases a lot of compilation behavior for the elm/core module. Most of this
--- special-casing is done by specifically checking or writing the "elm/core"
--- module literal. This means any efforts to override the "elm/core" with
--- another package that has a different author name or package name will cause a
--- mysterious compilation error.
---
--- But we want to allow people to name their packages something that's *not*
--- elm/core! And we want to preserve that information as deep as possible, so
--- that we can give intelligent errors when doing dependency resolution, instead
--- of claiming to look for "elm/core" when in fact we're looking for another
--- package.
---
--- The ideal strategy would be to generalize this special-casing because in
--- theory it's not needed. But that would be a gargantuan task.
---
--- Instead, we trick the compiler by swapping in the "elm/core" literal during
--- compilation. But again we want to delay this swapping until compilation
--- proper so that we can get intelligent error messages during dependency
--- resolution.
---
--- This is actually less of a hack than it seems. Large parts of the Elm
--- compiler actually only check module names, not package names, to the point
--- that if two packages had the same module names this can cause compilation
--- errors. It is rather more of a hack (but an extremely painful one to remove)
--- that the Elm compiler uses package names in its compilation process.
---
--- But the main upshot of this is that error message quality is actually still
--- pretty much preserved (although Elm's error messages when a dependency causes
--- problems were never great to begin with.)
-compile :: Pkg.Name -> Maybe Pkg.Name -> MVar (Map.Map ModuleName.Raw (MVar (Maybe Result))) -> Status -> IO (Maybe Result)
-compile pkg originalPkgNameMaybe mvar status =
+compile :: Pkg.Name -> MVar (Map.Map ModuleName.Raw (MVar (Maybe Result))) -> Status -> IO (Maybe Result)
+compile pkg mvar status =
   case status of
     SLocal docsStatus deps modul ->
       do  resultsDict <- readMVar mvar
@@ -846,22 +886,21 @@ compile pkg originalPkgNameMaybe mvar status =
           when (isZelm pkg ) (print ("all keys in thingToRead: " ++ show (Map.keys thingToRead)))
           maybeResults <- Map.traverseWithKey (\k v -> hasLocked ("compiling this pkg: " ++ show pkg ++ "reading this module: " ++ show k) (readMVar v)) (Map.intersection resultsDict deps)
           when (isZelm pkg) (print "made it past maybeResults")
-          let originalPkgName = Maybe.fromMaybe pkg originalPkgNameMaybe
           case sequence maybeResults of
             Nothing -> do
               when (isZelm pkg) (print "nothing branch of sequence maybeResults")
               return Nothing
 
             Just results ->
-              case Compile.compile originalPkgName (Map.mapMaybe getInterface results) modul of
+              case Compile.compile pkg (Map.mapMaybe getInterface results) modul of
                 Left compileError ->
                   do
-                    print ("compileError for " ++ show pkg ++ " original pkg " ++ show originalPkgName ++ "module: " ++ show modul ++ ": " ++ show compileError)
+                    print ("compileError for " ++ show pkg ++ " pkg " ++ show pkg ++ "module: " ++ show modul ++ ": " ++ show compileError)
                     return Nothing
 
                 Right (Compile.Artifacts canonical annotations objects) ->
                   let
-                    ifaces = I.fromModule originalPkgName canonical annotations
+                    ifaces = I.fromModule pkg canonical annotations
                     docs = makeDocs docsStatus canonical
                   in
                   return (Just (RLocal ifaces objects docs))
@@ -902,6 +941,20 @@ getDocsStatus cache pkg vsn =
         then return DocsNotNeeded
         else return DocsNeeded
 
+getDocsStatusFromFilePath :: FilePath -> IO DocsStatus
+getDocsStatusFromFilePath pathToDocsDir =
+  do  exists <- File.exists (pathToDocsDir </> "docs.json")
+      if exists
+        then return DocsNotNeeded
+        else return DocsNeeded
+
+getDocsStatusOverridePkg :: Stuff.PackageOverridesCache -> Pkg.Name -> V.Version -> Pkg.Name -> V.Version -> IO DocsStatus
+getDocsStatusOverridePkg cache originalPkg originalVsn overridingPkg overridingVsn =
+  do  exists <- File.exists (Stuff.packageOverride cache originalPkg originalVsn overridingPkg overridingVsn </> "docs.json")
+      if exists
+        then return DocsNotNeeded
+        else return DocsNeeded
+
 
 makeDocs :: DocsStatus -> Can.Module -> Maybe Docs.Module
 makeDocs status modul =
@@ -920,6 +973,26 @@ writeDocs cache pkg vsn status results =
   case status of
     DocsNeeded ->
       E.writeUgly (Stuff.package cache pkg vsn </> "docs.json") $
+        Docs.encode $ Map.mapMaybe toDocs results
+
+    DocsNotNeeded ->
+      return ()
+
+writeDocsToFilePath :: FilePath -> DocsStatus -> Map.Map ModuleName.Raw Result -> IO ()
+writeDocsToFilePath pathToDocsDir status results =
+  case status of
+    DocsNeeded ->
+      E.writeUgly (pathToDocsDir </> "docs.json") $
+        Docs.encode $ Map.mapMaybe toDocs results
+
+    DocsNotNeeded ->
+      return ()
+
+writeDocsOverridingPackage :: Stuff.PackageOverridesCache -> Pkg.Name -> V.Version -> Pkg.Name -> V.Version -> DocsStatus  -> Map.Map ModuleName.Raw Result -> IO ()
+writeDocsOverridingPackage cache originalPkg originalVsn overridingPkg overridingVsn status results =
+  case status of
+    DocsNeeded ->
+      E.writeUgly (Stuff.packageOverride cache originalPkg originalVsn overridingPkg overridingVsn </> "docs.json") $
         Docs.encode $ Map.mapMaybe toDocs results
 
     DocsNotNeeded ->
@@ -960,6 +1033,28 @@ downloadPackage cache zelmRegistries manager pkg vsn =
       pure (Left $ Exit.PP_PackageNotInRegistry blah pkg vsn)
 
 
+-- FIXME: reduce duplication with downloadPackage
+downloadPackageToFilePath :: FilePath -> ZelmRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackageToFilePath filePath zelmRegistries manager pkg vsn =
+  case Registry.lookupPackageRegistryKey zelmRegistries pkg vsn of
+    Just (Registry.RepositoryUrlKey repositoryUrl) ->
+      do
+        exists <- Dir.doesDirectoryExist filePath
+        print (show exists ++ "A (toFilePath)" ++ filePath)
+        downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl manager pkg vsn
+    Just (Registry.PackageUrlKey packageUrl) ->
+      do
+        exists <- Dir.doesDirectoryExist filePath
+        print (show exists ++ "B (toFilePath)" ++ filePath)
+        downloadPackageDirectlyToFilePath filePath packageUrl manager
+    Nothing ->
+      let
+        --FIXME
+        blah = fmap show (Map.keys $ Registry._registries zelmRegistries)
+      in
+      pure (Left $ Exit.PP_PackageNotInRegistry blah pkg vsn)
+
+
 downloadPackageDirectly :: Stuff.PackageCache -> PackageUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
 downloadPackageDirectly cache packageUrl manager pkg vsn =
   let
@@ -971,6 +1066,18 @@ downloadPackageDirectly cache packageUrl manager pkg vsn =
         Right <$> do
           print "hello world 2! FIXME"
           File.writePackage (Stuff.package cache pkg vsn) archive
+
+downloadPackageDirectlyToFilePath :: FilePath -> PackageUrl -> Http.Manager -> IO (Either Exit.PackageProblem ())
+downloadPackageDirectlyToFilePath filePath packageUrl manager =
+  let
+    urlString = Utf8.toChars packageUrl
+  in
+    Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
+    -- FIXME: Deal with the SHA hash instead of ignoring it
+      \(_, archive) ->
+        Right <$> do
+          print "hello world 2! FIXME (toFilePath)"
+          File.writePackage filePath archive
 
 
 downloadPackageFromElmPackageRepo :: Stuff.PackageCache -> RepositoryUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
@@ -1000,6 +1107,37 @@ downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
                     exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
                     print (show exists ++ "C" ++ Stuff.package cache pkg vsn)
                     File.writePackage (Stuff.package cache pkg vsn) archive
+                  else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
+
+
+-- FIXME: Reduce duplication
+downloadPackageFromElmPackageRepoToFilePath :: FilePath -> RepositoryUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl manager pkg vsn =
+  let
+    url = Website.metadata repositoryUrl pkg vsn "endpoint.json"
+  in
+  do  eitherByteString <-
+        Http.get manager url [] id (return . Right)
+      exists <- Dir.doesDirectoryExist filePath
+      print (show exists ++ "B0 (toFilePath)" ++ filePath)
+
+      case eitherByteString of
+        Left err ->
+          return $ Left $ Exit.PP_BadEndpointRequest err
+
+        Right byteString ->
+          case D.fromByteString endpointDecoder byteString of
+            Left _ ->
+              return $ Left $ Exit.PP_BadEndpointContent url
+
+            Right (endpoint, expectedHash) ->
+              Http.getArchive manager endpoint Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
+                \(sha, archive) ->
+                  if expectedHash == Http.shaToChars sha
+                  then Right <$> do
+                    exists <- Dir.doesDirectoryExist filePath
+                    print (show exists ++ "C (toFilePath)" ++ filePath)
+                    File.writePackage filePath archive
                   else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
 
 

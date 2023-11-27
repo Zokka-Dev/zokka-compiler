@@ -30,6 +30,10 @@ import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
+import qualified Debug.Trace as Debug
+import Control.Exception (Exception, throw)
+import qualified Elm.Package as Pkg
+import qualified Data.Maybe as Maybe
 
 
 
@@ -182,14 +186,24 @@ addGlobal mode graph state@(State revKernels builders seen) global =
     addGlobalHelp mode graph global $
       State revKernels builders (Set.insert global seen)
 
+data MyException = MyException String
+  deriving (Show)
+
+instance Exception MyException
 
 addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
-addGlobalHelp mode graph global state =
+addGlobalHelp mode graph currentGlobal state =
   let
     addDeps deps someState =
       Set.foldl' (addGlobal mode graph) someState deps
+    Opt.Global globalCanonical globalName = currentGlobal
+    canonicalPkgName = ModuleName._package globalCanonical
+    global = Opt.Global ( globalCanonical { ModuleName._package = canonicalPkgName } ) globalName
+    globalInGraph = case Map.lookup global graph of
+      Just x -> x
+      Nothing -> throw (MyException ("addGlobalHelp: this was graph keys " ++ show (Map.keys graph) ++ " and this was old global " ++ show currentGlobal ++ " and this was new global: " ++ show global))
   in
-  case graph ! global of
+  case globalInGraph of
     Opt.Define expr deps ->
       addStmt (addDeps deps state) (
         var global (Expr.generate mode expr)

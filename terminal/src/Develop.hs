@@ -32,6 +32,7 @@ import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
+import qualified Elm.Details as ModuleName
 
 
 

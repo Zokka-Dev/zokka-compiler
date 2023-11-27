@@ -390,7 +390,7 @@ constraintsDecoder =
 
 
 data Env =
-  Env Stuff.PackageCache Http.Manager Connection Registry.ZelmRegistries
+  Env Stuff.PackageCache Http.Manager Connection Registry.ZelmRegistries Stuff.PackageOverridesCache
 
 
 initEnv :: IO (Either Exit.RegistryProblem Env)
@@ -398,6 +398,7 @@ initEnv =
   do  mvar  <- newEmptyMVar
       _     <- forkIO $ putMVar mvar =<< Http.getManager
       cache <- Stuff.getPackageCache
+      packageOverridesCache <- Stuff.getPackageOverridesCache
       zelmCache <- Stuff.getZelmCache
       customRepositoriesConfigLocation <- Stuff.getOrCreateZelmCustomRepositoryConfig
       customRepositoriesDataOrErr <- loadCustomRepositoriesData customRepositoriesConfigLocation
@@ -413,7 +414,7 @@ initEnv =
                     do  eitherRegistry <- Registry.fetch manager zelmCache customRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
-                            return $ Right $ Env cache manager (Online manager) latestRegistry
+                            return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
 
                           Left problem ->
                             return $ Left $ problem
@@ -422,10 +423,10 @@ initEnv =
                     do  eitherRegistry <- Registry.update manager zelmCache cachedRegistry
                         case eitherRegistry of
                           Right latestRegistry ->
-                            return $ Right $ Env cache manager (Online manager) latestRegistry
+                            return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
 
                           Left _ ->
-                            return $ Right $ Env cache manager Offline cachedRegistry
+                            return $ Right $ Env cache manager Offline cachedRegistry packageOverridesCache
 
 
 
