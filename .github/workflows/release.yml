@@ -30,7 +30,7 @@ jobs:
       run: |
         cp cabal.project.freeze.ghc92 cabal.project.freeze
         cabal update
-        cabal build --enable-optimization=2 # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
+        cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
         OUTPUT_BIN=$(cabal list-bin zelm)
         mkdir -p output
         cp $OUTPUT_BIN output/zelm
