@@ -7,6 +7,7 @@ module Elm.Details
   , Local(..)
   , Foreign(..)
   , load
+  , loadForReactorTH
   , loadObjects
   , loadInterfaces
   , verifyInstall
@@ -195,6 +196,20 @@ load style scope root =
           then return (Right details { _buildID = buildID + 1 })
           else generate style scope root newTime
 
+-- FIXME: This is a hack to get around a bug somewhere in the build process
+loadForReactorTH :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.Details Details)
+loadForReactorTH style scope root =
+  do  newTime <- File.getTime (root </> "elm.json")
+      maybeDetails <- File.readBinary (Stuff.details root)
+      printLog "Made it to LOAD 1"
+      case maybeDetails of
+        Nothing ->
+          generateForReactorTH style scope root newTime
+
+        Just details@(Details oldTime _ buildID _ _ _) ->
+          if oldTime == newTime
+          then return (Right details { _buildID = buildID + 1 })
+          else generate style scope root newTime
 
 
 -- GENERATE
@@ -215,6 +230,21 @@ generate style scope root time =
               Outline.App app -> Task.run (verifyApp env time app)
 
 
+-- FIXME
+generateForReactorTH :: Reporting.Style -> BW.Scope -> FilePath -> File.Time -> IO (Either Exit.Details Details)
+generateForReactorTH style scope root time =
+  Reporting.trackDetails style $ \key ->
+    do  result <- initEnvForReactorTH key scope root
+        printLog "Made it to GENERATE 1"
+        case result of
+          Left exit ->
+            return (Left exit)
+
+          Right (env, outline) ->
+            case outline of
+              Outline.Pkg pkg -> Task.run (verifyPkg env time pkg)
+              Outline.App app -> Task.run (verifyApp env time app)
+
 
 -- ENV
 
@@ -234,6 +264,24 @@ data Env =
 
 initEnv :: Reporting.DKey -> BW.Scope -> FilePath -> IO (Either Exit.Details (Env, Outline.Outline))
 initEnv key scope root =
+  do  mvar <- fork Solver.initEnv
+      eitherOutline <- Outline.read root
+      case eitherOutline of
+        Left problem ->
+          return $ Left $ Exit.DetailsBadOutline problem
+
+        Right outline ->
+          do  maybeEnv <- readMVar mvar
+              case maybeEnv of
+                Left problem ->
+                  return $ Left $ Exit.DetailsCannotGetRegistry problem
+
+                Right (Solver.Env cache manager connection registry packageOverridesCache) ->
+                  return $ Right (Env key scope root cache manager connection registry packageOverridesCache, outline)
+
+-- FIXME
+initEnvForReactorTH :: Reporting.DKey -> BW.Scope -> FilePath -> IO (Either Exit.Details (Env, Outline.Outline))
+initEnvForReactorTH key scope root =
   do  mvar <- fork Solver.initEnv
       eitherOutline <- Outline.read root
       case eitherOutline of

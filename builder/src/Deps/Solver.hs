@@ -12,6 +12,7 @@ module Deps.Solver
   --
   , Env(..)
   , initEnv
+  , initEnvForReactorTH
   )
   where
 
@@ -36,7 +37,7 @@ import qualified Reporting.Exit as Exit
 import qualified Stuff
 import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder)
 import Data.Maybe (fromJust)
-import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
+import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Reporting.Exit (RegistryProblem(..))
 import Stuff (ZelmCustomRepositoryConfigFilePath(unZelmCustomRepositoryConfigFilePath))
 import qualified Data.Utf8 as Utf8
@@ -403,6 +404,41 @@ initEnv =
       zelmCache <- Stuff.getZelmCache
       customRepositoriesConfigLocation <- Stuff.getOrCreateZelmCustomRepositoryConfig
       customRepositoriesDataOrErr <- loadCustomRepositoriesData customRepositoriesConfigLocation
+      case customRepositoriesDataOrErr of
+        Left err -> pure $ Left (RP_BadCustomReposData err (unZelmCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
+        Right customRepositoriesData ->
+          Stuff.withRegistryLock cache $
+            do  maybeRegistry <- Registry.read zelmCache
+                manager       <- readMVar mvar
+
+                case maybeRegistry of
+                  Nothing ->
+                    do  eitherRegistry <- Registry.fetch manager zelmCache customRepositoriesData
+                        case eitherRegistry of
+                          Right latestRegistry ->
+                            return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
+
+                          Left problem ->
+                            return $ Left $ problem
+
+                  Just cachedRegistry ->
+                    do  eitherRegistry <- Registry.update manager zelmCache cachedRegistry
+                        case eitherRegistry of
+                          Right latestRegistry ->
+                            return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
+
+                          Left registryProblem ->
+                            return $ Right $ Env cache manager (Offline registryProblem) cachedRegistry packageOverridesCache
+
+initEnvForReactorTH :: IO (Either Exit.RegistryProblem Env)
+initEnvForReactorTH =
+  do  mvar  <- newEmptyMVar
+      _     <- forkIO $ putMVar mvar =<< Http.getManager
+      cache <- Stuff.getPackageCache
+      packageOverridesCache <- Stuff.getPackageOverridesCache
+      zelmCache <- Stuff.getZelmCache
+      customRepositoriesConfigLocation <- Stuff.getOrCreateZelmCustomRepositoryConfig
+      customRepositoriesDataOrErr <- loadCustomRepositoriesDataForReactorTH customRepositoriesConfigLocation
       case customRepositoriesDataOrErr of
         Left err -> pure $ Left (RP_BadCustomReposData err (unZelmCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
         Right customRepositoriesData ->

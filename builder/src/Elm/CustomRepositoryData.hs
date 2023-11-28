@@ -12,6 +12,7 @@ module Elm.CustomRepositoryData
   , customRepostoriesDataDecoder
   , customRepostoriesDataEncoder
   , defaultCustomRepositoriesData
+  , defaultCustomRepositoriesDataElmPackageRepoOnly
   , CustomRepositoryDataParseError(..)
   )
   where
@@ -240,6 +241,14 @@ customRepostoriesDataDecoder = do
       { _customFullRepositories=customFullRepositories
       , _customSinglePackageRepositories=customSinglePackageRepositories
       }
+
+defaultCustomRepositoriesDataElmPackageRepoOnly :: CustomRepositoriesData
+defaultCustomRepositoriesDataElmPackageRepoOnly = CustomRepositoriesData
+  { _customFullRepositories =
+    [ standardElmRepository
+    ]
+  , _customSinglePackageRepositories = []
+  }
 
 defaultCustomRepositoriesData :: CustomRepositoriesData
 defaultCustomRepositoriesData = CustomRepositoriesData
