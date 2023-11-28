@@ -30,6 +30,7 @@ jobs:
       run: |
         cp cabal.project.freeze.ghc92 cabal.project.freeze
         cabal update
+        mkdir -p output
         cabal install --installdir="./output/"
 
     # Extract the current git tag
