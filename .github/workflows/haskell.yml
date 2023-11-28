@@ -35,6 +35,7 @@ jobs:
 
     - name: Install dependencies
       run: |
+        cp cabal.project.freeze.ghc92 cabal.project.freeze
         cabal update
         cabal build --only-dependencies --enable-tests --enable-benchmarks
     - name: Build
