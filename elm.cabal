@@ -35,9 +35,6 @@ Flag dev {
 
 
 Common zelm-common
-        ghc-options: -O2 -rtsopts -threaded "-with-rtsopts=-N -qg -A128m"  -Werror=incomplete-patterns
-        -- add -eventlog for (elm make src/Main.elm +RTS -l; threadscope elm.eventlog)
-        -- https://www.oreilly.com/library/view/parallel-and-concurrent/9781449335939/
 
     Hs-Source-Dirs:
         compiler/src
@@ -243,6 +240,11 @@ Executable zelm
     
     Main-Is:
         Main.hs
+
+    ghc-options: -rtsopts -threaded "-with-rtsopts=-N -qg -A128m"  -Werror=incomplete-patterns
+    -- add -eventlog for (elm make src/Main.elm +RTS -l; threadscope elm.eventlog)
+    -- https://www.oreilly.com/library/view/parallel-and-concurrent/9781449335939/
+
 
 Test-Suite zelm-tests
     Import:
