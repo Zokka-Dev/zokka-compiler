@@ -122,7 +122,7 @@ standardElmRepository = CustomSingleRepositoryData
 standardZelmRepository :: CustomSingleRepositoryData
 standardZelmRepository = CustomSingleRepositoryData
   { _repositoryType = DefaultPackageServer
-  , _repositoryUrl = Utf8.fromChars "https://package-server.zelm-lang.org"
+  , _repositoryUrl = Utf8.fromChars "https://package-server.zelm-lang.com"
   }
 
 customSingleRepositoryDataDecoder :: D.Decoder CustomRepositoryDataParseError CustomSingleRepositoryData

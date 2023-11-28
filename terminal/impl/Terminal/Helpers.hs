@@ -87,7 +87,7 @@ parseRepositoryUrl :: String -> Maybe RepositoryUrl
 parseRepositoryUrl str = Just $ Utf8.fromChars str
 
 exampleRepositoryUrls :: String -> IO [String]
-exampleRepositoryUrls _ = pure ["https://package.zelm-lang.org", "https://www.example.com/my-package"]
+exampleRepositoryUrls _ = pure ["https://package-server.zelm-lang.com", "https://www.example.com/my-package"]
 
 
 -- ELM FILE
