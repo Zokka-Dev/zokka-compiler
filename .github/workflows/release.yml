@@ -14,7 +14,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Remove windows-latest for now, try to figure out the incantation later
+        os: [ubuntu-latest, macos-latest]
     
     steps:
     - uses: actions/checkout@v3
