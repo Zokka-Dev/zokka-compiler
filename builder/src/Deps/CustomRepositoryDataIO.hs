@@ -12,6 +12,7 @@ import Data.Bifunctor (first)
 import Stuff (ZelmCustomRepositoryConfigFilePath (..))
 
 data CustomRepositoriesError = CREJsonDecodeError (D.Error CustomRepositoryDataParseError)
+  deriving Show
 
 createCustomRepositoriesData :: ZelmCustomRepositoryConfigFilePath -> IO (Either e CustomRepositoriesData)
 createCustomRepositoriesData (ZelmCustomRepositoryConfigFilePath filePath) = do

@@ -199,6 +199,7 @@ data CustomRepositoryDataParseError
   | InvalidVersionString (Row, Col)
   | InvalidPackageName (Row, Col)
   | UnsupportedRepositoryType Json.String [Json.String]
+  deriving Show
 
 singlePackageLocationDataDecoder :: D.Decoder CustomRepositoryDataParseError SinglePackageLocationData
 singlePackageLocationDataDecoder =

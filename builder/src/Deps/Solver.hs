@@ -77,7 +77,7 @@ data Constraints =
 
 data Connection
   = Online Http.Manager
-  | Offline
+  | Offline RegistryProblem -- The thing that made us think that we were offline
 
 
 
@@ -87,7 +87,7 @@ data Connection
 data Result a
   = Ok a
   | NoSolution
-  | NoOfflineSolution
+  | NoOfflineSolution RegistryProblem
   | Err Exit.Solver
 
 
@@ -122,7 +122,7 @@ noSolution :: Connection -> Result a
 noSolution connection =
   case connection of
     Online _ -> NoSolution
-    Offline -> NoOfflineSolution
+    Offline registryError -> NoOfflineSolution registryError
 
 
 
@@ -306,7 +306,7 @@ getConstraints pkg vsn =
                               Online _ ->
                                 ok (toNewState cs) cs back
 
-                              Offline ->
+                              Offline _ ->
                                 do  srcExists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn </> "src")
                                     if srcExists
                                       then ok (toNewState cs) cs back
@@ -317,7 +317,7 @@ getConstraints pkg vsn =
                                 err (Exit.SolverBadCacheData pkg vsn)
                   else
                     case connection of
-                      Offline ->
+                      Offline _ ->
                         back state
 
                       Online manager ->
@@ -426,8 +426,8 @@ initEnv =
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
 
-                          Left _ ->
-                            return $ Right $ Env cache manager Offline cachedRegistry packageOverridesCache
+                          Left registryProblem ->
+                            return $ Right $ Env cache manager (Offline registryProblem) cachedRegistry packageOverridesCache
 
 
 

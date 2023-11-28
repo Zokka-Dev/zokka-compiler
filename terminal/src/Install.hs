@@ -189,7 +189,8 @@ makeAppPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.AppO
                   Left suggestions ->
                     case connection of
                       Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
-                      Solver.Offline  -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
+                      -- FIXME: Propagate error into InstallUnknownPackageOffline
+                      Solver.Offline _ -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
 
                   Right _ ->
                     do  result <- Task.io $ Solver.addToApp cache connection registry pkg outline
@@ -200,7 +201,8 @@ makeAppPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.AppO
                           Solver.NoSolution ->
                             Task.throw (Exit.InstallNoOnlineAppSolution pkg)
 
-                          Solver.NoOfflineSolution ->
+                          -- FIXME: Propagate this problem
+                          Solver.NoOfflineSolution _ ->
                             Task.throw (Exit.InstallNoOfflineAppSolution pkg)
 
                           Solver.Err exit ->
@@ -231,7 +233,8 @@ makePkgPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.PkgO
           Left suggestions ->
             case connection of
               Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
-              Solver.Offline  -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
+              -- FIXME: Propagate error into InstallUnknownPackageOffline
+              Solver.Offline _  -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
 
           Right (Registry.KnownVersions _ _) ->
             do  let old = Map.union deps test
@@ -256,7 +259,8 @@ makePkgPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.PkgO
                   Solver.NoSolution ->
                     Task.throw (Exit.InstallNoOnlinePkgSolution pkg)
 
-                  Solver.NoOfflineSolution ->
+                  -- FIXME: Propagate this solution
+                  Solver.NoOfflineSolution _ ->
                     Task.throw (Exit.InstallNoOfflinePkgSolution pkg)
 
                   Solver.Err exit ->

@@ -1357,7 +1357,7 @@ toOutlineProblemReport path source _ region problem =
 
 data Details
   = DetailsNoSolution
-  | DetailsNoOfflineSolution
+  | DetailsNoOfflineSolution RegistryProblem
   | DetailsSolverProblem Solver
   | DetailsBadElmInPkg C.Constraint
   | DetailsBadElmInAppOutline V.Version
@@ -1388,11 +1388,11 @@ toDetailsReport details =
             \ having problems!"
         ]
 
-    DetailsNoOfflineSolution ->
+    DetailsNoOfflineSolution registryProblem ->
       Help.report "TROUBLE VERIFYING DEPENDENCIES" (Just "elm.json")
-        "I could not connect to https://package.elm-lang.org to get the latest list of\
-        \ packages, and I was unable to verify your dependencies with the information I\
-        \ have cached locally."
+        ("I got the error " ++ (show registryProblem) ++ " which meant that I assumed this computer is offline\
+        \ , and I was unable to verify your dependencies with the information I\
+        \ have cached locally.")
         [ D.reflow $
             "Are you able to connect to the internet? These dependencies may work once you\
             \ get access to the registry!"
@@ -1585,6 +1585,7 @@ data RegistryProblem
   = RP_Http Http.Error
   | RP_Data String BS.ByteString
   | RP_BadCustomReposData CustomRepositoriesError FilePath
+  deriving Show
 
 
 toRegistryProblemReport :: String -> RegistryProblem -> String -> Help.Report

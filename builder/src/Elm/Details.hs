@@ -311,7 +311,7 @@ verifyConstraints (Env _ _ _ cache _ connection registry _) constraints =
       case result of
         Solver.Ok details        -> return details
         Solver.NoSolution        -> Task.throw $ Exit.DetailsNoSolution
-        Solver.NoOfflineSolution -> Task.throw $ Exit.DetailsNoOfflineSolution
+        Solver.NoOfflineSolution r -> Task.throw $ Exit.DetailsNoOfflineSolution r
         Solver.Err exit          -> Task.throw $ Exit.DetailsSolverProblem exit
 
 

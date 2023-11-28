@@ -79,7 +79,8 @@ init =
                 Solver.NoSolution ->
                   return (Left (Exit.InitNoSolution (Map.keys defaults)))
 
-                Solver.NoOfflineSolution ->
+                -- FIXME: Propagate this error
+                Solver.NoOfflineSolution _ ->
                   return (Left (Exit.InitNoOfflineSolution (Map.keys defaults)))
 
                 Solver.Ok details ->
