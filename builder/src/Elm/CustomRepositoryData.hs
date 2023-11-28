@@ -245,6 +245,7 @@ defaultCustomRepositoriesData :: CustomRepositoriesData
 defaultCustomRepositoriesData = CustomRepositoriesData
   { _customFullRepositories =
     [ standardElmRepository
+    , standardZelmRepository
     ]
   , _customSinglePackageRepositories = []
   }
