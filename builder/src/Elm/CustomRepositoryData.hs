@@ -41,10 +41,10 @@ allRepositoryTypes :: [RepositoryType]
 allRepositoryTypes = [(minBound :: RepositoryType) .. ]
 
 defaultPackageServerString :: Json.String
-defaultPackageServerString = Json.fromChars "default-package-server"
+defaultPackageServerString = Json.fromChars "package-server-with-standard-elm-package-server-api"
 
 barebonesPackageServerString :: Json.String
-barebonesPackageServerString = Json.fromChars "barebones-package-server"
+barebonesPackageServerString = Json.fromChars "package-server-with-barebones-api"
 
 repositoryTypeToString :: RepositoryType -> Json.String
 repositoryTypeToString repositoryType =
