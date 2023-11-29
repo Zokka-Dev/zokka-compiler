@@ -12,7 +12,7 @@ programmer.
 To accomplish this, compared to the standard Elm compiler, Zelm adds:
 
 1. The ability to use custom package repositories
-2. The ability to override dependencies (both direct and direct) with custom
+2. The ability to override dependencies (both direct and indirect) with custom
    versions of your own
 
 In addition to providing a method to incorporate bug fixes and patches, Zelm
