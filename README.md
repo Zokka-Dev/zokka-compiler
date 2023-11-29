@@ -311,8 +311,8 @@ dependencies.
 ### Combining Package Overrides and Custom Package Repositories
 
 The Elm community has had some other efforts to include bug fixes to Elm's core
-libraries. For example, there is the Elm Janitor project, which form the
-foundation of Zelm's forked versions of Elm's core libraries.
+libraries. For example, there is the [Elm Janitor](https://github.com/elm-janitor) project, which form the
+foundation of Zelm's forked versions of Elm's core libraries (thank you!).
 
 By combining package overrides and custom package repositories, Zelm lets you
 seamlessly use those custom packages if you would like. For example, if you
