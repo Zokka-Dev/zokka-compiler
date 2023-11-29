@@ -122,7 +122,7 @@ bug fix!
 
 To take advantage of Zelm-specific support for custom repositories, you can
 look at the `custom-package-repository-config.json` file, which is located in
-the `$ELM_HOME/elm-0.19.1/zelm/` directory (this is usually `~/.elm/elm-0.19.1/zelm/`). Much like how
+the `$ELM_HOME/0.19.1/zelm/` directory (this is usually `~/.elm/0.19.1/zelm/`). Much like how
 `$ELM_HOME` is generated on the first invocation of an `elm` subcommand, this
 file is generated the first time you successfully run a `zelm` subcommand (e.g.
 `zelm make`). By default the file looks like the below:
@@ -204,7 +204,7 @@ packages by adding them as entries to `single-package-locations`.
             "package-name": "someauthor/somecoolpackage",
             "version": "1.0.0",
             "url": "https://example.com/my-custom-library-1-0-0.zip"
-        },
+        }
     ]
 }
 ```
@@ -215,6 +215,8 @@ that package correctly.
 
 Currently `zipfile` is the only `file-type` supported, but we may add more later
 on.
+
+**NOTE: there is currently a bug [https://github.com/changlinli/zelm-compiler/issues/2](https://github.com/changlinli/zelm-compiler/issues/2) that means if you make any changes to `$ELM_HOME/0.19.1/zelm/custom-package-repository-config.json` you will need to manually delete `$ELM_HOME/0.19.1/zelm-cache/zelm-registries.dat`. This should be fixed quite soon.**
 
 ## Dependency Overrides
 
@@ -260,7 +262,7 @@ the package named `elm/core` using version `1.0.0` of the package named
 Note that `zelm/elm-core-1-0-override` exists only on
 `https://package-server.zelm-lang.com/` not the standard Elm package repository
 `https://package.elm-lang.org/`, so you'll need to make sure that the former is
-present in `$ELM_HOME/elm-0.19.1/zelm/custom-repository-config.json`.
+present in `$ELM_HOME/0.19.1/zelm/custom-repository-config.json`.
 
 Packages used to override other packages should:
 
@@ -331,10 +333,10 @@ location.
     "single-package-locations": [
         {
             "file-type": "zipfile",
-            "package-name": "zelm/elm-janitor-core",
+            "package-name": "elm-janitor/core",
             "version": "1.0.0",
             "url": "https://github.com/elm-janitor/core/archive/refs/heads/stack-1.0.5.zip"
-        },
+        }
     ]
 }
 ```
@@ -358,20 +360,20 @@ Then in your `elm.json`, you can add the following override:
         {
             "original-package-name": "elm/core",
             "original-package-version": "1.0.5",
-            "override-package-name": "zelm/elm-janitor-core",
+            "override-package-name": "elm-janitor/core",
             "override-package-version": "1.0.0"
         }
     ]
 }
 ```
 
+**REMINDER: there is currently a bug [https://github.com/changlinli/zelm-compiler/issues/2](https://github.com/changlinli/zelm-compiler/issues/2) that means if you make any changes to `$ELM_HOME/0.19.1/zelm/custom-package-repository-config.json` you will need to manually delete `$ELM_HOME/0.19.1/zelm-cache/zelm-registries.dat`. This should be fixed quite soon.**
+
 Note that in this case, as long as your `elm.json` and
 `custom-package-repository-config.json` agree on the overriding package name and
 version, you can call the package name and version whatever you want (so e.g.
-instead of `zelm/elm-janitor-core`, you could've called it `zelm/some-package`
-with version `5.3.1`). For packages with kernel code you will need to give it
-the `zelm` author so that the Elm compiler is willing to compile it. If it
-does not have kernel code, you can list the author as whatever you'd like.
+instead of `elm-janitor/core`, you could've called it `some-author/some-package`
+with version `5.3.1`).
 
 However, **you should always give the overriding package a name that is
 different from the original package, either by giving it a different author or a
@@ -422,7 +424,7 @@ Elm developers.
 If you would like you can also manually publish a package. The easiest way to do
 this is just to bundle it up as a zipfile, throw it up somewhere, and then
 expose that location as a new entry under `single-package-locations` in your
-`custom-package-repository-config.json` file in `$ELM_HOME/elm-0.19.1/zelm`.
+`custom-package-repository-config.json` file in `$ELM_HOME/0.19.1/zelm`.
 
 # Social Dynamics
 
