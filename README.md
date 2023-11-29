@@ -19,7 +19,7 @@ In addition to providing a method to incorporate bug fixes and patches, Zelm
 also provides them directly. That means it includes on an ongoing basis:
 
 1. A collection of API-identical versions of foundational Elm packages that
-   incorporate bug fixes that can be used to override their usual counterparts
+   incorporate bug fixes that can be used to override their usual counterparts [this is not quite done yet]
 2. A minimal alternative package repository that hosts these packages
 3. Minor compiler bug fixes and quality of life improvements *that do not change
    the Elm language* (ongoing)
