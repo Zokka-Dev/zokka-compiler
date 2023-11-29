@@ -502,6 +502,7 @@ overrides to do a lot of this on your own!
   another. This sort of breakage can appear to be non-deterministic to a user
   and can be extremely frustrating to debug. To avoid this, we colocate
   `custom-package-repository-config.json` with $ELM_HOME.
++ More FAQs forthcoming...
 
 **The following is the README for the original Elm compiler:**
 
