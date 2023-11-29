@@ -24,7 +24,7 @@ also provides them directly. That means it includes on an ongoing basis:
 3. Minor compiler bug fixes and quality of life improvements *that do not change
    the Elm language* (ongoing)
 
-This aims to be the entirety of Zelm's mission through the end of 2024. This
+This aims to be the entirety of Zelm's mission until 2025. This
 means Zelm is a quite conservative extension of Elm. What this implies is:
 
 + A commitment to bidirectional compatibility with Elm 0.19 through the end of
@@ -35,7 +35,7 @@ means Zelm is a quite conservative extension of Elm. What this implies is:
   Elm compiler (or Zelm compiler!) or usage of packages not in the standard Elm
   package repository.
 + What is considered a "bug fix" will be quite tightly scoped. E.g. something
-  like [https://github.com/elm/compiler/issues/1773](https://github.com/elm/compiler/issues/1773])
+  like [https://github.com/elm/compiler/issues/1773](https://github.com/elm/compiler/issues/1773)
   that adds the ability to pattern match on negative number literals would be on
   the fence (and likely not considered to be part of Zelm's current mission).
   Common candidates for compiler bug fixes that would be considered acceptable
