@@ -52,16 +52,55 @@ provides private repositories as well, largely in part because this allows
 individuals to fix bugs privately and use those bug fixes without exposing them
 to the wider world if they would like.
 
+## Compatibility Constraints
+
+Zelm aims to be:
+
+1. As stated earlier, bicompatible with the Elm compiler when it comes to a
+   given piece of Elm 0.19.1 code.
+2. Not interfere with the execution of the vanilla Elm compiler, i.e. a user
+   should be able to switch back and forth arbitrarily between invocations of
+   `zelm` and `elm` without the need to perform any sort of clean-up operation
+   in-between, such as deleting `elm-stuff` or `$ELM_HOME`.
+3. Be reasonably compatible with existing IDE tooling. We add the caveat
+   "reasonably," because without any updates to the IDE tools, we cannot ensure
+   that those tools take dependency overrides into account when providing
+   features such as "click to definition." However, outside of zelm-specific
+   features, we should preserve IDE compatibility as much as possible.
+
+This has a variety of downstream effects on technical choices that Zelm has
+made, as elaborated further in the FAQs.
+
 # How do I use Zelm?
 
 ## Quick Start
 
+You can always drop in Zelm as a replacement for Elm so for example the
+following will work.
+
 1. Download the Zelm binary from Github releases. 
 2. Run `zelm make $YOUR_ELM_MAIN_FILE` with whatever flags you usually pass to
    the Elm compiler.
-3. Everything should work just the exact same as it did before! You're using
-   Zelm!
-4. Now you can add a package override to your `elm.json` or add 
+3. Everything should work just the exact same as it did before!
+
+But that's not terribly interesting so let's look at
+[https://github.com/changlinli/zelm-basic-example](https://github.com/changlinli/zelm-basic-example).
+This repository showcases a bug in the `elm/core` library. Normally we would be
+stuck with this bug and have to work around it, because we cannot fork
+`elm/core` and use with the vanilla Elm compiler.
+
+Zelm, however, allows this with a single override in your `elm.json`. Let's
+demonstrate that.
+
+1. Run `git clone https://github.com/changlinli/zelm-basic-example` to get the
+   repository.
+2. `cd zelm-basic-example`.
+3. Now let's first run vanilla Elm: `elm make src/Main.elm`.
+4. Open the resulting `index.html` in your web browser of choice. Get ready to
+   close the browser, because it should hang in an infinite loop!
+5. Now let's try again with Zelm: `zelm make src/Main.elm`.
+6. Again open the resulting `index.html` in your web browser of choice. You
+   should now see a single string and not have a hanging browser!
 
 ### Explanation of quick start
 
@@ -71,12 +110,19 @@ well with their usual flags. So for example you can immediately run `zelm make
 $YOUR_ELM_MAIN_FILE` in the root of a pre-existing Elm project and it should run
 fine. Indeed if you wanted you could alias `zelm` as `elm`.
 
+Now as for the `zelm-basic-example` repository, let's go ahead and take a look
+at the `elm.json`. You'll see that in addition to all the normal bits in a
+vanilla `elm.json`, we also have a new field called `zelm-package-overrides`.
+This field overrides `elm/core` with another package called
+`zelm/elm-core-1-0-override`. `zelm/elm-core-1-0-override` fixes the bug in
+`elm/core`, so by overriding `elm/core` with this package instead, we get the
+bug fix!
 
 ## Using Custom Repositories
 
 To take advantage of Zelm-specific support for custom repositories, you can
 look at the `custom-package-repository-config.json` file, which is located in
-the `$ELM_HOME/zelm/` directory (this is usually `~/.elm/zelm/`). Much like how
+the `$ELM_HOME/elm-0.19.1/zelm/` directory (this is usually `~/.elm/elm-0.19.1/zelm/`). Much like how
 `$ELM_HOME` is generated on the first invocation of an `elm` subcommand, this
 file is generated the first time you successfully run a `zelm` subcommand (e.g.
 `zelm make`). By default the file looks like the below:
@@ -85,12 +131,12 @@ file is generated the first time you successfully run a `zelm` subcommand (e.g.
 {
     "repositories": [
         {
-            "type": "elm-package-server",
-            "url": "https://package.elm-lang.org/"
+            "repository-type": "package-server-with-standard-elm-package-server-api",
+            "repository-url": "https://package.elm-lang.org"
         },
         {
-            "type": "elm-package-server",
-            "url": "https://package-server.zelm-lang.com/"
+            "repository-type": "package-server-with-standard-elm-package-server-api",
+            "repository-url": "https://package-server.zelm-lang.com"
         }
     ],
     "single-package-locations": []
@@ -100,18 +146,75 @@ file is generated the first time you successfully run a `zelm` subcommand (e.g.
 The `custom-package-repository-config.json` file controls all configuration of
 package repositories used by `zelm`.
 
+### Custom Multi-File Repositories
+
 As can be seen, by default this configuration file includes both the standard Elm
 package repository as well as a separate Zelm package repository. Either
 repository can be deleted. For example if you would like to make use of the Zelm
 compiler with its bug fixes, but would otherwise like to ensure that you have a
 vanilla Elm project,  you can delete the `zelm-lang.com` repository.
 
-If you wish to set up a private repository for e.g. CI/CD purposes, you can
-delete both default repositories and include only the URL to your private
-repository.
+The `package-server-with-standard-elm-package-server-api` means that those URLs
+adhere to the API provided by the usual Elm package server. You can add any new
+URL that also adheres to the API of the usual Elm package server as a new entry
+in `repositories`. We are exploring adding other `repository-type`s.
 
 The set of packages available to the `zelm` compiler to download and compile is
 the union of all packages among your repositories.
+
+So e.g. if you wish to set up a private repository for e.g. CI/CD purposes, you
+can delete both default repositories and include only the URL to your private
+repository.
+
+`$ELM_HOME` is usually viewed as disposable, while often
+`custom-package-repository-config.json` has some data that we'd rather like to
+keep. One way to get around this is to store
+`custom-package-repository-config.json` somewhere else and symlink it into the
+proper location in `$ELM_HOME`. That way if you ever delete `$ELM_HOME`, you can
+always just re-symlink your configuration.
+
+As for why we choose to put the `custom-package-repository-config.json` file in
+`$ELM_HOME`, check out the FAQs.
+
+### Custom Single-File Repositories
+
+Sometimes though, you don't want to spin up an entire website just to be able to
+serve one or two custom packages. You might have just one package that you don't
+want to publish to the public Elm repository, but still want to use in your own
+projects.
+
+In those cases, you can directly just tell Zelm the exact location of one or two
+packages by adding them as entries to `single-package-locations`.
+
+```
+{
+    "repositories": [
+        {
+            "repository-type": "package-server-with-standard-elm-package-server-api",
+            "repository-url": "https://package.elm-lang.org"
+        },
+        {
+            "repository-type": "package-server-with-standard-elm-package-server-api",
+            "repository-url": "https://package-server.zelm-lang.com"
+        }
+    ],
+    "single-package-locations": [
+        {
+            "file-type": "zipfile",
+            "package-name": "someauthor/somecoolpackage",
+            "version": "1.0.0",
+            "url": "https://example.com/my-custom-library-1-0-0.zip"
+        },
+    ]
+}
+```
+
+Note that your `package-name` and `version` must match exactly what is contained
+in any `elm.json` that wishes to use that package in order for Zelm to resolve
+that package correctly.
+
+Currently `zipfile` is the only `file-type` supported, but we may add more later
+on.
 
 ## Dependency Overrides
 
@@ -133,7 +236,7 @@ your `elm.json` and run `zelm make`.
     "elm-version": "0.19.1",
     "dependencies": {
         "direct": {
-            "elm/core": "1.0.0",
+            "elm/core": "1.0.5",
             ...
         },
         "indirect": { ... }
@@ -143,21 +246,21 @@ your `elm.json` and run `zelm make`.
         {
             "original-package-name": "elm/core",
             "original-package-version": "1.0.5",
-            "override-package-name": "zelm/core-1-0-override",
-            "override-package-version": "1.0.1"
+            "override-package-name": "zelm/elm-core-1-0-override",
+            "override-package-version": "1.0.0"
         }
     ]
 }
 ```
 
 The way to read this declaration is that we are overriding version `1.0.5` of
-the package named `elm/core` using version `1.0.1` of the package named
-`zelm/core-1-0-override`.
+the package named `elm/core` using version `1.0.0` of the package named
+`zelm/elm-core-1-0-override`.
 
-Note that `zelm/core-1-0-override` exists only on
+Note that `zelm/elm-core-1-0-override` exists only on
 `https://package-server.zelm-lang.com/` not the standard Elm package repository
 `https://package.elm-lang.org/`, so you'll need to make sure that the former is
-present in `$ELM_HOME/zelm/custom-repository-config.json`.
+present in `$ELM_HOME/elm-0.19.1/zelm/custom-repository-config.json`.
 
 Packages used to override other packages should:
 
@@ -165,7 +268,7 @@ Packages used to override other packages should:
    names and function/value names.
 2. Be clearly marked as a package to be used to override other packages. E.g. by
    convention all the Zelm packages used as overrides are named
-   `$ORIGINAL_PACKAGE_NAME-$ORIGINAL_PACKAGE_MAJOR_MINOR-override`.
+   `$ORIGINAL_PACKAGE_AUTHOR-$ORIGINAL_PACKAGE_NAME-$ORIGINAL_PACKAGE_MAJOR_MINOR-override`.
 3. Not be published on the standard Elm package repository.
 4. Not be used as a normal dependency by any other package or application.
 5. Shoud have the same dependencies as the original package.
@@ -203,7 +306,91 @@ compatible with vanlla Elm as possible. As a result we are side-stepping these
 issues by mandating that your overriding package must have the same
 dependencies.
 
+### Combining Package Overrides and Custom Package Repositories
+
+The Elm community has had some other efforts to include bug fixes to Elm's core
+libraries. For example, there is the Elm Janitor project, which form the
+foundation of Zelm's forked versions of Elm's core libraries.
+
+By combining package overrides and custom package repositories, Zelm lets you
+seamlessly use those custom packages if you would like. For example, if you
+wish to depend solely on Elm Janitor's version of `elm/core` and not Zelm's
+forked version, then you can use the following
+`custom-package-repository-config.json` file, which eliminates the Zelm
+repository and adds the Elm Janitor version of `elm/core` as a custom package
+location.
+
+```
+{
+    "repositories": [
+        {
+            "repository-type": "package-server-with-standard-elm-package-server-api",
+            "repository-url": "https://package.elm-lang.org"
+        }
+    ],
+    "single-package-locations": [
+        {
+            "file-type": "zipfile",
+            "package-name": "zelm/elm-janitor-core",
+            "version": "1.0.0",
+            "url": "https://github.com/elm-janitor/core/archive/refs/heads/stack-1.0.5.zip"
+        },
+    ]
+}
+```
+
+Then in your `elm.json`, you can add the following override:
+
+```
+{
+    "type": "application",
+    "source-directories": ...,
+    "elm-version": "0.19.1",
+    "dependencies": {
+        "direct": {
+            "elm/core": "1.0.5",
+            ...
+        },
+        "indirect": { ... }
+    },
+    "test-dependencies": {... },
+    "zelm-package-overrides": [
+        {
+            "original-package-name": "elm/core",
+            "original-package-version": "1.0.5",
+            "override-package-name": "zelm/elm-janitor-core",
+            "override-package-version": "1.0.0"
+        }
+    ]
+}
+```
+
+Note that in this case, as long as your `elm.json` and
+`custom-package-repository-config.json` agree on the overriding package name and
+version, you can call the package name and version whatever you want (so e.g.
+instead of `zelm/elm-janitor-core`, you could've called it `zelm/some-package`
+with version `5.3.1`). For packages with kernel code you will need to give it
+the `zelm` author so that the Elm compiler is willing to compile it. If it
+does not have kernel code, you can list the author as whatever you'd like.
+
+However, **you should always give the overriding package a name that is
+different from the original package, either by giving it a different author or a
+different project name.** If you don't, this can cause problems for both Elm and
+Zelm because of how Elm uses a global package cache. If for example you decide
+to call your overriding package `elm/core` with version `1.0.10`, if `elm/core`
+ever publishes version `1.0.10` you can end up with weird transitive dependency
+errors when those two conflict.
+
+This isn't a huge deal; you can always rename your package again if that
+happens. It can just be difficult to diagnose so can cause pain and annoyance
+that would be easily avoided by just making sure you give your overriding
+packages names that are unique.
+
 ## Publishing Packages
+
+**The Zelm package repository currently disables publishing to it. If you set up
+your own instance of the Elm package server, you should be able to publish to it
+just fine with Zelm**.
 
 The `zelm publish` command is a bit different from `elm publish`. It takes a
 mandatory argument, which is the URL of the package repository (running an
@@ -235,12 +422,12 @@ Elm developers.
 If you would like you can also manually publish a package. The easiest way to do
 this is just to bundle it up as a zipfile, throw it up somewhere, and then
 expose that location as a new entry under `single-package-locations` in your
-`custom-package-repository-config.json` file in `$ELM_HOME/zelm`.
+`custom-package-repository-config.json` file in `$ELM_HOME/elm-0.19.1/zelm`.
 
 # Social Dynamics
 
 In light of Zelm's tightly scoped technical goals as well as the current state
-of Elm's community.
+of Elm's community, Zelm's social dynamics will look different from Elm's.
 
 In particular Elm's community is:
 
@@ -249,15 +436,12 @@ In particular Elm's community is:
 + Relatively consistent when it comes to opinions about what Elm code should
   look like: 
 
-In terms of Zelm's own social goals, there is really just one big one.
-
-+ 
-
-And as a reminder Zelm does not intend (at least not until 2025) to do feature
-development on the Elm language itself.
+**And as a reminder Zelm does not intend (at least not until 2025) to do feature
+development on the Elm language itself or any expansionary feature development
+on the Elm compiler.**
 
 This mean that Zelm does not really need a visionary at its helm or large
-amounts of time and energy spent on "wow"-esque features. What Zelm needs
+amounts of time and energy spent on groundbreaking features. What Zelm needs
 instead foremost is a low, but consistent, amount of attention to accept PRs and
 bug reports from the community. Secondarily, as time allows, Zelm will slowly
 grind through bugs that have no PRs.
@@ -288,23 +472,17 @@ that fit within Zelm's mission scope, i.e. bug fixes to foundational packages or
 to the compiler. These should be fixes with very few or no questions of design
 and no changes to any APIs.
 
-**Much like the technical goals, the social goals of Zelm are very tightly
-scoped to this goal of responsiveness**.
+**Note that responses do not necessarily mean that issues will be fixed or PRs
+will be merged**. Again, because of how tightly scoped Zelm's technical mission
+is, it is likely that many issues and PRs will lie outside what Zelm intends to
+address at least until 2025. Even if the issue or PR lies within Zelm's scope,
+it may either be tricky to fit or to merge in.
 
-To achieve this goal of timeliness, Zelm makes two trade-offs that are very
-different from Elm itself.
+However, even if you don't get your issue fixed or merged into a Zelm
+repository, Zelm gives you the tools through custom repositories and package
+overrides to do a lot of this on your own!
 
-1. We intentionally are side-stepping many fundamental design questions around
-   the language itself, at least until 2025.
-2. We intend to lead by committee rather than individual.
-
-The first point hopefully will allow us 
-
-In particular, our eventual goal is to have a stable roster of at least five
-people managing `zelm` and `zelm-explorations`, maybe more (although for
-tie-breaking purposes I'd like to keep the number odd).
-
-# FAQ
+# FAQs
 
 ## The design of Zelm
 
@@ -314,8 +492,14 @@ tie-breaking purposes I'd like to keep the number odd).
   integrations assume that there is a global cache of packages located in
   `$ELM_HOME` rather than local per-project caches (as is e.g. the case with
   `npm`). This means that to play nicely with these tooling choices, Zelm also
-  reuses the same global cache. However, because the cache is global to a
-  machine, while a machine can have many Elm projects, if one 
+  reuses the same global cache. However, because the cache is global to
+  `$ELM_HOME`, while many Elm projects can use the same `$ELM_HOME`, if one project has a
+  `custom-package-repository-config.json` that declares one location for a
+  given package while another project declares another location and those two
+  locations do not have the same code for that package, one project can break
+  another. This sort of breakage can appear to be non-deterministic to a user
+  and can be extremely frustrating to debug. To avoid this, we colocate
+  `custom-package-repository-config.json` with $ELM_HOME.
 
 **The following is the README for the original Elm compiler:**
 
