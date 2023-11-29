@@ -152,7 +152,11 @@ As can be seen, by default this configuration file includes both the standard El
 package repository as well as a separate Zelm package repository. Either
 repository can be deleted. For example if you would like to make use of the Zelm
 compiler with its bug fixes, but would otherwise like to ensure that you have a
-vanilla Elm project,  you can delete the `zelm-lang.com` repository.
+vanilla Elm project,  you can delete the `zelm-lang.com` repository. Likewise,
+if you set up an internal package repository for your company and would like to
+guarantee that all packages come from that repository and not the standard Elm
+repository, you can also delete the `elm-lang.org` repository and substitute
+your own.
 
 The `package-server-with-standard-elm-package-server-api` means that those URLs
 adhere to the API provided by the usual Elm package server. You can add any new
