@@ -43,3 +43,37 @@ jobs:
       with:
         name: zelm-compiler-ubuntu-x86_64-${{ steps.get_version.outputs.tag }}
         path: ./output/zelm
+        
+  macos_x86:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Haskell
+      uses: haskell-actions/setup@v2
+      with:
+        ghc-version: '9.2.8'  # Specify GHC version
+        cabal-version: '3.10'  # Specify Cabal version
+
+    # Add steps here to build your Haskell project using Cabal
+    - name: Build Project
+      run: |
+        cp cabal.project.freeze.ghc92 cabal.project.freeze
+        cabal update
+        cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
+        OUTPUT_BIN=$(cabal list-bin zelm)
+        mkdir -p output
+        cp $OUTPUT_BIN output/zelm
+
+    # Extract the current git tag
+    - name: Extract Git Tag
+      id: get_version
+      run: echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
+
+    # Upload artifacts
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: zelm-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}
+        path: ./output/zelm
