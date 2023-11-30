@@ -10,12 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  build-and-upload:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # Remove windows-latest for now, try to figure out the incantation later
-        os: [ubuntu-latest, macos-latest, macos-latest-xlarge]
+  linux:
+    runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v3
@@ -45,5 +41,5 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: zelm-compiler-${{ matrix.os }}-${{ steps.get_version.outputs.tag }}
+        name: zelm-compiler-ubuntu-x86_64-${{ steps.get_version.outputs.tag }}
         path: ./output/zelm
