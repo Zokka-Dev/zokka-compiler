@@ -17,6 +17,7 @@ import Language.Haskell.TH (runIO)
 import System.FilePath ((</>))
 
 import qualified Develop.StaticFiles.Build as Build
+import Logging.Logger (setLogFlag)
 
 
 
@@ -88,7 +89,8 @@ sansFontPath =
 
 elm :: BS.ByteString
 elm =
-  $(bsToExp =<< runIO Build.buildReactorFrontEnd)
+  $(bsToExp =<< runIO (do setLogFlag True; Build.buildReactorFrontEnd))
+
 
 
 
