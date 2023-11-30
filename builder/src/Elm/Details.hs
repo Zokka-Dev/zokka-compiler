@@ -591,9 +591,6 @@ type Fingerprint =
 
 -- BUILD
 
-isZelm :: Pkg.Name -> Bool
-isZelm name = take 4 (Utf8.toChars (Pkg._project name)) == "time"
-
 
 data OverridingPackageBuildData = OverridingPackageBuildData
   { _originalPkg :: Pkg.Name
@@ -629,10 +626,10 @@ build key buildData depsMVar f fs =
   let
     cacheFilePath = cacheFilePathFromBuildData buildData
     (pkg, vsn) = case buildData of
-      BuildOriginalPackage (OriginalPackageBuildData { _pkg=pkg, _version=vsn, _buildCache=cache }) ->
+      BuildOriginalPackage (OriginalPackageBuildData {_pkg=pkg, _version=vsn}) ->
         (pkg, vsn)
       BuildWithOverridingPackage 
-        (OverridingPackageBuildData {_originalPkg=origPkg, _originalPkgVersion=origPkgVer, _overridingPkg=overPkg, _overridingPkgVersion=overPkgVer, _overridingCache=cache}) ->
+        (OverridingPackageBuildData {_originalPkg=origPkg, _originalPkgVersion=origPkgVer}) ->
           (origPkg, origPkgVer)
 
   in
@@ -649,11 +646,7 @@ build key buildData depsMVar f fs =
 
         Right (Outline.Pkg (Outline.PkgOutline _ _ _ _ exposed deps _ _)) ->
           do  allDeps <- readMVar depsMVar
-              when (isZelm pkg) (printLog $ "zelm package: allDeps keys are" ++ show (Map.keys allDeps))
-              -- FIXME: Think about whether there is a more elegant way of doing this
-              when (isZelm pkg) (printLog $ "zelm package: deps keys are" ++ show (Map.keys deps))
               directDeps <- traverse readMVar (Map.intersection allDeps deps)
-              when (isZelm pkg) (printLog $ "zelm package: directDeps are" ++ show directDeps)
               case sequence directDeps of
                 Left x ->
                   do  Reporting.report key Reporting.DBroken
@@ -663,8 +656,6 @@ build key buildData depsMVar f fs =
                 Right directArtifacts ->
                   do  let src = cacheFilePath </> "src"
                       let foreignDeps = gatherForeignInterfaces directArtifacts
-                      when (isZelm pkg) (printLog ("zelm package: directArtifacts" ++ show directArtifacts))
-                      when (isZelm pkg) (printLog ("zelm package: foreignDeps" ++ show foreignDeps))
                       let exposedDict = Map.fromKeys (\_ -> ()) (Outline.flattenExposed exposed)
                       docsStatus <- getDocsStatusFromFilePath cacheFilePath
                       mvar <- newEmptyMVar
@@ -672,29 +663,24 @@ build key buildData depsMVar f fs =
                       putMVar mvar mvars
                       mapM_ readMVar mvars
                       maybeStatuses <- traverse readMVar =<< readMVar mvar
-                      when (isZelm pkg) (printLog "zelm package: past maybe statuses")
-                      when (isZelm pkg) (printLog ("zelm package: maybeStatuses that were Nothing" ++ show (Map.filter Maybe.isNothing maybeStatuses)))
                       case sequence maybeStatuses of
                         Nothing ->
                           do  Reporting.report key Reporting.DBroken
-                              when (isZelm pkg) (printLog "zelm package: maybeStatuses were Nothing")
+                              printLog ("maybeStatuses were Nothing for " ++ show pkg ++ " vsn " ++ show vsn ++ " and deps " ++ show deps)
                               return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
 
                         Just statuses ->
                           do  rmvar <- newEmptyMVar
-                              when (isZelm pkg) (printLog "zelm package: past rmvar")
                               let extractDepsFromStatus status = case status of (SLocal _ deps _) -> deps; _ -> Map.empty
-                              when (isZelm pkg) (printLog ("statuses: " ++ show (fmap extractDepsFromStatus statuses)))
                               let compileAction status = genericErrorHandler ("This package failed: " ++ show pkg) (compile pkg rmvar status)
                               rmvars <- traverse (fork . compileAction) statuses
-                              when (isZelm pkg) (printLog "zelm package: past rmvars")
                               putMVar rmvar rmvars
-                              when (isZelm pkg) (printLog "zelm package: past putMVar")
                               maybeResults <- traverse readMVar rmvars
-                              when (isZelm pkg) (printLog "zelm package: past just statuses")
                               case sequence maybeResults of
                                 Nothing ->
-                                  do  Reporting.report key Reporting.DBroken
+                                  do  
+                                      printLog ("maybeResults were Nothing for " ++ show pkg ++ " vsn " ++ show vsn ++ " and deps from status were " ++ show (fmap extractDepsFromStatus statuses))
+                                      Reporting.report key Reporting.DBroken
                                       return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
 
                                 Just results ->
@@ -812,12 +798,12 @@ crawlModule foreignDeps mvar pkg src docsStatus name =
         Nothing ->
           if exists then
             do
-              when (isZelm pkg) (printLog $ "module " ++ show name ++ " is in exists branch")
+              printLog $ "module " ++ show name ++ " is in exists branch"
               crawlFile foreignDeps mvar pkg src docsStatus name path
 
           else if Pkg.isKernel pkg && Name.isKernel name then
             do
-              when (isZelm pkg) (printLog $ "module " ++ show name ++ " is in kernel branch")
+              printLog $ "module " ++ show name ++ " is in kernel branch"
               crawlKernel foreignDeps mvar pkg src name
 
           else
@@ -830,9 +816,9 @@ crawlFile foreignDeps mvar pkg src docsStatus expectedName path =
       case Parse.fromByteString (Parse.Package pkg) bytes of
         Right modul@(Src.Module (Just (A.At _ actualName)) _ _ imports _ _ _ _ _) | expectedName == actualName ->
           do
-              when (isZelm pkg) (printLog $ "crawlFile (imports) " ++ show src ++ "|" ++ show path ++ " imports are " ++ show (fmap (Src._import) imports))
+              printLog $ "crawlFile (imports) pkg: " ++ show pkg ++ " src: " ++ show src ++ " path : " ++ show path ++ " imports are " ++ show (fmap (Src._import) imports)
               deps <- crawlImports foreignDeps mvar pkg src imports
-              when (isZelm pkg) (printLog $ "crawlFile (deps) " ++ show src ++ "|" ++ show path ++ " deps are " ++ show deps)
+              printLog $ "crawlFile (deps) pkg: " ++ show pkg ++ " src: " ++ show src ++ " path : " ++ show path ++ " deps are " ++ show deps
               return (Just (SLocal docsStatus deps modul))
 
         _ ->
@@ -843,7 +829,7 @@ crawlImports :: Map.Map ModuleName.Raw ForeignInterface -> MVar StatusDict -> Pk
 crawlImports foreignDeps mvar pkg src imports =
   do  statusDict <- takeMVar mvar
       let deps = Map.fromList (map (\i -> (Src.getImportName i, ())) imports)
-      when (isZelm pkg) (printLog $ "crawlImports " ++ show src ++ " deps are " ++ show deps)
+      printLog $ "crawlImports pkg: " ++ show pkg ++ " src: " ++ show src ++ " deps are " ++ show deps
       let news = Map.difference deps statusDict
       mvars <- Map.traverseWithKey (const . fork . crawlModule foreignDeps mvar pkg src DocsNotNeeded) news
       putMVar mvar (Map.union mvars statusDict)
@@ -893,16 +879,14 @@ compile pkg mvar status =
   case status of
     SLocal docsStatus deps modul ->
       do  resultsDict <- readMVar mvar
-          when (isZelm pkg) (printLog "made it past resultsDict")
-          when (isZelm pkg ) (printLog ("all keys in resultsDict: " ++ show (Map.keys resultsDict)))
-          when (isZelm pkg ) (printLog ("all keys in deps: " ++ show (Map.keys deps)))
+          printLog ("all keys in resultsDict for pkg:  " ++ show pkg ++ " " ++ show (Map.keys resultsDict))
+          printLog ("all keys in deps for pkg: " ++ show pkg ++ " " ++ show (Map.keys deps))
           let thingToRead = Map.intersection resultsDict deps
-          when (isZelm pkg ) (printLog ("all keys in thingToRead: " ++ show (Map.keys thingToRead)))
+          printLog ("all keys in thingToRead for pkg: " ++ show pkg ++ " " ++ show (Map.keys thingToRead))
           maybeResults <- Map.traverseWithKey (\k v -> hasLocked ("compiling this pkg: " ++ show pkg ++ "reading this module: " ++ show k) (readMVar v)) (Map.intersection resultsDict deps)
-          when (isZelm pkg) (printLog "made it past maybeResults")
           case sequence maybeResults of
             Nothing -> do
-              when (isZelm pkg) (printLog "nothing branch of sequence maybeResults")
+              printLog ("nothing branch of sequence maybeResults for pkg: " ++ show pkg)
               return Nothing
 
             Just results ->
