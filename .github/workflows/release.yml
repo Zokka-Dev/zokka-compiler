@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         # Remove windows-latest for now, try to figure out the incantation later
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, macos-latest-xlarge]
     
     steps:
     - uses: actions/checkout@v3
