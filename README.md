@@ -220,7 +220,7 @@ that package correctly.
 Currently `zipfile` is the only `file-type` supported, but we may add more later
 on.
 
-**NOTE: there is currently a bug [https://github.com/changlinli/zelm-compiler/issues/2](https://github.com/changlinli/zelm-compiler/issues/2) that means if you make any changes to `$ELM_HOME/0.19.1/zelm/custom-package-repository-config.json` you will need to manually delete `$ELM_HOME/0.19.1/zelm-cache/zelm-registries.dat`. This should be fixed quite soon.**
+**NOTE: there is currently a bug [https://github.com/changlinli/zelm-compiler/issues/2](https://github.com/changlinli/zelm-compiler/issues/2) that means if you make any changes to `$ELM_HOME/0.19.1/zelm/custom-package-repository-config.json` you will need to manually delete `$ELM_HOME/0.19.1/zelm-cache/zelm-registry.dat`. This should be fixed quite soon.**
 
 ## Dependency Overrides
 
@@ -371,7 +371,7 @@ Then in your `elm.json`, you can add the following override:
 }
 ```
 
-**REMINDER: there is currently a bug [https://github.com/changlinli/zelm-compiler/issues/2](https://github.com/changlinli/zelm-compiler/issues/2) that means if you make any changes to `$ELM_HOME/0.19.1/zelm/custom-package-repository-config.json` you will need to manually delete `$ELM_HOME/0.19.1/zelm-cache/zelm-registries.dat`. This should be fixed quite soon.**
+**REMINDER: there is currently a bug [https://github.com/changlinli/zelm-compiler/issues/2](https://github.com/changlinli/zelm-compiler/issues/2) that means if you make any changes to `$ELM_HOME/0.19.1/zelm/custom-package-repository-config.json` you will need to manually delete `$ELM_HOME/0.19.1/zelm-cache/zelm-registry.dat`. This should be fixed quite soon.**
 
 Note that in this case, as long as your `elm.json` and
 `custom-package-repository-config.json` agree on the overriding package name and
