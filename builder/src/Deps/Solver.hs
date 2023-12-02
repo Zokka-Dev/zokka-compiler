@@ -39,9 +39,10 @@ import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDe
 import Data.Maybe (fromJust)
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Reporting.Exit (RegistryProblem(..))
-import Stuff (ZelmCustomRepositoryConfigFilePath(unZelmCustomRepositoryConfigFilePath))
+import Stuff (ZelmCustomRepositoryConfigFilePath(unZelmCustomRepositoryConfigFilePath), zelmCacheToFilePath)
 import qualified Data.Utf8 as Utf8
 import Logging.Logger (printLog)
+import File (getTime)
 
 
 
@@ -422,7 +423,12 @@ initEnv =
                             return $ Left $ problem
 
                   Just cachedRegistry ->
-                    do  eitherRegistry <- Registry.update manager zelmCache cachedRegistry
+                    do  modifiedTimeOfZelmCache <- getTime (zelmCacheToFilePath zelmCache)
+                        -- FIXME: Think about whether I need a lock on the custom repository JSON file as well
+                        modifiedTimeOfCustomRepositoriesData <- getTime (unZelmCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
+                        eitherRegistry <- if modifiedTimeOfZelmCache == modifiedTimeOfCustomRepositoriesData 
+                          then Registry.update manager zelmCache cachedRegistry
+                          else Registry.fetch manager zelmCache customRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache

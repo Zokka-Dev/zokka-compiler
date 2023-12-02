@@ -24,6 +24,7 @@ module Stuff
   , getOrCreateZelmCustomRepositoryConfig
   , getOrCreateZelmCacheDir
   , ZelmCustomRepositoryConfigFilePath(..)
+  , zelmCacheToFilePath
   )
   where
 
@@ -189,6 +190,10 @@ getPackageOverridesCache =
   do
     (ZelmSpecificCache zelmSpecificCache) <- getZelmCache
     pure $ PackageOverridesCache zelmSpecificCache
+
+
+zelmCacheToFilePath :: ZelmSpecificCache -> FilePath
+zelmCacheToFilePath (ZelmSpecificCache filePath) = filePath
 
 
 getZelmCache :: IO ZelmSpecificCache
