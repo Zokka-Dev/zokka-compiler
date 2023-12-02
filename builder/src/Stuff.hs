@@ -45,8 +45,18 @@ import qualified Elm.Version as V
 
 stuff :: FilePath -> FilePath
 stuff root =
-  root </> "elm-stuff" </> customCompilerVersion
+  -- We use zelm-stuff instead of elm-stuff because this gets around an edge
+  -- case where the compiler checks the timestamp of the stuff directory vs
+  -- elm.json to decide whether any re-building is necessary and this can mean
+  -- that compiling with the Zelm compiler doesn't change any code that was
+  -- compiled by the Elm compiler, even though it probably should.
+  root </> "zelm-stuff" </> customCompilerVersion
   where
+    -- The following comment explains why we originally had compilerVersion ++ -zelm
+    -- under the same elm-stuff. Some of the reasoning there is stil true but not as
+    -- relevant, because the -zelm suffix is superfluous now that we use
+    -- zelm-stuff instead of the directory name elm-stuff.
+    --
     -- We need a custom compiler version because of Zelm's support for dependency
     -- overrides. If we override dependencies, we could end up with what appears to
     -- be an invalid cache for the vanilla Elm compiler, because we will have
