@@ -83,9 +83,6 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
-      with:
-        # This seems necessary on Windows but not on the other platforms
-        fetch-tags: true
 
     - name: Set up Haskell
       uses: haskell-actions/setup@v2
