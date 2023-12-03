@@ -59,7 +59,8 @@ to the wider world if they would like.
 You can always drop in Zelm as a replacement for Elm so for example the
 following will work.
 
-1. Download the Zelm binary from Github releases. 
+1. Download the Zelm binary from Github releases
+   [https://github.com/changlinli/zelm-compiler/releases](https://github.com/changlinli/zelm-compiler/releases). 
 2. Run `zelm make $YOUR_ELM_MAIN_FILE` with whatever flags you usually pass to
    the Elm compiler.
 3. Everything should work just the exact same as it did before!
