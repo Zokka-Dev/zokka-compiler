@@ -1,21 +1,21 @@
-**The Zelm compiler is a fork of the Elm compiler. The original README that
+**The Zokka compiler is a fork of the Elm compiler. The original README that
 comes with the Elm compiler can be found at the end of this document.**
 
-# What is Zelm?
+# What is Zokka?
 
-Zelm is an alternative compiler for Elm, forked off the same underlying
+Zokka is an alternative compiler for Elm, forked off the same underlying
 codebase, alongside some additions to the Elm package ecosystem. Its main
 purpose is to provide a method for bug fixes and patches that have accumulated
 over the years for the compiler and foundational packages to be used by any Elm
 programmer.
 
-To accomplish this, compared to the standard Elm compiler, Zelm adds:
+To accomplish this, compared to the standard Elm compiler, Zokka adds:
 
 1. The ability to use custom package repositories
 2. The ability to override dependencies (both direct and indirect) with custom
    versions of your own
 
-In addition to providing a method to incorporate bug fixes and patches, Zelm
+In addition to providing a method to incorporate bug fixes and patches, Zokka
 also provides them directly. That means it includes on an ongoing basis:
 
 1. A collection of API-identical versions of foundational Elm packages that
@@ -24,90 +24,90 @@ also provides them directly. That means it includes on an ongoing basis:
 3. Minor compiler bug fixes and quality of life improvements *that do not change
    the Elm language* (ongoing)
 
-This aims to be the entirety of Zelm's mission until 2025. This
-means Zelm is a quite conservative extension of Elm. What this implies is:
+This aims to be the entirety of Zokka's mission until 2025. This
+means Zokka is a quite conservative extension of Elm. What this implies is:
 
 + A commitment to bidirectional compatibility with Elm 0.19 through the end of
   2024: any code that compiles with the default Elm compiler should compile with
-  Zelm *and vice versa*. In particular, this means that Zelm will not just be
-  backwards-compatible with Elm, all Zelm code that compiles with the Zelm
+  Zokka *and vice versa*. In particular, this means that Zokka will not just be
+  backwards-compatible with Elm, all Zokka code that compiles with the Zokka
   compiler should compile with the Elm compiler, barring compiler bugs in the
-  Elm compiler (or Zelm compiler!) or usage of packages not in the standard Elm
+  Elm compiler (or Zokka compiler!) or usage of packages not in the standard Elm
   package repository.
 + What is considered a "bug fix" will be quite tightly scoped. E.g. something
   like [https://github.com/elm/compiler/issues/1773](https://github.com/elm/compiler/issues/1773)
   that adds the ability to pattern match on negative number literals would be on
-  the fence (and likely not considered to be part of Zelm's current mission).
+  the fence (and likely not considered to be part of Zokka's current mission).
   Common candidates for compiler bug fixes that would be considered acceptable
   are compiler crashes and improved error messages.
 + **Very little actual feature development.** Some experimentation may happen on side
   branches that may show up in both private and public channels, but those will
-  not be given an actual Github release until 2025 (if Zelm is still relevant
+  not be given an actual Github release until 2025 (if Zokka is still relevant
   then).
 
-**Again, Zelm's main function in the wider Elm community (at least until 2025)
+**Again, Zokka's main function in the wider Elm community (at least until 2025)
 is to collect bug fixes submitted by the community and merge them, not to do
-major Elm development itself.** As a (substantial) side effect of that Zelm
+major Elm development itself.** As a (substantial) side effect of that Zokka
 provides private repositories as well, largely in part because this allows
 individuals to fix bugs privately and use those bug fixes without exposing them
 to the wider world if they would like.
 
-# How do I use Zelm?
+# How do I use Zokka?
 
 ## Quick Start
 
-You can always drop in Zelm as a replacement for Elm so for example the
+You can always drop in Zokka as a replacement for Elm so for example the
 following will work.
 
-1. Download the Zelm binary from Github releases
-   [https://github.com/changlinli/zelm-compiler/releases](https://github.com/changlinli/zelm-compiler/releases). 
-2. Run `zelm make $YOUR_ELM_MAIN_FILE` with whatever flags you usually pass to
+1. Download the Zokka binary from Github releases
+   [https://github.com/changlinli/zokka-compiler/releases](https://github.com/changlinli/zokka-compiler/releases). 
+2. Run `zokka make $YOUR_ELM_MAIN_FILE` with whatever flags you usually pass to
    the Elm compiler.
 3. Everything should work just the exact same as it did before!
 
 But that's not terribly interesting so let's look at
-[https://github.com/changlinli/zelm-basic-example](https://github.com/changlinli/zelm-basic-example).
+[https://github.com/changlinli/zokka-basic-example](https://github.com/changlinli/zokka-basic-example).
 This repository showcases a bug in the `elm/core` library. Normally we would be
 stuck with this bug and have to work around it, because we cannot fork
 `elm/core` and use with the vanilla Elm compiler.
 
-Zelm, however, allows this with a single override in your `elm.json`. Let's
+Zokka, however, allows this with a single override in your `elm.json`. Let's
 demonstrate that.
 
-1. Run `git clone https://github.com/changlinli/zelm-basic-example` to get the
+1. Run `git clone https://github.com/changlinli/zokka-basic-example` to get the
    repository.
-2. `cd zelm-basic-example`.
+2. `cd zokka-basic-example`.
 3. Now let's first run vanilla Elm: `elm make src/Main.elm`.
 4. Open the resulting `index.html` in your web browser of choice. Get ready to
    close the browser, because it should hang in an infinite loop!
-5. Now let's try again with Zelm: `zelm make src/Main.elm`.
+5. Now let's try again with Zokka: `zokka make src/Main.elm`.
 6. Again open the resulting `index.html` in your web browser of choice. You
    should now see a single string and not have a hanging browser!
 
 ### Explanation of quick start
 
-`zelm` aims to be command-line compatible with the usual `elm` binary (except
-for the `publish` command), so all `elm` subcommands are usable in `zelm` as
-well with their usual flags. So for example you can immediately run `zelm make
+`zokka` aims to be command-line compatible with the usual `elm` binary (except
+for the `publish` command), so all `elm` subcommands are usable in `zokka` as
+well with their usual flags. So for example you can immediately run `zokka make
 $YOUR_ELM_MAIN_FILE` in the root of a pre-existing Elm project and it should run
-fine. Indeed if you wanted you could alias `zelm` as `elm`.
+fine. Indeed if you wanted you could alias `zokka` as `elm`.
 
-Now as for the `zelm-basic-example` repository, let's go ahead and take a look
+Now as for the `zokka-basic-example` repository, let's go ahead and take a look
 at the `elm.json`. You'll see that in addition to all the normal bits in a
-vanilla `elm.json`, we also have a new field called `zelm-package-overrides`.
+vanilla `elm.json`, we also have a new field called `zokka-package-overrides`.
 This field overrides `elm/core` with another package called
-`zelm/elm-core-1-0-override`. `zelm/elm-core-1-0-override` fixes the bug in
+`zokka/elm-core-1-0-override`. `zokka/elm-core-1-0-override` fixes the bug in
 `elm/core`, so by overriding `elm/core` with this package instead, we get the
 bug fix!
 
 ## Using Custom Repositories
 
-To take advantage of Zelm-specific support for custom repositories, you can
+To take advantage of Zokka-specific support for custom repositories, you can
 look at the `custom-package-repository-config.json` file, which is located in
-the `$ELM_HOME/0.19.1/zelm/` directory (this is usually `~/.elm/0.19.1/zelm/`). Much like how
+the `$ELM_HOME/0.19.1/zokka/` directory (this is usually `~/.elm/0.19.1/zokka/`). Much like how
 `$ELM_HOME` is generated on the first invocation of an `elm` subcommand, this
-file is generated the first time you successfully run a `zelm` subcommand (e.g.
-`zelm make`). By default the file looks like the below:
+file is generated the first time you successfully run a `zokka` subcommand (e.g.
+`zokka make`). By default the file looks like the below:
 
 ```
 {
@@ -118,7 +118,7 @@ file is generated the first time you successfully run a `zelm` subcommand (e.g.
         },
         {
             "repository-type": "package-server-with-standard-elm-package-server-api",
-            "repository-url": "https://package-server.zelm-lang.com"
+            "repository-url": "https://package-server.zokka-lang.com"
         }
     ],
     "single-package-locations": []
@@ -126,15 +126,15 @@ file is generated the first time you successfully run a `zelm` subcommand (e.g.
 ```
 
 The `custom-package-repository-config.json` file controls all configuration of
-package repositories used by `zelm`.
+package repositories used by `zokka`.
 
 ### Custom Multi-File Repositories
 
 As can be seen, by default this configuration file includes both the standard Elm
-package repository as well as a separate Zelm package repository. Either
-repository can be deleted. For example if you would like to make use of the Zelm
+package repository as well as a separate Zokka package repository. Either
+repository can be deleted. For example if you would like to make use of the Zokka
 compiler with its bug fixes, but would otherwise like to ensure that you have a
-vanilla Elm project,  you can delete the `zelm-lang.com` repository. Likewise,
+vanilla Elm project,  you can delete the `zokka-lang.com` repository. Likewise,
 if you set up an internal package repository for your company and would like to
 guarantee that all packages come from that repository and not the standard Elm
 repository, you can also delete the `elm-lang.org` repository and substitute
@@ -145,7 +145,7 @@ adhere to the API provided by the usual Elm package server. You can add any new
 URL that also adheres to the API of the usual Elm package server as a new entry
 in `repositories`. We are exploring adding other `repository-type`s.
 
-The set of packages available to the `zelm` compiler to download and compile is
+The set of packages available to the `zokka` compiler to download and compile is
 the union of all packages among your repositories.
 
 So e.g. if you wish to set up a private repository for e.g. CI/CD purposes, you
@@ -169,7 +169,7 @@ serve one or two custom packages. You might have just one package that you don't
 want to publish to the public Elm repository, but still want to use in your own
 projects.
 
-In those cases, you can directly just tell Zelm the exact location of one or two
+In those cases, you can directly just tell Zokka the exact location of one or two
 packages by adding them as entries to `single-package-locations`.
 
 ```
@@ -181,7 +181,7 @@ packages by adding them as entries to `single-package-locations`.
         },
         {
             "repository-type": "package-server-with-standard-elm-package-server-api",
-            "repository-url": "https://package-server.zelm-lang.com"
+            "repository-url": "https://package-server.zokka-lang.com"
         }
     ],
     "single-package-locations": [
@@ -196,7 +196,7 @@ packages by adding them as entries to `single-package-locations`.
 ```
 
 Note that your `package-name` and `version` must match exactly what is contained
-in any `elm.json` that wishes to use that package in order for Zelm to resolve
+in any `elm.json` that wishes to use that package in order for Zokka to resolve
 that package correctly.
 
 Currently `zipfile` is the only `file-type` supported, but we may add more later
@@ -210,10 +210,10 @@ package and depend on your fork. However, for packages that are indirect
 dependencies or packages that are in the `elm` or `elm-explorations` GitHub
 organizations that is not feasible.
 
-Zelm lets you instead override dependencies. So for example if you depend on
+Zokka lets you instead override dependencies. So for example if you depend on
 `elm/core` version `1.0.5`, but would like to incorporate the bug fix in
-https://github.com/elm/core/pull/1092, you can add `zelm-package-overrides` to
-your `elm.json` and run `zelm make`.
+https://github.com/elm/core/pull/1092, you can add `zokka-package-overrides` to
+your `elm.json` and run `zokka make`.
 
 ```
 {
@@ -228,11 +228,11 @@ your `elm.json` and run `zelm make`.
         "indirect": { ... }
     },
     "test-dependencies": {... },
-    "zelm-package-overrides": [
+    "zokka-package-overrides": [
         {
             "original-package-name": "elm/core",
             "original-package-version": "1.0.5",
-            "override-package-name": "zelm/elm-core-1-0-override",
+            "override-package-name": "zokka/elm-core-1-0-override",
             "override-package-version": "1.0.0"
         }
     ]
@@ -241,12 +241,12 @@ your `elm.json` and run `zelm make`.
 
 The way to read this declaration is that we are overriding version `1.0.5` of
 the package named `elm/core` using version `1.0.0` of the package named
-`zelm/elm-core-1-0-override`.
+`zokka/elm-core-1-0-override`.
 
-Note that `zelm/elm-core-1-0-override` exists only on
-`https://package-server.zelm-lang.com/` not the standard Elm package repository
+Note that `zokka/elm-core-1-0-override` exists only on
+`https://package-server.zokka-lang.com/` not the standard Elm package repository
 `https://package.elm-lang.org/`, so you'll need to make sure that the former is
-present in `$ELM_HOME/0.19.1/zelm/custom-repository-config.json`.
+present in `$ELM_HOME/0.19.1/zokka/custom-repository-config.json`.
 
 If you wish to create your own package for a package override, please see
 [./CREATING_A_NEW_PACKAGE_FOR_PACKAGE_OVERRIDES.md](./CREATING_A_NEW_PACKAGE_FOR_PACKAGE_OVERRIDES.md).
@@ -255,13 +255,13 @@ If you wish to create your own package for a package override, please see
 
 The Elm community has had some other efforts to include bug fixes to Elm's core
 libraries. For example, there is the [Elm Janitor](https://github.com/elm-janitor) project, which form the
-foundation of Zelm's forked versions of Elm's core libraries (thank you!).
+foundation of Zokka's forked versions of Elm's core libraries (thank you!).
 
-By combining package overrides and custom package repositories, Zelm lets you
+By combining package overrides and custom package repositories, Zokka lets you
 seamlessly use those custom packages if you would like. For example, if you
-wish to depend solely on Elm Janitor's version of `elm/core` and not Zelm's
+wish to depend solely on Elm Janitor's version of `elm/core` and not Zokka's
 forked version, then you can use the following
-`custom-package-repository-config.json` file, which eliminates the Zelm
+`custom-package-repository-config.json` file, which eliminates the Zokka
 repository and adds the Elm Janitor version of `elm/core` as a custom package
 location.
 
@@ -299,7 +299,7 @@ Then in your `elm.json`, you can add the following override:
         "indirect": { ... }
     },
     "test-dependencies": {... },
-    "zelm-package-overrides": [
+    "zokka-package-overrides": [
         {
             "original-package-name": "elm/core",
             "original-package-version": "1.0.5",
@@ -319,7 +319,7 @@ with version `5.3.1`).
 However, **you should always give the overriding package a name that is
 different from the original package, either by giving it a different author or a
 different project name.** If you don't, this can cause problems for both Elm and
-Zelm because of how Elm uses a global package cache. If for example you decide
+Zokka because of how Elm uses a global package cache. If for example you decide
 to call your overriding package `elm/core` with version `1.0.10`, if `elm/core`
 ever publishes version `1.0.10` you can end up with weird transitive dependency
 errors when those two conflict.
@@ -331,33 +331,33 @@ packages names that are unique.
 
 ## Publishing Packages
 
-**The Zelm package repository currently disables publishing to it. If you set up
+**The Zokka package repository currently disables publishing to it. If you set up
 your own instance of the Elm package server, you should be able to publish to it
-just fine with Zelm**.
+just fine with Zokka**.
 
-The `zelm publish` command is a bit different from `elm publish`. It takes a
+The `zokka publish` command is a bit different from `elm publish`. It takes a
 mandatory argument, which is the URL of the package repository (running an
 instance of the Elm package repository server) you wish to publish to.
 
-**Zelm is hard-coded to disallow publishing to the
+**Zokka is hard-coded to disallow publishing to the
 https://package.elm-lang.org/ package repository to preserve the integrity of
-the standard Elm repository**. While Zelm packages could depend on packages that
+the standard Elm repository**. While Zokka packages could depend on packages that
 do not exist in the standard Elm repository, this is not the most important
 reason we disallow publishing to the standard Elm repository, since there are
 ways we could detect this and just selectively disallow those cases. The biggest
-reason is that the Zelm compiler may include bug fixes for Elm compiler crashes,
-which means that if we want to make sure that a Zelm-published package on the
+reason is that the Zokka compiler may include bug fixes for Elm compiler crashes,
+which means that if we want to make sure that a Zokka-published package on the
 standard Elm package repository is usable in a vanilla Elm project, we must
 replicate all of the Elm compiler's bugs, which goes against one of the goals of
-Zelm. Otherwise we could end up with a Zelm-published package that causes a
+Zokka. Otherwise we could end up with a Zokka-published package that causes a
 compiler crash when used in a vanilla Elm project.
 
-**If you wish to publish a package developed with Zelm to the standard Elm
+**If you wish to publish a package developed with Zokka to the standard Elm
 package repository, take advantage of bidirectional compatibility and use the
 standard Elm binary instead to publish the package**. Assuming you are not using
 packages from non-stanard repositories, this should be a drop-in substitution
-(file a bug in Zelm if this is not the case!). You can still use Zelm while
-developing your package so that you can enjoy Zelm's improved error messages and
+(file a bug in Zokka if this is not the case!). You can still use Zokka while
+developing your package so that you can enjoy Zokka's improved error messages and
 other small quality of life improvements, but you are also thereby guaranteed
 that whatever you publish on https://package.elm-lang.org/ is usable by other
 Elm developers.
@@ -365,7 +365,7 @@ Elm developers.
 If you would like you can also manually publish a package. The easiest way to do
 this is just to bundle it up as a zipfile, throw it up somewhere, and then
 expose that location as a new entry under `single-package-locations` in your
-`custom-package-repository-config.json` file in `$ELM_HOME/0.19.1/zelm`.
+`custom-package-repository-config.json` file in `$ELM_HOME/0.19.1/zokka`.
 
 # Governance Structure
 

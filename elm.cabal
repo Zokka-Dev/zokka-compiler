@@ -34,7 +34,7 @@ Flag dev {
 }
 
 
-Common zelm-common
+Common zokka-common
 
     Hs-Source-Dirs:
         compiler/src
@@ -234,9 +234,9 @@ Common zelm-common
         vector,
         zip-archive
 
-Executable zelm
+Executable zokka
     Import:
-        zelm-common
+        zokka-common
     
     Main-Is:
         Main.hs
@@ -246,9 +246,9 @@ Executable zelm
     -- https://www.oreilly.com/library/view/parallel-and-concurrent/9781449335939/
 
 
-Test-Suite zelm-tests
+Test-Suite zokka-tests
     Import:
-        zelm-common
+        zokka-common
     
     Main-Is:
         TestMain.hs

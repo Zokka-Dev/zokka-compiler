@@ -3,7 +3,7 @@ Packages used to override other packages should:
 1. Be API-compatible with the original package. I.e. use the exact same module
    names and function/value names.
 2. Be clearly marked as a package to be used to override other packages. E.g. by
-   convention all the Zelm packages used as overrides are named
+   convention all the Zokka packages used as overrides are named
    `$ORIGINAL_PACKAGE_AUTHOR-$ORIGINAL_PACKAGE_NAME-$ORIGINAL_PACKAGE_MAJOR_MINOR-override`.
 3. Not be published on the standard Elm package repository.
 4. Not be used as a normal dependency by any other package or application.
@@ -26,9 +26,9 @@ package if they are used in the same project. Therefore we want to minimize the
 chances where someone could end up either directly or indirectly depending on
 both a package and another API-identical package meant to override the former.
 Packages meant to override other packages should only ever show up in
-`zelm-package-overrides`. By keeping package overrides off of the standard Elm
+`zokka-package-overrides`. By keeping package overrides off of the standard Elm
 repository and clearly labeling such packages as overrides, we prevent
-unsuspecting Elm developers who aren't using Zelm from inadvertently ending up
+unsuspecting Elm developers who aren't using Zokka from inadvertently ending up
 with a project that has uncompilable, conflicting dependencies.
 
 The fifth rule has to do with the nature of dependency resolution. If your
