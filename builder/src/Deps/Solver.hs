@@ -39,7 +39,7 @@ import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDe
 import Data.Maybe (fromJust)
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Reporting.Exit (RegistryProblem(..))
-import Stuff (ZelmCustomRepositoryConfigFilePath(unZelmCustomRepositoryConfigFilePath), zelmCacheToFilePath)
+import Stuff (ZokkaCustomRepositoryConfigFilePath(unZokkaCustomRepositoryConfigFilePath), zokkaCacheToFilePath)
 import qualified Data.Utf8 as Utf8
 import Logging.Logger (printLog)
 import File (getTime)
@@ -65,7 +65,7 @@ data State =
   State
     { _cache :: Stuff.PackageCache
     , _connection :: Connection
-    , _registry :: Registry.ZelmRegistries
+    , _registry :: Registry.ZokkaRegistries
     , _constraints :: Map.Map (Pkg.Name, V.Version) Constraints
     }
 
@@ -102,7 +102,7 @@ data Details =
   deriving Show
 
 
-verify :: Stuff.PackageCache -> Connection -> Registry.ZelmRegistries -> Map.Map Pkg.Name C.Constraint -> IO (Result (Map.Map Pkg.Name Details))
+verify :: Stuff.PackageCache -> Connection -> Registry.ZokkaRegistries -> Map.Map Pkg.Name C.Constraint -> IO (Result (Map.Map Pkg.Name Details))
 verify cache connection registry constraints =
   Stuff.withRegistryLock cache $
   case try constraints of
@@ -139,7 +139,7 @@ data AppSolution =
     }
 
 
-addToApp :: Stuff.PackageCache -> Connection -> Registry.ZelmRegistries -> Pkg.Name -> Outline.AppOutline -> IO (Result AppSolution)
+addToApp :: Stuff.PackageCache -> Connection -> Registry.ZokkaRegistries -> Pkg.Name -> Outline.AppOutline -> IO (Result AppSolution)
 addToApp cache connection registry pkg outline@(Outline.AppOutline _ _ direct indirect testDirect testIndirect _) =
   Stuff.withRegistryLock cache $
   let
@@ -393,7 +393,7 @@ constraintsDecoder =
 
 
 data Env =
-  Env Stuff.PackageCache Http.Manager Connection Registry.ZelmRegistries Stuff.PackageOverridesCache
+  Env Stuff.PackageCache Http.Manager Connection Registry.ZokkaRegistries Stuff.PackageOverridesCache
 
 
 initEnv :: IO (Either Exit.RegistryProblem Env)
@@ -402,19 +402,19 @@ initEnv =
       _     <- forkIO $ putMVar mvar =<< Http.getManager
       cache <- Stuff.getPackageCache
       packageOverridesCache <- Stuff.getPackageOverridesCache
-      zelmCache <- Stuff.getZelmCache
-      customRepositoriesConfigLocation <- Stuff.getOrCreateZelmCustomRepositoryConfig
+      zokkaCache <- Stuff.getZokkaCache
+      customRepositoriesConfigLocation <- Stuff.getOrCreateZokkaCustomRepositoryConfig
       customRepositoriesDataOrErr <- loadCustomRepositoriesData customRepositoriesConfigLocation
       case customRepositoriesDataOrErr of
-        Left err -> pure $ Left (RP_BadCustomReposData err (unZelmCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
+        Left err -> pure $ Left (RP_BadCustomReposData err (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
         Right customRepositoriesData ->
           Stuff.withRegistryLock cache $
-            do  maybeRegistry <- Registry.read zelmCache
+            do  maybeRegistry <- Registry.read zokkaCache
                 manager       <- readMVar mvar
 
                 case maybeRegistry of
                   Nothing ->
-                    do  eitherRegistry <- Registry.fetch manager zelmCache customRepositoriesData
+                    do  eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
@@ -423,12 +423,12 @@ initEnv =
                             return $ Left $ problem
 
                   Just cachedRegistry ->
-                    do  modifiedTimeOfZelmCache <- getTime (zelmCacheToFilePath zelmCache)
+                    do  modifiedTimeOfZokkaCache <- getTime (zokkaCacheToFilePath zokkaCache)
                         -- FIXME: Think about whether I need a lock on the custom repository JSON file as well
-                        modifiedTimeOfCustomRepositoriesData <- getTime (unZelmCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
-                        eitherRegistry <- if modifiedTimeOfZelmCache == modifiedTimeOfCustomRepositoriesData 
-                          then Registry.update manager zelmCache cachedRegistry
-                          else Registry.fetch manager zelmCache customRepositoriesData
+                        modifiedTimeOfCustomRepositoriesData <- getTime (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
+                        eitherRegistry <- if modifiedTimeOfZokkaCache == modifiedTimeOfCustomRepositoriesData 
+                          then Registry.update manager zokkaCache cachedRegistry
+                          else Registry.fetch manager zokkaCache customRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
@@ -442,19 +442,19 @@ initEnvForReactorTH =
       _     <- forkIO $ putMVar mvar =<< Http.getManager
       cache <- Stuff.getPackageCache
       packageOverridesCache <- Stuff.getPackageOverridesCache
-      zelmCache <- Stuff.getZelmCache
-      customRepositoriesConfigLocation <- Stuff.getOrCreateZelmCustomRepositoryConfig
+      zokkaCache <- Stuff.getZokkaCache
+      customRepositoriesConfigLocation <- Stuff.getOrCreateZokkaCustomRepositoryConfig
       customRepositoriesDataOrErr <- loadCustomRepositoriesDataForReactorTH customRepositoriesConfigLocation
       case customRepositoriesDataOrErr of
-        Left err -> pure $ Left (RP_BadCustomReposData err (unZelmCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
+        Left err -> pure $ Left (RP_BadCustomReposData err (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
         Right customRepositoriesData ->
           Stuff.withRegistryLock cache $
-            do  maybeRegistry <- Registry.read zelmCache
+            do  maybeRegistry <- Registry.read zokkaCache
                 manager       <- readMVar mvar
 
                 case maybeRegistry of
                   Nothing ->
-                    do  eitherRegistry <- Registry.fetch manager zelmCache customRepositoriesData
+                    do  eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
@@ -463,7 +463,7 @@ initEnvForReactorTH =
                             return $ Left $ problem
 
                   Just cachedRegistry ->
-                    do  eitherRegistry <- Registry.update manager zelmCache cachedRegistry
+                    do  eitherRegistry <- Registry.update manager zokkaCache cachedRegistry
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache

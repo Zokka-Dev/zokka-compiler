@@ -11,20 +11,20 @@ module Stuff
   , withRootLock
   , withRegistryLock
   , PackageCache
-  , ZelmSpecificCache
+  , ZokkaSpecificCache
   , PackageOverridesCache
   , getPackageCache
-  , getZelmCache
+  , getZokkaCache
   , getPackageOverridesCache
   , registry
   , package
   , packageOverride
   , getReplCache
   , getElmHome
-  , getOrCreateZelmCustomRepositoryConfig
-  , getOrCreateZelmCacheDir
-  , ZelmCustomRepositoryConfigFilePath(..)
-  , zelmCacheToFilePath
+  , getOrCreateZokkaCustomRepositoryConfig
+  , getOrCreateZokkaCacheDir
+  , ZokkaCustomRepositoryConfigFilePath(..)
+  , zokkaCacheToFilePath
   )
   where
 
@@ -46,25 +46,25 @@ import qualified Elm.Version as V
 
 stuff :: FilePath -> FilePath
 stuff root =
-  -- We use zelm-stuff instead of elm-stuff because this gets around an edge
+  -- We use zokka-stuff instead of elm-stuff because this gets around an edge
   -- case where the compiler checks the timestamp of the stuff directory vs
   -- elm.json to decide whether any re-building is necessary and this can mean
-  -- that compiling with the Zelm compiler doesn't change any code that was
+  -- that compiling with the Zokka compiler doesn't change any code that was
   -- compiled by the Elm compiler, even though it probably should.
-  root </> "zelm-stuff" </> customCompilerVersion
+  root </> "zokka-stuff" </> customCompilerVersion
   where
-    -- The following comment explains why we originally had compilerVersion ++ -zelm
+    -- The following comment explains why we originally had compilerVersion ++ -zokka
     -- under the same elm-stuff. Some of the reasoning there is stil true but not as
-    -- relevant, because the -zelm suffix is superfluous now that we use
-    -- zelm-stuff instead of the directory name elm-stuff.
+    -- relevant, because the -zokka suffix is superfluous now that we use
+    -- zokka-stuff instead of the directory name elm-stuff.
     --
-    -- We need a custom compiler version because of Zelm's support for dependency
+    -- We need a custom compiler version because of Zokka's support for dependency
     -- overrides. If we override dependencies, we could end up with what appears to
     -- be an invalid cache for the vanilla Elm compiler, because we will have
     -- resolved a different set of dependencies than what the vanilla Elm compiler
     -- would have, which can result in interface files that do not correspond to
     -- elm.json as the vanilla Elm compiler understands the dependencies from 
-    -- elm.json. This means that an end user who uses Zelm and then tries to revert
+    -- elm.json. This means that an end user who uses Zokka and then tries to revert
     -- back to using Elm could observe non-obvious breakage (even though it's 
     -- easily fixable by just deleting the elm-stuff directory), which we are trying
     -- to minimimze.
@@ -73,7 +73,7 @@ stuff root =
     -- important analyses. If that's not true, then we may revert to using the usual
     -- compiler version and just letting the user delete elm-stuff manually (the
     -- error message at least will tell them to delete the directory).
-    customCompilerVersion = compilerVersion ++ "-zelm"
+    customCompilerVersion = compilerVersion ++ "-zokka"
 
 
 details :: FilePath -> FilePath
@@ -175,7 +175,7 @@ withRegistryLock (PackageCache dir) work =
 
 newtype PackageCache = PackageCache FilePath
 
-newtype ZelmSpecificCache = ZelmSpecificCache FilePath
+newtype ZokkaSpecificCache = ZokkaSpecificCache FilePath
 
 newtype PackageOverridesCache = PackageOverridesCache FilePath
 
@@ -188,22 +188,22 @@ getPackageCache =
 getPackageOverridesCache :: IO PackageOverridesCache
 getPackageOverridesCache =
   do
-    (ZelmSpecificCache zelmSpecificCache) <- getZelmCache
-    pure $ PackageOverridesCache zelmSpecificCache
+    (ZokkaSpecificCache zokkaSpecificCache) <- getZokkaCache
+    pure $ PackageOverridesCache zokkaSpecificCache
 
 
-zelmCacheToFilePath :: ZelmSpecificCache -> FilePath
-zelmCacheToFilePath (ZelmSpecificCache filePath) = filePath
+zokkaCacheToFilePath :: ZokkaSpecificCache -> FilePath
+zokkaCacheToFilePath (ZokkaSpecificCache filePath) = filePath
 
 
-getZelmCache :: IO ZelmSpecificCache
-getZelmCache =
-  ZelmSpecificCache <$> getOrCreateZelmCacheDir
+getZokkaCache :: IO ZokkaSpecificCache
+getZokkaCache =
+  ZokkaSpecificCache <$> getOrCreateZokkaCacheDir
 
 
-registry :: ZelmSpecificCache -> FilePath
-registry (ZelmSpecificCache dir) =
-  dir </> "zelm-registry.dat"
+registry :: ZokkaSpecificCache -> FilePath
+registry (ZokkaSpecificCache dir) =
+  dir </> "zokka-registry.dat"
 
 
 package :: PackageCache -> Pkg.Name -> V.Version -> FilePath
@@ -241,26 +241,26 @@ getElmHome =
         Nothing -> Dir.getAppUserDataDirectory "elm"
 
 
--- The Zelm cache directory contains the Zelm-specific registry file, while the
--- Zelm directory proper contains the custom repository configuration (and hence 
+-- The Zokka cache directory contains the Zokka-specific registry file, while the
+-- Zokka directory proper contains the custom repository configuration (and hence 
 -- is a bit more valuable than just the cache).
-getOrCreateZelmCacheDir :: IO FilePath
-getOrCreateZelmCacheDir = do
-    cacheDir <- getCacheDir "zelm-cache"
+getOrCreateZokkaCacheDir :: IO FilePath
+getOrCreateZokkaCacheDir = do
+    cacheDir <- getCacheDir "zokka-cache"
     Dir.createDirectoryIfMissing True cacheDir
     pure cacheDir
 
 
-getZelmDir :: IO FilePath
-getZelmDir = getCacheDir "zelm"
+getZokkaDir :: IO FilePath
+getZokkaDir = getCacheDir "zokka"
 
 
-newtype ZelmCustomRepositoryConfigFilePath = ZelmCustomRepositoryConfigFilePath { unZelmCustomRepositoryConfigFilePath :: FilePath }
+newtype ZokkaCustomRepositoryConfigFilePath = ZokkaCustomRepositoryConfigFilePath { unZokkaCustomRepositoryConfigFilePath :: FilePath }
 
 
-getOrCreateZelmCustomRepositoryConfig :: IO ZelmCustomRepositoryConfigFilePath
-getOrCreateZelmCustomRepositoryConfig =
+getOrCreateZokkaCustomRepositoryConfig :: IO ZokkaCustomRepositoryConfigFilePath
+getOrCreateZokkaCustomRepositoryConfig =
   do
-    zelmDir <- getZelmDir
-    Dir.createDirectoryIfMissing True zelmDir
-    pure $ ZelmCustomRepositoryConfigFilePath (zelmDir </> "custom-package-repository-config.json")
+    zokkaDir <- getZokkaDir
+    Dir.createDirectoryIfMissing True zokkaDir
+    pure $ ZokkaCustomRepositoryConfigFilePath (zokkaDir </> "custom-package-repository-config.json")

@@ -79,7 +79,7 @@ data Env =
     { _root :: FilePath
     , _cache :: Stuff.PackageCache
     , _manager :: Http.Manager
-    , _registry :: Registry.ZelmRegistries
+    , _registry :: Registry.ZokkaRegistries
     , _outline :: Outline.Outline
     }
 
@@ -88,13 +88,13 @@ getEnv :: Task.Task Exit.Publish Env
 getEnv =
   do  root <- Task.mio Exit.PublishNoOutline $ Stuff.findRoot
       cache <- Task.io $ Stuff.getPackageCache
-      zelmCache <- Task.io $ Stuff.getZelmCache
+      zokkaCache <- Task.io $ Stuff.getZokkaCache
       manager <- Task.io $ Http.getManager
-      reposConfigLocation <- Task.io $ Stuff.getOrCreateZelmCustomRepositoryConfig
+      reposConfigLocation <- Task.io $ Stuff.getOrCreateZokkaCustomRepositoryConfig
       customReposData <- Task.eio PublishCustomRepositoryConfigDataError $ loadCustomRepositoriesData reposConfigLocation
-      zelmRegistries <- Task.eio Exit.PublishMustHaveLatestRegistry $ Registry.latest manager customReposData zelmCache
+      zokkaRegistries <- Task.eio Exit.PublishMustHaveLatestRegistry $ Registry.latest manager customReposData zokkaCache
       outline <- Task.eio Exit.PublishBadOutline $ Outline.read root
-      return $ Env root cache manager zelmRegistries outline
+      return $ Env root cache manager zokkaRegistries outline
 
 
 
@@ -110,7 +110,7 @@ publish env@(Env root _ manager registry outline) repositoryUrl =
     Outline.Pkg (Outline.PkgOutline pkg summary _ vsn exposed _ _ _) ->
       if Utf8.toChars standardElmPkgRepoDomain `isInfixOf` Utf8.toChars repositoryUrl
         then
-          Task.throw Exit.PublishToStandardElmRepositoryUsingZelm
+          Task.throw Exit.PublishToStandardElmRepositoryUsingZokka
         else
           do  let maybeKnownVersions = Registry.getVersions pkg registry
 

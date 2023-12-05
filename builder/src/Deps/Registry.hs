@@ -3,7 +3,7 @@
 module Deps.Registry
   ( Registry(..)
   , KnownVersions(..)
-  , ZelmRegistries(..)
+  , ZokkaRegistries(..)
   , RegistryKey(..)
   , read
   , fetch
@@ -48,7 +48,7 @@ import Data.Map.Utils (exchangeKeys, invertMap)
 -- because of how we perform updates of the registry. We need to know how many
 -- packages came from a given repository to pass to the /all-packages/since
 -- endpoint. So we can't start from the outset with all the registries merged.
-data ZelmRegistries = ZelmRegistries
+data ZokkaRegistries = ZokkaRegistries
   { _registries :: !(Map.Map RegistryKey Registry)
   , _packagesToLocations :: !(Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
   }
@@ -60,8 +60,8 @@ knownVersionsToNEListOfVersions :: KnownVersions -> NE.List V.Version
 knownVersionsToNEListOfVersions (KnownVersions newest rest) = NE.List newest rest
 
 
-zelmRegistriesFromRegistriesMap :: Map.Map RegistryKey Registry -> ZelmRegistries
-zelmRegistriesFromRegistriesMap registriesMap =
+zokkaRegistriesFromRegistriesMap :: Map.Map RegistryKey Registry -> ZokkaRegistries
+zokkaRegistriesFromRegistriesMap registriesMap =
   let
     --FIXME: Deal with what happens when we have multiple registries with the same
     -- version of a package. Right now we just essentially randomly choose one
@@ -72,11 +72,11 @@ zelmRegistriesFromRegistriesMap registriesMap =
     pkgNamesToAllVersionsAndRegistry = fmap invertMap pkgNamesToRegistryAndAllVersions
     pkgNamesToSingleVersionAndRegistry = (fmap . fmap) NE.head pkgNamesToAllVersionsAndRegistry
   in
-    ZelmRegistries{_registries=registriesMap, _packagesToLocations=pkgNamesToSingleVersionAndRegistry}
+    ZokkaRegistries{_registries=registriesMap, _packagesToLocations=pkgNamesToSingleVersionAndRegistry}
 
 
-lookupPackageRegistryKey :: ZelmRegistries -> Pkg.Name -> V.Version -> Maybe RegistryKey
-lookupPackageRegistryKey ZelmRegistries{_packagesToLocations=packagesToLocations} pkgName pkgVersion =
+lookupPackageRegistryKey :: ZokkaRegistries -> Pkg.Name -> V.Version -> Maybe RegistryKey
+lookupPackageRegistryKey ZokkaRegistries{_packagesToLocations=packagesToLocations} pkgName pkgVersion =
   do
     versions <- Map.lookup pkgName packagesToLocations
     Map.lookup pkgVersion versions
@@ -102,8 +102,8 @@ emptyRegistry :: Registry
 emptyRegistry = Registry 0 Map.empty
 
 
-mergeRegistries :: ZelmRegistries -> Registry
-mergeRegistries ZelmRegistries{_registries=registries} = Map.foldl combineRegistry emptyRegistry registries
+mergeRegistries :: ZokkaRegistries -> Registry
+mergeRegistries ZokkaRegistries{_registries=registries} = Map.foldl combineRegistry emptyRegistry registries
 
 
 data Registry =
@@ -126,7 +126,7 @@ data KnownVersions =
 -- READ
 
 
-read :: HasCallStack => Stuff.ZelmSpecificCache -> IO (Maybe ZelmRegistries)
+read :: HasCallStack => Stuff.ZokkaSpecificCache -> IO (Maybe ZokkaRegistries)
 read cache =
   File.readBinary (Stuff.registry cache)
 
@@ -136,7 +136,7 @@ read cache =
 
 
 
-fetch :: Http.Manager -> Stuff.ZelmSpecificCache -> CustomRepositoriesData -> IO (Either Exit.RegistryProblem ZelmRegistries)
+fetch :: Http.Manager -> Stuff.ZokkaSpecificCache -> CustomRepositoriesData -> IO (Either Exit.RegistryProblem ZokkaRegistries)
 fetch manager cache (CustomRepositoriesData customFullRepositories singlePackageLocations) =
   do
     -- FIXME: this is pretty awful
@@ -149,8 +149,8 @@ fetch manager cache (CustomRepositoriesData customFullRepositories singlePackage
       Right registries -> do
         let path = Stuff.registry cache
         let registry = Map.fromList registries
-        File.writeBinary path (zelmRegistriesFromRegistriesMap registry)
-        pure $ Right (zelmRegistriesFromRegistriesMap registry)
+        File.writeBinary path (zokkaRegistriesFromRegistriesMap registry)
+        pure $ Right (zokkaRegistriesFromRegistriesMap registry)
 
 
 createRegistryFromSinglePackageLocation :: SinglePackageLocationData -> Registry
@@ -199,10 +199,10 @@ allPkgsDecoder =
 
 -- UPDATE
 
-update :: Http.Manager -> Stuff.ZelmSpecificCache -> ZelmRegistries -> IO (Either Exit.RegistryProblem ZelmRegistries)
-update manager cache zelmRegistries =
+update :: Http.Manager -> Stuff.ZokkaSpecificCache -> ZokkaRegistries -> IO (Either Exit.RegistryProblem ZokkaRegistries)
+update manager cache zokkaRegistries =
   do
-    let registriesMap = _registries zelmRegistries
+    let registriesMap = _registries zokkaRegistries
     let listOfProblemsOrKeyRegistryPairs = traverse (\(k, v) -> fmap (fmap ((,) k)) (updateSingleRegistry manager k v)) (Map.toList registriesMap)
     newRegistryOrError <- sequence <$> listOfProblemsOrKeyRegistryPairs
     let newRegistryOrError' = fmap Map.fromList newRegistryOrError
@@ -211,9 +211,9 @@ update manager cache zelmRegistries =
       Right newRegistry ->
         do
           -- FIXME: There's gotta be a faster way of doing this
-          let newZelmRegistries = zelmRegistriesFromRegistriesMap newRegistry
-          _ <- File.writeBinary (Stuff.registry cache) newZelmRegistries
-          pure $ Right newZelmRegistries
+          let newZokkaRegistries = zokkaRegistriesFromRegistriesMap newRegistry
+          _ <- File.writeBinary (Stuff.registry cache) newZokkaRegistries
+          pure $ Right newZokkaRegistries
 
 
   -- = RepositoryUrlKey RepositoryUrl
@@ -292,13 +292,13 @@ customSingleRepositoryDataToRegistryKey CustomSingleRepositoryData{_repositoryUr
 singlePackageLocationDataToRegistryKey :: SinglePackageLocationData -> RegistryKey
 singlePackageLocationDataToRegistryKey SinglePackageLocationData{_url=url}= PackageUrlKey url
 
-doesRegistryAgreeWithCustomRepositoriesData :: CustomRepositoriesData -> ZelmRegistries -> Bool
+doesRegistryAgreeWithCustomRepositoriesData :: CustomRepositoriesData -> ZokkaRegistries -> Bool
 doesRegistryAgreeWithCustomRepositoriesData (CustomRepositoriesData fullRepositories singlePackages) registry =
   Set.fromList allRegistryKeys == Map.keysSet (_registries registry)
     where
       allRegistryKeys = (customSingleRepositoryDataToRegistryKey <$> fullRepositories) ++ (singlePackageLocationDataToRegistryKey <$> singlePackages)
 
-latest :: Http.Manager -> CustomRepositoriesData -> Stuff.ZelmSpecificCache -> IO (Either Exit.RegistryProblem ZelmRegistries)
+latest :: Http.Manager -> CustomRepositoriesData -> Stuff.ZokkaSpecificCache -> IO (Either Exit.RegistryProblem ZokkaRegistries)
 latest manager customRepositoriesData cache =
   do
     maybeOldRegistry <- read cache
@@ -324,19 +324,19 @@ versionsToKnownVersions :: [V.Version] -> Maybe KnownVersions
 versionsToKnownVersions = foldr (\v acc -> Just $ compareVersionToKnownVersions v acc) Nothing
 
 
-getVersions :: Pkg.Name -> ZelmRegistries -> Maybe KnownVersions
-getVersions name ZelmRegistries{_packagesToLocations=packagesToLocations} =
+getVersions :: Pkg.Name -> ZokkaRegistries -> Maybe KnownVersions
+getVersions name ZokkaRegistries{_packagesToLocations=packagesToLocations} =
   do
     versionsMap <- Map.lookup name packagesToLocations
     let versions = Map.keys versionsMap
     versionsToKnownVersions versions
 
-getVersions' :: Pkg.Name -> ZelmRegistries -> Either [Pkg.Name] KnownVersions
-getVersions' name zelmRegistry =
-  case getVersions name zelmRegistry of
+getVersions' :: Pkg.Name -> ZokkaRegistries -> Either [Pkg.Name] KnownVersions
+getVersions' name zokkaRegistry =
+  case getVersions name zokkaRegistry of
     Just kvs -> Right kvs
     -- FIXME: Maybe a faster way than just brute-force merging?
-    Nothing -> Left $ Pkg.nearbyNames name (Map.keys (_versions $ mergeRegistries zelmRegistry))
+    Nothing -> Left $ Pkg.nearbyNames name (Map.keys (_versions $ mergeRegistries zokkaRegistry))
 
 
 
@@ -391,12 +391,12 @@ instance Binary KnownVersions where
   put (KnownVersions a b) = put a >> put b
 
 
-instance Binary ZelmRegistries where
+instance Binary ZokkaRegistries where
   get = do
     registries <- get :: Get (Map.Map RegistryKey Registry)
     packagesToLocations <- get :: Get (Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
-    pure $ ZelmRegistries{_registries=registries, _packagesToLocations=packagesToLocations}
+    pure $ ZokkaRegistries{_registries=registries, _packagesToLocations=packagesToLocations}
 
-  put (ZelmRegistries registries packagesToLocations) = do
+  put (ZokkaRegistries registries packagesToLocations) = do
     put registries
     put packagesToLocations

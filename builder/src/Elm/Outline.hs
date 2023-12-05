@@ -62,7 +62,7 @@ data AppOutline =
     , _app_deps_indirect :: Map.Map Pkg.Name V.Version
     , _app_test_direct :: Map.Map Pkg.Name V.Version
     , _app_test_indirect :: Map.Map Pkg.Name V.Version
-    , _app_zelm_package_overrides :: [PkgOverride.PackageOverrideData]
+    , _app_zokka_package_overrides :: [PkgOverride.PackageOverrideData]
     }
     deriving Show
 
@@ -147,7 +147,7 @@ encode outline =
               [ "direct" ==> encodeDeps V.encode testDirect
               , "indirect" ==> encodeDeps V.encode testTrans
               ]
-        , "zelm-package-overrides" ==> E.list encodePkgOverride pkgOverrides
+        , "zokka-package-overrides" ==> E.list encodePkgOverride pkgOverrides
         ]
 
     Pkg (PkgOutline name summary license version exposed deps tests elm) ->
@@ -317,7 +317,7 @@ appDecoder =
     <*> D.field "dependencies" (D.field "indirect" (depsDecoder versionDecoder))
     <*> D.field "test-dependencies" (D.field "direct" (depsDecoder versionDecoder))
     <*> D.field "test-dependencies" (D.field "indirect" (depsDecoder versionDecoder))
-    <*> D.oneOf [ D.field "zelm-package-overrides" (D.list packageOverrideDataDecoder), pure [] ]
+    <*> D.oneOf [ D.field "zokka-package-overrides" (D.list packageOverrideDataDecoder), pure [] ]
 
 
 pkgDecoder :: Decoder PkgOutline

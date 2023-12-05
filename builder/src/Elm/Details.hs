@@ -62,7 +62,7 @@ import qualified Stuff
 import Elm.PackageOverrideData (PackageOverrideData(..))
 import Data.Function ((&))
 import Data.Map ((!))
-import Deps.Registry (ZelmRegistries)
+import Deps.Registry (ZokkaRegistries)
 import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl)
 import Control.Exception (SomeException, catches, Handler (..), BlockedIndefinitelyOnMVar (BlockedIndefinitelyOnMVar), throwIO, Exception)
 import qualified Reporting.Annotation as Report.Annotation
@@ -257,7 +257,7 @@ data Env =
     , _cache :: Stuff.PackageCache
     , _manager :: Http.Manager
     , _connection :: Solver.Connection
-    , _registry :: Registry.ZelmRegistries
+    , _registry :: Registry.ZokkaRegistries
     , _packageOverridesCache :: Stuff.PackageOverridesCache
     }
 
@@ -415,7 +415,7 @@ genericErrorHandler msg action =
 -- VERIFY DEPENDENCIES
 
 verifyDependencies :: Env -> File.Time -> ValidOutline -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name a -> Map.Map Pkg.Name (Pkg.Name, V.Version) -> Task Details
-verifyDependencies (Env key scope root cache manager _ zelmRegistries packageOverridesCache) time outline solution directDeps originalPkgToOverridingPkg =
+verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOverridesCache) time outline solution directDeps originalPkgToOverridingPkg =
   let
     generateBuildData :: Pkg.Name -> V.Version -> BuildData
     generateBuildData pkgName pkgVersion = case Map.lookup pkgName originalPkgToOverridingPkg of
@@ -444,7 +444,7 @@ verifyDependencies (Env key scope root cache manager _ zelmRegistries packageOve
       printLog "Made it to VERIFYDEPENDENCIES 1"
       printLog ("SOLUTION: " ++ show solution)
       mvars <- Stuff.withRegistryLock cache $
-        Map.traverseWithKey (\k details -> fork (verifyDep key (generateBuildData k (extractVersionFromDetails details)) manager zelmRegistries mvar solution (extractConstraintsFromDetails details))) solution
+        Map.traverseWithKey (\k details -> fork (verifyDep key (generateBuildData k (extractVersionFromDetails details)) manager zokkaRegistries mvar solution (extractConstraintsFromDetails details))) solution
       printLog ("Made it to VERIFYDEPENDENCIES 2: " ++ show (Map.keys mvars))
       putMVar mvar mvars
       printLog "Made it to VERIFYDEPENDENCIES 3"
@@ -509,8 +509,8 @@ type Dep =
   Either (Maybe Exit.DetailsBadDep) Artifacts
 
 
-verifyDep :: Reporting.DKey -> BuildData -> Http.Manager -> ZelmRegistries -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name C.Constraint -> IO Dep
-verifyDep key buildData manager zelmRegistry depsMVar solution directDeps =
+verifyDep :: Reporting.DKey -> BuildData -> Http.Manager -> ZokkaRegistries -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name C.Constraint -> IO Dep
+verifyDep key buildData manager zokkaRegistry depsMVar solution directDeps =
   let 
     fingerprint = Map.intersectionWith (\(Solver.Details v _) _ -> v) solution directDeps
     cacheFilePath = cacheFilePathFromBuildData buildData
@@ -522,7 +522,7 @@ verifyDep key buildData manager zelmRegistry depsMVar solution directDeps =
         BuildWithOverridingPackage 
           (OverridingPackageBuildData {_overridingPkg=overridingPkg, _overridingPkgVersion=overridingPkgVer}) ->
             (overridingPkg, overridingPkgVer)
-    downloadPackageAction = downloadPackageToFilePath cacheFilePath zelmRegistry manager primaryPkg primaryPkgVersion
+    downloadPackageAction = downloadPackageToFilePath cacheFilePath zokkaRegistry manager primaryPkg primaryPkgVersion
   in
   do  exists <- Dir.doesDirectoryExist cacheFilePath
       printLog (show exists ++ "A0" ++ cacheFilePath)
@@ -542,7 +542,7 @@ verifyDep key buildData manager zelmRegistry depsMVar solution directDeps =
         else
           do  Reporting.report key Reporting.DRequested
               -- Normally we don't need to create the directory because it's created during the
-              -- constraint solving process (to put an elm.json there), but in Zelm's case we 
+              -- constraint solving process (to put an elm.json there), but in Zokka's case we 
               -- might be looking at a dependency that showed up after the constraint solving
               -- process was completed via an override, so the directory might not actually exist,
               -- so we better create it here just in case.
@@ -553,9 +553,9 @@ verifyDep key buildData manager zelmRegistry depsMVar solution directDeps =
               -- Also the reason we don't shift overrides to happen during constraint solving is
               -- that we want to eventually in the future download both the original package
               -- and the package that is being used to override the original, both to help with
-              -- Elm IDE integrations (which may be unaware of Zelm and so we still want to
+              -- Elm IDE integrations (which may be unaware of Zokka and so we still want to
               -- support click-to-definition, which is usually based on the cache, even if the
-              -- integration is unaware of Zelm overrides) and to help with error messages, where
+              -- integration is unaware of Zokka overrides) and to help with error messages, where
               -- we can rigorously check that the APIs of the original package and the override 
               -- match. So we want to make sure that we keep the information about what original
               -- package was used around and we want that to drive the constraint process in
@@ -1010,9 +1010,9 @@ toDocs result =
 -- DOWNLOAD PACKAGE
 
 
-downloadPackage :: Stuff.PackageCache -> ZelmRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
-downloadPackage cache zelmRegistries manager pkg vsn =
-  case Registry.lookupPackageRegistryKey zelmRegistries pkg vsn of
+downloadPackage :: Stuff.PackageCache -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackage cache zokkaRegistries manager pkg vsn =
+  case Registry.lookupPackageRegistryKey zokkaRegistries pkg vsn of
     Just (Registry.RepositoryUrlKey repositoryUrl) ->
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
@@ -1026,15 +1026,15 @@ downloadPackage cache zelmRegistries manager pkg vsn =
     Nothing ->
       let
         --FIXME
-        blah = fmap show (Map.keys $ Registry._registries zelmRegistries)
+        blah = fmap show (Map.keys $ Registry._registries zokkaRegistries)
       in
       pure (Left $ Exit.PP_PackageNotInRegistry blah pkg vsn)
 
 
 -- FIXME: reduce duplication with downloadPackage
-downloadPackageToFilePath :: FilePath -> ZelmRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
-downloadPackageToFilePath filePath zelmRegistries manager pkg vsn =
-  case Registry.lookupPackageRegistryKey zelmRegistries pkg vsn of
+downloadPackageToFilePath :: FilePath -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackageToFilePath filePath zokkaRegistries manager pkg vsn =
+  case Registry.lookupPackageRegistryKey zokkaRegistries pkg vsn of
     Just (Registry.RepositoryUrlKey repositoryUrl) ->
       do
         exists <- Dir.doesDirectoryExist filePath
@@ -1048,7 +1048,7 @@ downloadPackageToFilePath filePath zelmRegistries manager pkg vsn =
     Nothing ->
       let
         --FIXME
-        blah = fmap show (Map.keys $ Registry._registries zelmRegistries)
+        blah = fmap show (Map.keys $ Registry._registries zokkaRegistries)
       in
       pure (Left $ Exit.PP_PackageNotInRegistry blah pkg vsn)
 

@@ -65,7 +65,7 @@ data Env =
     { _maybeRoot :: Maybe FilePath
     , _cache :: Stuff.PackageCache
     , _manager :: Http.Manager
-    , _registry :: Registry.ZelmRegistries
+    , _registry :: Registry.ZokkaRegistries
     }
 
 
@@ -73,11 +73,11 @@ getEnv :: Task Env
 getEnv =
   do  maybeRoot <- Task.io $ Stuff.findRoot
       cache     <- Task.io $ Stuff.getPackageCache
-      zelmCache <- Task.io $ Stuff.getZelmCache
+      zokkaCache <- Task.io $ Stuff.getZokkaCache
       manager   <- Task.io $ Http.getManager
-      reposConf <- Task.io $ Stuff.getOrCreateZelmCustomRepositoryConfig
+      reposConf <- Task.io $ Stuff.getOrCreateZokkaCustomRepositoryConfig
       reposData <- Task.eio Exit.DiffCustomReposDataProblem $ loadCustomRepositoriesData reposConf
-      registry  <- Task.eio Exit.DiffMustHaveLatestRegistry $ Registry.latest manager reposData zelmCache
+      registry  <- Task.eio Exit.DiffMustHaveLatestRegistry $ Registry.latest manager reposData zokkaCache
       return (Env maybeRoot cache manager registry)
 
 

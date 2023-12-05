@@ -87,7 +87,7 @@ parseRepositoryUrl :: String -> Maybe RepositoryUrl
 parseRepositoryUrl str = Just $ Utf8.fromChars str
 
 exampleRepositoryUrls :: String -> IO [String]
-exampleRepositoryUrls _ = pure ["https://package-server.zelm-lang.com", "https://www.example.com/my-package"]
+exampleRepositoryUrls _ = pure ["https://package-server.zokka-lang.com", "https://www.example.com/my-package"]
 
 
 -- ELM FILE
@@ -141,7 +141,7 @@ parsePackage chars =
 
 suggestPackages :: String -> IO [String]
 suggestPackages given =
-  do  cache <- Stuff.getZelmCache
+  do  cache <- Stuff.getZokkaCache
       maybeRegistry <- Registry.read cache
       let mergedRegistries = fmap Registry.mergeRegistries maybeRegistry
       return $
@@ -156,7 +156,7 @@ suggestPackages given =
 
 examplePackages :: String -> IO [String]
 examplePackages given =
-  do  cache <- Stuff.getZelmCache
+  do  cache <- Stuff.getZokkaCache
       maybeRegistry <- Registry.read cache
       let mergedRegistries = fmap Registry.mergeRegistries maybeRegistry
       return $

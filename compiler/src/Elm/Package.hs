@@ -12,7 +12,7 @@ module Elm.Package
   , toFilePath
   , toJsonString
   --
-  , dummyName, kernel, core, zelmCore
+  , dummyName, kernel, core, zokkaCore
   , browser, virtualDom, html
   , json, http, url
   , webgl, linearAlgebra
@@ -83,11 +83,11 @@ data Canonical =
 
 isKernel :: Name -> Bool
 isKernel (Name author _) =
-  author == elm || author == elm_explorations || author == zelm || author == zelm_explorations
+  author == elm || author == elm_explorations || author == zokka || author == zokka_explorations
 
 -- FIXME: Need to think about how to make this better
 isCore :: Name -> Bool
-isCore name = name == core || name == zelmCore
+isCore name = name == core || name == zokkaCore
 
 
 toChars :: Name -> String
@@ -136,9 +136,9 @@ core :: Name
 core =
   toName elm "core"
 
-zelmCore :: Name
-zelmCore =
-  toName zelm "core-1-0"
+zokkaCore :: Name
+zokkaCore =
+  toName zokka "core-1-0"
 
 
 {-# NOINLINE browser #-}
@@ -195,10 +195,10 @@ elm =
   Utf8.fromChars "elm"
 
 
-{-# NOINLINE zelm #-}
-zelm :: Author
-zelm =
-  Utf8.fromChars "zelm"
+{-# NOINLINE zokka #-}
+zokka :: Author
+zokka =
+  Utf8.fromChars "zokka"
 
 
 {-# NOINLINE elm_explorations #-}
@@ -207,10 +207,10 @@ elm_explorations =
   Utf8.fromChars "elm-explorations"
 
 
-{-# NOINLINE zelm_explorations #-}
-zelm_explorations :: Author
-zelm_explorations =
-  Utf8.fromChars "zelm-explorations"
+{-# NOINLINE zokka_explorations #-}
+zokka_explorations :: Author
+zokka_explorations =
+  Utf8.fromChars "zokka-explorations"
 
 
 
@@ -265,7 +265,7 @@ nearbyNames (Name author1 project1) possibleNames =
 
 authorDistance :: [Char] -> Author -> Int
 authorDistance given possibility =
-  if possibility == elm || possibility == elm_explorations || possibility == zelm || possibility == zelm_explorations
+  if possibility == elm || possibility == elm_explorations || possibility == zokka || possibility == zokka_explorations
   then 0
   else abs (Suggest.distance given (Utf8.toChars possibility))
 

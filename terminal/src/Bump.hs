@@ -49,7 +49,7 @@ data Env =
     { _root :: FilePath
     , _cache :: Stuff.PackageCache
     , _manager :: Http.Manager
-    , _registry :: Registry.ZelmRegistries
+    , _registry :: Registry.ZokkaRegistries
     , _outline :: Outline.PkgOutline
     }
 
@@ -63,11 +63,11 @@ getEnv =
 
         Just root ->
           do  cache <- Task.io $ Stuff.getPackageCache
-              zelmCache <- Task.io $ Stuff.getZelmCache
+              zokkaCache <- Task.io $ Stuff.getZokkaCache
               manager <- Task.io $ Http.getManager
-              reposConfigLocation <- Task.io $ Stuff.getOrCreateZelmCustomRepositoryConfig
+              reposConfigLocation <- Task.io $ Stuff.getOrCreateZokkaCustomRepositoryConfig
               customReposData <- Task.eio BumpCustomRepositoryDataProblem $ loadCustomRepositoriesData reposConfigLocation
-              registry <- Task.eio Exit.BumpMustHaveLatestRegistry $ Registry.latest manager customReposData zelmCache
+              registry <- Task.eio Exit.BumpMustHaveLatestRegistry $ Registry.latest manager customReposData zokkaCache
               outline <- Task.eio Exit.BumpBadOutline $ Outline.read root
               case outline of
                 Outline.App _ ->

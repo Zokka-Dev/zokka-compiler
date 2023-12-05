@@ -10,23 +10,23 @@ import qualified File
 import qualified Json.Decode as D
 import qualified Json.Encode as E
 import Data.Bifunctor (first)
-import Stuff (ZelmCustomRepositoryConfigFilePath (..))
+import Stuff (ZokkaCustomRepositoryConfigFilePath (..))
 
 data CustomRepositoriesError = CREJsonDecodeError (D.Error CustomRepositoryDataParseError)
   deriving Show
 
 -- FIXME: Boolean argument a hack for now
-createCustomRepositoriesData :: ZelmCustomRepositoryConfigFilePath -> Bool -> IO (Either e CustomRepositoriesData)
-createCustomRepositoriesData (ZelmCustomRepositoryConfigFilePath filePath) shouldIncludeZelmRepo = 
+createCustomRepositoriesData :: ZokkaCustomRepositoryConfigFilePath -> Bool -> IO (Either e CustomRepositoriesData)
+createCustomRepositoriesData (ZokkaCustomRepositoryConfigFilePath filePath) shouldIncludeZokkaRepo = 
   let
-    defaultData = if shouldIncludeZelmRepo then defaultCustomRepositoriesData else defaultCustomRepositoriesDataElmPackageRepoOnly
+    defaultData = if shouldIncludeZokkaRepo then defaultCustomRepositoriesData else defaultCustomRepositoriesDataElmPackageRepoOnly
   in
   do
     E.write filePath (customRepostoriesDataEncoder defaultData)
     pure (Right defaultData)
 
-loadCustomRepositoriesData :: ZelmCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesError CustomRepositoriesData)
-loadCustomRepositoriesData z@(ZelmCustomRepositoryConfigFilePath filePath) = do
+loadCustomRepositoriesData :: ZokkaCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesError CustomRepositoriesData)
+loadCustomRepositoriesData z@(ZokkaCustomRepositoryConfigFilePath filePath) = do
   customReposDataDoesExist <- File.exists filePath
   if customReposDataDoesExist
     then do
@@ -35,8 +35,8 @@ loadCustomRepositoriesData z@(ZelmCustomRepositoryConfigFilePath filePath) = do
     else
       createCustomRepositoriesData z True
 
-loadCustomRepositoriesDataForReactorTH :: ZelmCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesError CustomRepositoriesData)
-loadCustomRepositoriesDataForReactorTH z@(ZelmCustomRepositoryConfigFilePath filePath) = do
+loadCustomRepositoriesDataForReactorTH :: ZokkaCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesError CustomRepositoriesData)
+loadCustomRepositoriesDataForReactorTH z@(ZokkaCustomRepositoryConfigFilePath filePath) = do
   customReposDataDoesExist <- File.exists filePath
   if customReposDataDoesExist
     then do

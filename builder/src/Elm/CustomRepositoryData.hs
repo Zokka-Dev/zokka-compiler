@@ -64,7 +64,7 @@ lookupRepositoryType :: Json.String -> Either [Json.String] RepositoryType
 lookupRepositoryType rawTypeStr =
   case Map.lookup rawTypeStr allRepositoryTypesLookupMap of
     Just repositoryType -> Right repositoryType
-    -- FIXME: See https://github.com/changlinli/zelm-compiler/issues/1
+    -- FIXME: See https://github.com/changlinli/zokka-compiler/issues/1
     Nothing -> Left allRepositoryTypeStrings
 
 repositoryTypeDecoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e RepositoryType
@@ -120,10 +120,10 @@ standardElmRepository = CustomSingleRepositoryData
   , _repositoryUrl = Utf8.fromChars "https://package.elm-lang.org"
   }
 
-standardZelmRepository :: CustomSingleRepositoryData
-standardZelmRepository = CustomSingleRepositoryData
+standardZokkaRepository :: CustomSingleRepositoryData
+standardZokkaRepository = CustomSingleRepositoryData
   { _repositoryType = DefaultPackageServer
-  , _repositoryUrl = Utf8.fromChars "https://package-server.zelm-lang.com"
+  , _repositoryUrl = Utf8.fromChars "https://package-server.zokka-lang.com"
   }
 
 customSingleRepositoryDataDecoder :: D.Decoder CustomRepositoryDataParseError CustomSingleRepositoryData
@@ -254,7 +254,7 @@ defaultCustomRepositoriesData :: CustomRepositoriesData
 defaultCustomRepositoriesData = CustomRepositoriesData
   { _customFullRepositories =
     [ standardElmRepository
-    , standardZelmRepository
+    , standardZokkaRepository
     ]
   , _customSinglePackageRepositories = []
   }

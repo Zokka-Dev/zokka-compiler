@@ -392,9 +392,9 @@ data Publish
   | PublishZipApplication
   | PublishZipNoExposed
   | PublishZipBuildProblem BuildProblem
-  -- When publishing with Zelm we have to be careful not to publish to the standard
+  -- When publishing with Zokka we have to be careful not to publish to the standard
   -- Elm repository so that we don't end up publishing packages that the vanilla Elm compiler cannot handle
-  | PublishToStandardElmRepositoryUsingZelm
+  | PublishToStandardElmRepositoryUsingZokka
   | PublishWithNoRepositoryUrl
   | PublishCustomRepositoryConfigDataError CustomRepositoriesError
 
@@ -677,15 +677,15 @@ publishToReport publish =
     PublishZipBuildProblem _ ->
       badZipReport
 
-    PublishToStandardElmRepositoryUsingZelm ->
+    PublishToStandardElmRepositoryUsingZokka ->
       Help.report "PUBLISH TO PROHIBITED REPOSITORY" Nothing
-        "You are trying to use the Zelm compiler to publish to the standard Elm\
+        "You are trying to use the Zokka compiler to publish to the standard Elm\
         \ repository (package.elm-lang.org). This is prohibited!"
         [ D.reflow $
             "The standard Elm package repository is used by other Elm developers\
-            \ who may not be using the Zelm compiler. Because the Zelm compiler\
+            \ who may not be using the Zokka compiler. Because the Zokka compiler\
             \ fixes some compiler crashes in the Elm compiler, if you publish a\
-            \ package that compiled crash-free with Zelm to the standard Elm \
+            \ package that compiled crash-free with Zokka to the standard Elm \
             \ repository, another Elm developer could try to use that package and\
             \ would be faced with a mysterious compiler crash."
         , D.reflow $
@@ -694,23 +694,23 @@ publishToReport publish =
             \ have access to that repository and so the package could also fail to\
             \ build for that reason."
         , D.reflow $
-            "Zelm therefore prohibits publishing to the standard Elm repository to\
+            "Zokka therefore prohibits publishing to the standard Elm repository to\
             \ preserve the integrity of the standard Elm package repository for other Elm developers."
         , D.toSimpleNote $
             "As long as none of your dependencies come from a custom package\
-            \ repository you can still develop with Zelm and then use the standard\
+            \ repository you can still develop with Zokka and then use the standard\
             \ Elm compiler at the last moment to publish!"
         ]
 
     PublishWithNoRepositoryUrl ->
       Help.report "PUBLISH WITH NO REPOSITORY URL" Nothing
-        "When publishing with Zelm you must provide a repository URL as an argument. For example:"
+        "When publishing with Zokka you must provide a repository URL as an argument. For example:"
         [ D.vcat
-            [ D.indent 4 $ D.green "zelm publish https://package.zelm-lang.org"
-            , D.indent 4 $ D.green "zelm publish https://example.com/my-custom-repository"
+            [ D.indent 4 $ D.green "zokka publish https://package.zokka-lang.org"
+            , D.indent 4 $ D.green "zokka publish https://example.com/my-custom-repository"
             ]
         , D.reflow $
-            "This is different from the standard Elm publish command because Zelm allows for\
+            "This is different from the standard Elm publish command because Zokka allows for\
             \ custom repositories, which means when publishing you have to specify where to publish!"
         ]
 
@@ -1133,7 +1133,7 @@ toOutlineReport problem =
     
     OutlinePkgOverridesDoNotMatchDeps packageName packageVersion ->
       Help.report "BAD PACKAGE OVERRIDE" (Just "elm.json")
-        "Package overrides in zelm-package-overrides need to override versions of packages \
+        "Package overrides in zokka-package-overrides need to override versions of packages \
         \ that actually are used in your direct or indirect dependencies! You are attempting \
         \ to override "
         [ D.indent 4 $ D.red $ D.fromChars $ Pkg.toChars packageName ++ " " ++ V.toChars packageVersion

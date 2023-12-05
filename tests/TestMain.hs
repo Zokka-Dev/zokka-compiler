@@ -11,7 +11,7 @@ import Data.Function ((&))
 import Hedgehog ((===))
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
-import Deps.Registry (ZelmRegistries (..), RegistryKey(..), Registry(..), KnownVersions(..))
+import Deps.Registry (ZokkaRegistries (..), RegistryKey(..), Registry(..), KnownVersions(..))
 import qualified Data.Binary as Binary
 import qualified Data.Utf8
 import qualified Data.Utf8 as Utf8
@@ -64,11 +64,11 @@ pkgNameGen = do
 packagesToLocationsGen :: Hedgehog.Gen (Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
 packagesToLocationsGen = Gen.map (Range.linear 0 10) ((,) <$> pkgNameGen <*> versionToRegistryKeyGen)
 
-zelmRegistriesGen :: Hedgehog.Gen ZelmRegistries
-zelmRegistriesGen = do
+zokkaRegistriesGen :: Hedgehog.Gen ZokkaRegistries
+zokkaRegistriesGen = do
   registryKeyToRegistry <- registryKeyToRegistryGen 
   packagesToLocations <- packagesToLocationsGen
-  pure (ZelmRegistries{_registries=registryKeyToRegistry, _packagesToLocations=packagesToLocations})
+  pure (ZokkaRegistries{_registries=registryKeyToRegistry, _packagesToLocations=packagesToLocations})
 
 main :: IO ()
 main = defaultMain tests
@@ -89,7 +89,7 @@ hedgehogProperties = testGroup "(checked by Hedgehog)"
   [ HH.testProperty "dummy property" $
       dummyProperty
   , HH.testProperty "make sure roundtrip works" $
-      roundtripBinaryEncodingOfZelmRegistryChangesNothing
+      roundtripBinaryEncodingOfZokkaRegistryChangesNothing
   ]
 
 dummyProperty :: Hedgehog.Property
@@ -98,10 +98,10 @@ dummyProperty =
         x <- Hedgehog.forAll $ Gen.int (Range.linear 1 10)
         x === x
 
-roundtripBinaryEncodingOfZelmRegistryChangesNothing :: Hedgehog.Property
-roundtripBinaryEncodingOfZelmRegistryChangesNothing =
+roundtripBinaryEncodingOfZokkaRegistryChangesNothing :: Hedgehog.Property
+roundtripBinaryEncodingOfZokkaRegistryChangesNothing =
     Hedgehog.property $ do
-        x <- Hedgehog.forAll zelmRegistriesGen
+        x <- Hedgehog.forAll zokkaRegistriesGen
         Binary.decode (Binary.encode x) === x
 
 unitTests :: TestTree
