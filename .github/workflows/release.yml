@@ -28,9 +28,9 @@ jobs:
         cp cabal.project.freeze.ghc92 cabal.project.freeze
         cabal update
         cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
-        OUTPUT_BIN=$(cabal list-bin zelm)
+        OUTPUT_BIN=$(cabal list-bin zokka)
         mkdir -p output
-        cp $OUTPUT_BIN output/zelm
+        cp $OUTPUT_BIN output/zokka
 
     # Extract the current git tag
     - name: Extract Git Tag
@@ -41,8 +41,8 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: zelm-compiler-ubuntu-x86_64-${{ steps.get_version.outputs.tag }}
-        path: ./output/zelm
+        name: zokka-compiler-ubuntu-x86_64-${{ steps.get_version.outputs.tag }}
+        path: ./output/zokka
         
   macos_x86:
     runs-on: macos-latest
@@ -62,9 +62,9 @@ jobs:
         cp cabal.project.freeze.ghc92 cabal.project.freeze
         cabal update
         cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
-        OUTPUT_BIN=$(cabal list-bin zelm)
+        OUTPUT_BIN=$(cabal list-bin zokka)
         mkdir -p output
-        cp $OUTPUT_BIN output/zelm
+        cp $OUTPUT_BIN output/zokka
 
     # Extract the current git tag
     - name: Extract Git Tag
@@ -75,8 +75,8 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: zelm-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}
-        path: ./output/zelm
+        name: zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}
+        path: ./output/zokka
 
   windows_x86:
     runs-on: windows-latest
@@ -97,9 +97,9 @@ jobs:
         cp cabal.project.freeze.ghc92 cabal.project.freeze
         cabal update
         cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
-        OUTPUT_BIN=$(cabal list-bin zelm)
+        OUTPUT_BIN=$(cabal list-bin zokka)
         mkdir -p output
-        cp $OUTPUT_BIN output/zelm
+        cp $OUTPUT_BIN output/zokka
 
     # Extract the current git tag
     - name: Extract Git Tag
@@ -110,5 +110,5 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: zelm-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}
-        path: ./output/zelm
+        name: zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}
+        path: ./output/zokka
