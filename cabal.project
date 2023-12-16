@@ -1,0 +1,4 @@
+packages:.
+
+package *
+    optimization: 2
