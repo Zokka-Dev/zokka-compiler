@@ -241,7 +241,7 @@ Executable zokka
     Main-Is:
         Main.hs
 
-    ghc-options: -rtsopts -threaded "-with-rtsopts=-N -qg -A128m"  -Werror=incomplete-patterns
+    ghc-options: -rtsopts -threaded "-with-rtsopts=-N -qg -A128m"  -Werror=incomplete-patterns -Werror=missing-fields
     -- add -eventlog for (elm make src/Main.elm +RTS -l; threadscope elm.eventlog)
     -- https://www.oreilly.com/library/view/parallel-and-concurrent/9781449335939/
 

@@ -77,7 +77,7 @@ getEnv =
       manager   <- Task.io $ Http.getManager
       reposConf <- Task.io $ Stuff.getOrCreateZokkaCustomRepositoryConfig
       reposData <- Task.eio Exit.DiffCustomReposDataProblem $ loadCustomRepositoriesData reposConf
-      registry  <- Task.eio Exit.DiffMustHaveLatestRegistry $ Registry.latest manager reposData zokkaCache
+      registry  <- Task.eio Exit.DiffMustHaveLatestRegistry $ Registry.latest manager reposData zokkaCache reposConf
       return (Env maybeRoot cache manager registry)
 
 

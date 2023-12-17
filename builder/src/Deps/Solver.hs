@@ -43,6 +43,7 @@ import Stuff (ZokkaCustomRepositoryConfigFilePath(unZokkaCustomRepositoryConfigF
 import qualified Data.Utf8 as Utf8
 import Logging.Logger (printLog)
 import File (getTime)
+import Deps.Registry (ZokkaRegistries(..))
 
 
 
@@ -411,10 +412,11 @@ initEnv =
           Stuff.withRegistryLock cache $
             do  maybeRegistry <- Registry.read zokkaCache
                 manager       <- readMVar mvar
+                modifiedTimeOfCustomRepositoriesData <- getTime (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
 
                 case maybeRegistry of
                   Nothing ->
-                    do  eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData
+                    do  eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
@@ -422,13 +424,11 @@ initEnv =
                           Left problem ->
                             return $ Left $ problem
 
-                  Just cachedRegistry ->
-                    do  modifiedTimeOfZokkaCache <- getTime (zokkaCacheToFilePath zokkaCache)
-                        -- FIXME: Think about whether I need a lock on the custom repository JSON file as well
-                        modifiedTimeOfCustomRepositoriesData <- getTime (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
-                        eitherRegistry <- if modifiedTimeOfZokkaCache == modifiedTimeOfCustomRepositoriesData 
-                          then Registry.update manager zokkaCache cachedRegistry
-                          else Registry.fetch manager zokkaCache customRepositoriesData
+                  Just cachedRegistry@ZokkaRegistries{_lastModificationTimeOfCustomRepoConfig=customRepoConfigUpdateTime} ->
+                    do  -- FIXME: Think about whether I need a lock on the custom repository JSON file as well
+                        eitherRegistry <- if customRepoConfigUpdateTime == modifiedTimeOfCustomRepositoriesData 
+                          then Registry.update manager zokkaCache cachedRegistry modifiedTimeOfCustomRepositoriesData
+                          else Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
@@ -451,10 +451,11 @@ initEnvForReactorTH =
           Stuff.withRegistryLock cache $
             do  maybeRegistry <- Registry.read zokkaCache
                 manager       <- readMVar mvar
+                modifiedTimeOfCustomRepositoriesData <- getTime (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
 
                 case maybeRegistry of
                   Nothing ->
-                    do  eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData
+                    do  eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
@@ -463,7 +464,7 @@ initEnvForReactorTH =
                             return $ Left $ problem
 
                   Just cachedRegistry ->
-                    do  eitherRegistry <- Registry.update manager zokkaCache cachedRegistry
+                    do  eitherRegistry <- Registry.update manager zokkaCache cachedRegistry modifiedTimeOfCustomRepositoriesData
                         case eitherRegistry of
                           Right latestRegistry ->
                             return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache

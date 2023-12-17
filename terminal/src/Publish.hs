@@ -92,7 +92,7 @@ getEnv =
       manager <- Task.io $ Http.getManager
       reposConfigLocation <- Task.io $ Stuff.getOrCreateZokkaCustomRepositoryConfig
       customReposData <- Task.eio PublishCustomRepositoryConfigDataError $ loadCustomRepositoriesData reposConfigLocation
-      zokkaRegistries <- Task.eio Exit.PublishMustHaveLatestRegistry $ Registry.latest manager customReposData zokkaCache
+      zokkaRegistries <- Task.eio Exit.PublishMustHaveLatestRegistry $ Registry.latest manager customReposData zokkaCache reposConfigLocation
       outline <- Task.eio Exit.PublishBadOutline $ Outline.read root
       return $ Env root cache manager zokkaRegistries outline
 

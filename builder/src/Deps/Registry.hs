@@ -39,6 +39,8 @@ import qualified Data.Set as Set
 import qualified Data.NonEmptyList as NE
 import Data.Vector.Internal.Check (HasCallStack)
 import Data.Map.Utils (exchangeKeys, invertMap)
+import File (Time, getTime)
+import Stuff (ZokkaCustomRepositoryConfigFilePath(unZokkaCustomRepositoryConfigFilePath))
 
 
 
@@ -49,7 +51,12 @@ import Data.Map.Utils (exchangeKeys, invertMap)
 -- packages came from a given repository to pass to the /all-packages/since
 -- endpoint. So we can't start from the outset with all the registries merged.
 data ZokkaRegistries = ZokkaRegistries
-  { _registries :: !(Map.Map RegistryKey Registry)
+  -- This last modification field is used for caching purposes so that we can speed
+  -- things along if our custom repository config hasn't been changed (we just need
+  -- to update pre-existing repos). If the config has been changed then we need to
+  -- re-fetch from scratch.
+  { _lastModificationTimeOfCustomRepoConfig :: Time
+  , _registries :: !(Map.Map RegistryKey Registry)
   , _packagesToLocations :: !(Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
   }
   deriving (Show, Eq)
@@ -60,8 +67,8 @@ knownVersionsToNEListOfVersions :: KnownVersions -> NE.List V.Version
 knownVersionsToNEListOfVersions (KnownVersions newest rest) = NE.List newest rest
 
 
-zokkaRegistriesFromRegistriesMap :: Map.Map RegistryKey Registry -> ZokkaRegistries
-zokkaRegistriesFromRegistriesMap registriesMap =
+zokkaRegistriesFromRegistriesMap :: Time -> Map.Map RegistryKey Registry -> ZokkaRegistries
+zokkaRegistriesFromRegistriesMap custmoRepoConfigLastModificationTime registriesMap =
   let
     --FIXME: Deal with what happens when we have multiple registries with the same
     -- version of a package. Right now we just essentially randomly choose one
@@ -72,7 +79,7 @@ zokkaRegistriesFromRegistriesMap registriesMap =
     pkgNamesToAllVersionsAndRegistry = fmap invertMap pkgNamesToRegistryAndAllVersions
     pkgNamesToSingleVersionAndRegistry = (fmap . fmap) NE.head pkgNamesToAllVersionsAndRegistry
   in
-    ZokkaRegistries{_registries=registriesMap, _packagesToLocations=pkgNamesToSingleVersionAndRegistry}
+    ZokkaRegistries{_lastModificationTimeOfCustomRepoConfig=custmoRepoConfigLastModificationTime, _registries=registriesMap, _packagesToLocations=pkgNamesToSingleVersionAndRegistry}
 
 
 lookupPackageRegistryKey :: ZokkaRegistries -> Pkg.Name -> V.Version -> Maybe RegistryKey
@@ -136,8 +143,8 @@ read cache =
 
 
 
-fetch :: Http.Manager -> Stuff.ZokkaSpecificCache -> CustomRepositoriesData -> IO (Either Exit.RegistryProblem ZokkaRegistries)
-fetch manager cache (CustomRepositoriesData customFullRepositories singlePackageLocations) =
+fetch :: Http.Manager -> Stuff.ZokkaSpecificCache -> CustomRepositoriesData -> Time -> IO (Either Exit.RegistryProblem ZokkaRegistries)
+fetch manager cache (CustomRepositoriesData customFullRepositories singlePackageLocations) customRepoConfigLastModified =
   do
     -- FIXME: this is pretty awful
     let fetchSingleRepo repoData = (,) (RepositoryUrlKey $ _repositoryUrl repoData) <$> fetchSingleCustomRepository manager repoData
@@ -149,8 +156,8 @@ fetch manager cache (CustomRepositoriesData customFullRepositories singlePackage
       Right registries -> do
         let path = Stuff.registry cache
         let registry = Map.fromList registries
-        File.writeBinary path (zokkaRegistriesFromRegistriesMap registry)
-        pure $ Right (zokkaRegistriesFromRegistriesMap registry)
+        File.writeBinary path (zokkaRegistriesFromRegistriesMap customRepoConfigLastModified registry)
+        pure $ Right (zokkaRegistriesFromRegistriesMap customRepoConfigLastModified registry)
 
 
 createRegistryFromSinglePackageLocation :: SinglePackageLocationData -> Registry
@@ -199,8 +206,8 @@ allPkgsDecoder =
 
 -- UPDATE
 
-update :: Http.Manager -> Stuff.ZokkaSpecificCache -> ZokkaRegistries -> IO (Either Exit.RegistryProblem ZokkaRegistries)
-update manager cache zokkaRegistries =
+update :: Http.Manager -> Stuff.ZokkaSpecificCache -> ZokkaRegistries -> Time -> IO (Either Exit.RegistryProblem ZokkaRegistries)
+update manager cache zokkaRegistries customRepoConfigLastModified =
   do
     let registriesMap = _registries zokkaRegistries
     let listOfProblemsOrKeyRegistryPairs = traverse (\(k, v) -> fmap (fmap ((,) k)) (updateSingleRegistry manager k v)) (Map.toList registriesMap)
@@ -211,7 +218,7 @@ update manager cache zokkaRegistries =
       Right newRegistry ->
         do
           -- FIXME: There's gotta be a faster way of doing this
-          let newZokkaRegistries = zokkaRegistriesFromRegistriesMap newRegistry
+          let newZokkaRegistries = zokkaRegistriesFromRegistriesMap customRepoConfigLastModified newRegistry
           _ <- File.writeBinary (Stuff.registry cache) newZokkaRegistries
           pure $ Right newZokkaRegistries
 
@@ -298,16 +305,17 @@ doesRegistryAgreeWithCustomRepositoriesData (CustomRepositoriesData fullReposito
     where
       allRegistryKeys = (customSingleRepositoryDataToRegistryKey <$> fullRepositories) ++ (singlePackageLocationDataToRegistryKey <$> singlePackages)
 
-latest :: Http.Manager -> CustomRepositoriesData -> Stuff.ZokkaSpecificCache -> IO (Either Exit.RegistryProblem ZokkaRegistries)
-latest manager customRepositoriesData cache =
+latest :: Http.Manager -> CustomRepositoriesData -> Stuff.ZokkaSpecificCache -> Stuff.ZokkaCustomRepositoryConfigFilePath -> IO (Either Exit.RegistryProblem ZokkaRegistries)
+latest manager customRepositoriesData cache customRepoConfigFilePath =
   do
     maybeOldRegistry <- read cache
+    customRepoConfigFilePathLastModified <- getTime (unZokkaCustomRepositoryConfigFilePath customRepoConfigFilePath)
     case maybeOldRegistry of
       Just oldRegistry -> if doesRegistryAgreeWithCustomRepositoriesData customRepositoriesData oldRegistry
-        then update manager cache oldRegistry
+        then update manager cache oldRegistry customRepoConfigFilePathLastModified
         -- FIXME: This is too conservative
-        else fetch manager cache customRepositoriesData
-      Nothing -> fetch manager cache customRepositoriesData
+        else fetch manager cache customRepositoriesData customRepoConfigFilePathLastModified
+      Nothing -> fetch manager cache customRepositoriesData customRepoConfigFilePathLastModified
 
 
 
@@ -393,10 +401,12 @@ instance Binary KnownVersions where
 
 instance Binary ZokkaRegistries where
   get = do
+    configFileTime <- get :: Get Time
     registries <- get :: Get (Map.Map RegistryKey Registry)
     packagesToLocations <- get :: Get (Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
-    pure $ ZokkaRegistries{_registries=registries, _packagesToLocations=packagesToLocations}
+    pure $ ZokkaRegistries{_lastModificationTimeOfCustomRepoConfig=configFileTime, _registries=registries, _packagesToLocations=packagesToLocations}
 
-  put (ZokkaRegistries registries packagesToLocations) = do
+  put (ZokkaRegistries configFileTime registries packagesToLocations) = do
+    put configFileTime
     put registries
     put packagesToLocations
