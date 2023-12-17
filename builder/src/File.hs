@@ -1,5 +1,5 @@
 module File
-  ( Time
+  ( Time(..)
   , getTime
   , zeroTime
   , writeBinary

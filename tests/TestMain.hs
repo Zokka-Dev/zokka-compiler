@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NumericUnderscores #-}
 import qualified Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
@@ -18,6 +19,8 @@ import qualified Data.Utf8 as Utf8
 import qualified Data.Map.Strict as Map
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
+import File (Time(..))
+import Data.Fixed (Fixed(..))
 
 utf8String :: Hedgehog.Gen (Utf8.Utf8 a)
 utf8String = Utf8.fromChars <$> Gen.string (Range.linear 0 40) Gen.unicode
@@ -64,11 +67,18 @@ pkgNameGen = do
 packagesToLocationsGen :: Hedgehog.Gen (Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
 packagesToLocationsGen = Gen.map (Range.linear 0 10) ((,) <$> pkgNameGen <*> versionToRegistryKeyGen)
 
+fixedGen :: Hedgehog.Gen (Fixed a)
+fixedGen = MkFixed <$> Gen.integral (Range.linear (-1_000_000_000_000_000) 1_000_000_000_000_000)
+
+timeGen :: Hedgehog.Gen Time
+timeGen = Time <$> fixedGen
+
 zokkaRegistriesGen :: Hedgehog.Gen ZokkaRegistries
 zokkaRegistriesGen = do
-  registryKeyToRegistry <- registryKeyToRegistryGen 
+  registryKeyToRegistry <- registryKeyToRegistryGen
   packagesToLocations <- packagesToLocationsGen
-  pure (ZokkaRegistries{_registries=registryKeyToRegistry, _packagesToLocations=packagesToLocations})
+  time <- timeGen
+  pure (ZokkaRegistries{_lastModificationTimeOfCustomRepoConfig=time, _registries=registryKeyToRegistry, _packagesToLocations=packagesToLocations})
 
 main :: IO ()
 main = defaultMain tests
