@@ -48,6 +48,7 @@ data Value
   | Integer Int
   | Number Sci.Scientific
   | Null
+  deriving Show
 
 
 array :: [Value] -> Value

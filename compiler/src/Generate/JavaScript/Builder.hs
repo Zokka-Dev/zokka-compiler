@@ -59,12 +59,14 @@ data Expr
   | Assign LValue Expr
   | Call Expr [Expr]
   | Function (Maybe Name) [Name] [Stmt]
+  deriving Show
 
 
 data LValue
   = LRef Name
   | LDot Expr Name
   | LBracket Expr Expr
+  deriving Show
 
 
 
@@ -87,11 +89,13 @@ data Stmt
   | Var Name Expr
   | Vars [(Name, Expr)]
   | FunctionStmt Name [Name] [Stmt]
+  deriving Show
 
 
 data Case
   = Case Expr [Stmt]
   | Default [Stmt]
+  deriving Show
 
 
 
@@ -118,12 +122,14 @@ data InfixOp
   | OpLShift     -- <<
   | OpSpRShift   -- >>
   | OpZfRShift   -- >>>
+  deriving Show
 
 
 data PrefixOp
   = PrefixNot        -- !
   | PrefixNegate     -- -
   | PrefixComplement -- ~
+  deriving Show
 
 
 

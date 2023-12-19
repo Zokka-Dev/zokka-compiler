@@ -90,6 +90,7 @@ newtype Types =
   -- PERF profile Opt.Global representation
   -- current representation needs less allocation
   -- but maybe the lookup is much worse
+  deriving Show
 
 
 data Types_ =
@@ -97,6 +98,7 @@ data Types_ =
     { _union_info :: Map.Map Name.Name Can.Union
     , _alias_info :: Map.Map Name.Name Can.Alias
     }
+    deriving Show
 
 
 mergeMany :: [Types] -> Types

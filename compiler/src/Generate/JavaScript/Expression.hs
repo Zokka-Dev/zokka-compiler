@@ -36,6 +36,7 @@ import qualified Json.Encode as Encode
 import Json.Encode ((==>))
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.Annotation as A
+import qualified Debug.Trace as Debug
 
 
 
@@ -704,7 +705,7 @@ generateTailCall mode name args =
   in
   JS.Vars (map toTempVars args)
   : map toRealVars args
-  ++ [ JS.Continue (Just (JsName.fromLocal name)) ]
+  ++ [ JS.Return (JS.Object [ (JsName.fromLocal name, JS.Bool True) ]) ]
 
 
 
@@ -724,10 +725,39 @@ generateDef mode def =
 generateTailDef :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> Code
 generateTailDef mode name argNames body =
   generateFunction (map JsName.fromLocal argNames) $ JsBlock $
-    [ JS.Labelled (JsName.fromLocal name) $
-        JS.While (JS.Bool True) $
-          codeToStmt $ generate mode body
+    [ loopAsFunction
+    , JS.Labelled (JsName.fromLocal name) $
+        JS.While (JS.Bool True) loopBodyA
     ]
+  where
+    loopAsFunctionName = JsName.makeTemp "_loop"
+    loopAsFunction = JS.Var loopAsFunctionName (JS.Function Nothing [] [loopBody])
+    loopReturnName = JsName.makeTemp "_ret"
+    loopCondition = JS.Infix
+      JS.OpAnd
+        (JS.Ref loopReturnName)
+        (
+          JS.Infix
+            JS.OpAnd
+            (JS.Access (JS.Ref loopReturnName) JsName.hasOwnProperty) (JS.Infix JS.OpEq (JS.Access (JS.Ref loopReturnName) (JsName.fromLocal name)) (JS.Bool True))
+        )
+    loopBodyA = JS.Block
+      [ JS.Var loopReturnName (JS.Call (JS.Ref loopAsFunctionName) [])
+      , JS.IfStmt loopCondition (JS.Continue (Just $ JsName.fromLocal name)) (JS.Return (JS.Ref loopReturnName))
+      ]
+    loopBody =
+      codeToStmt $ generate mode body
+  -- JsBlock
+  --   [ codeToStmt functionCall
+  --   , JS.Var (JsName.makeTemp "loop") undefined
+  --   ]
+  -- where
+  --   functionCall =
+  --     generateFunction (map JsName.fromLocal argNames) $ JsBlock $
+  --       [ JS.Labelled (JsName.fromLocal name) $
+  --           JS.While (JS.Bool True) $
+  --             codeToStmt $ generate mode body
+  --       ]
 
 
 

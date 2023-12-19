@@ -24,6 +24,7 @@ import qualified Generate.JavaScript.Name as JsName
 data Mode
   = Dev (Maybe Extract.Types)
   | Prod ShortFieldNames
+  deriving Show
 
 
 isDebug :: Mode -> Bool

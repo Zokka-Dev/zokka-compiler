@@ -14,6 +14,7 @@ module Generate.JavaScript.Name
   , makeLabel
   , makeTemp
   , dollar
+  , hasOwnProperty
   )
   where
 
@@ -37,6 +38,7 @@ import qualified Elm.Package as Pkg
 
 newtype Name =
   Name { toBuilder :: B.Builder }
+  deriving Show
 
 
 
@@ -87,6 +89,8 @@ homeToBuilder (ModuleName.Canonical (Pkg.Name author project) home) =
   Utf8.toEscapedBuilder 0x2E {- . -} 0x24 {- $ -} home
 
 
+hasOwnProperty :: Name
+hasOwnProperty = Name "hasOwnProperty"
 
 -- TEMPORARY NAMES
 
@@ -144,6 +148,7 @@ jsReservedWords =
     , "undefined", "arguments", "transient", "interface", "protected"
     , "instanceof", "implements"
     , "synchronized"
+    , "hasOwnProperty" -- FIXME: Is this really required to be reserved?
     ]
 
 
