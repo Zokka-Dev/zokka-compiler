@@ -739,7 +739,7 @@ generateTailDef mode name argNames body =
         (
           JS.Infix
             JS.OpAnd
-            (JS.Access (JS.Ref loopReturnName) JsName.hasOwnProperty) (JS.Infix JS.OpEq (JS.Access (JS.Ref loopReturnName) (JsName.fromLocal name)) (JS.Bool True))
+            (JS.Call (JS.Access (JS.Ref loopReturnName) JsName.hasOwnProperty) [JS.String (JsName.toBuilder $ JsName.fromLocal name)]) (JS.Infix JS.OpEq (JS.Access (JS.Ref loopReturnName) (JsName.fromLocal name)) (JS.Bool True))
         )
     loopBodyA = JS.Block
       [ JS.Var loopReturnName (JS.Call (JS.Ref loopAsFunctionName) [])
