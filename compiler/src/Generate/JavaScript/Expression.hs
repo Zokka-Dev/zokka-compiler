@@ -747,17 +747,6 @@ generateTailDef mode name argNames body =
       ]
     loopBody =
       codeToStmt $ generate mode body
-  -- JsBlock
-  --   [ codeToStmt functionCall
-  --   , JS.Var (JsName.makeTemp "loop") undefined
-  --   ]
-  -- where
-  --   functionCall =
-  --     generateFunction (map JsName.fromLocal argNames) $ JsBlock $
-  --       [ JS.Labelled (JsName.fromLocal name) $
-  --           JS.While (JS.Bool True) $
-  --             codeToStmt $ generate mode body
-  --       ]
 
 
 
