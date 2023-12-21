@@ -736,9 +736,9 @@ generateTailDef mode name argNames body =
     ]
   where
     loopContinueSentinel = makeTailCallLoopContinueSentinel name
-    loopAsFunctionName = JsName.makeTemp "_loop"
+    loopAsFunctionName = JsName.makeTailCallLoopHoistName name
     loopAsFunction = JS.Var loopAsFunctionName (JS.Function Nothing [] [loopBody])
-    loopReturnName = JsName.makeTemp "_ret"
+    loopReturnName = JsName.makeTailCallLoopReturnName name
     loopCondition = JS.Infix
       JS.OpEq
         (JS.Ref loopReturnName)

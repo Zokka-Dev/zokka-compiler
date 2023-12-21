@@ -14,6 +14,8 @@ module Generate.JavaScript.Name
   , makeLabel
   , makeTemp
   , makeLoopSentinelName
+  , makeTailCallLoopHoistName
+  , makeTailCallLoopReturnName
   , dollar
   )
   where
@@ -115,6 +117,16 @@ makeTemp name =
 makeLoopSentinelName :: Name.Name -> Name
 makeLoopSentinelName name =
   Name ("$sentinel$" <> Name.toBuilder name)
+
+
+makeTailCallLoopHoistName :: Name.Name -> Name
+makeTailCallLoopHoistName name =
+  Name ("$tailcallloophoist$" <> Name.toBuilder name)
+
+
+makeTailCallLoopReturnName :: Name.Name -> Name
+makeTailCallLoopReturnName name =
+  Name ("$tailcallloopreturn" <> Name.toBuilder name)
 
 
 dollar :: Name
