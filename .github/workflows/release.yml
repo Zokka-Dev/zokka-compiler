@@ -26,6 +26,7 @@ jobs:
     - name: Build Project
       run: |
         cp cabal.project.freeze.ghc92 cabal.project.freeze
+        cp cabal.project.prod cabal.project
         cabal update
         cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
         OUTPUT_BIN=$(cabal list-bin zokka)
@@ -60,6 +61,7 @@ jobs:
     - name: Build Project
       run: |
         cp cabal.project.freeze.ghc92 cabal.project.freeze
+        cp cabal.project.prod cabal.project
         cabal update
         cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
         OUTPUT_BIN=$(cabal list-bin zokka)
@@ -95,6 +97,7 @@ jobs:
       shell: bash
       run: |
         cp cabal.project.freeze.ghc92 cabal.project.freeze
+        cp cabal.project.prod cabal.project
         cabal update
         cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
         OUTPUT_BIN=$(cabal list-bin zokka)
