@@ -13,8 +13,8 @@ module Generate.JavaScript.Name
   , makeA
   , makeLabel
   , makeTemp
+  , makeLoopSentinelName
   , dollar
-  , hasOwnProperty
   )
   where
 
@@ -89,9 +89,6 @@ homeToBuilder (ModuleName.Canonical (Pkg.Name author project) home) =
   Utf8.toEscapedBuilder 0x2E {- . -} 0x24 {- $ -} home
 
 
-hasOwnProperty :: Name
-hasOwnProperty = Name "hasOwnProperty"
-
 -- TEMPORARY NAMES
 
 
@@ -113,6 +110,11 @@ makeLabel name index =
 makeTemp :: Name.Name -> Name
 makeTemp name =
   Name ("$temp$" <> Name.toBuilder name)
+
+
+makeLoopSentinelName :: Name.Name -> Name
+makeLoopSentinelName name =
+  Name ("$sentinel$" <> Name.toBuilder name)
 
 
 dollar :: Name
@@ -148,7 +150,6 @@ jsReservedWords =
     , "undefined", "arguments", "transient", "interface", "protected"
     , "instanceof", "implements"
     , "synchronized"
-    , "hasOwnProperty" -- FIXME: Is this really required to be reserved?
     ]
 
 

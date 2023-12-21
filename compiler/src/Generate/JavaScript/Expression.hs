@@ -705,7 +705,7 @@ generateTailCall mode name args =
   in
   JS.Vars (map toTempVars args)
   : map toRealVars args
-  ++ [ JS.Return (JS.Object [ (JsName.fromLocal name, JS.Bool True) ]) ]
+  ++ [ JS.Return (JS.Ref (JsName.makeLoopSentinelName name)) ]
 
 
 
@@ -722,25 +722,27 @@ generateDef mode def =
       JS.Var (JsName.fromLocal name) (codeToExpr (generateTailDef mode name argNames body))
 
 
+makeTailCallLoopContinueSentinel :: Name.Name -> JS.Expr
+makeTailCallLoopContinueSentinel name = JS.Object [ (JsName.makeLoopSentinelName name, JS.Bool True) ]
+
+
 generateTailDef :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> Code
 generateTailDef mode name argNames body =
   generateFunction (map JsName.fromLocal argNames) $ JsBlock $
-    [ loopAsFunction
+    [ JS.Var (JsName.makeLoopSentinelName name) loopContinueSentinel
+    , loopAsFunction
     , JS.Labelled (JsName.fromLocal name) $
         JS.While (JS.Bool True) loopBodyA
     ]
   where
+    loopContinueSentinel = makeTailCallLoopContinueSentinel name
     loopAsFunctionName = JsName.makeTemp "_loop"
     loopAsFunction = JS.Var loopAsFunctionName (JS.Function Nothing [] [loopBody])
     loopReturnName = JsName.makeTemp "_ret"
     loopCondition = JS.Infix
-      JS.OpAnd
+      JS.OpEq
         (JS.Ref loopReturnName)
-        (
-          JS.Infix
-            JS.OpAnd
-            (JS.Call (JS.Access (JS.Ref loopReturnName) JsName.hasOwnProperty) [JS.String (JsName.toBuilder $ JsName.fromLocal name)]) (JS.Infix JS.OpEq (JS.Access (JS.Ref loopReturnName) (JsName.fromLocal name)) (JS.Bool True))
-        )
+        (JS.Ref (JsName.makeLoopSentinelName name))
     loopBodyA = JS.Block
       [ JS.Var loopReturnName (JS.Call (JS.Ref loopAsFunctionName) [])
       , JS.IfStmt loopCondition (JS.Continue (Just $ JsName.fromLocal name)) (JS.Return (JS.Ref loopReturnName))
