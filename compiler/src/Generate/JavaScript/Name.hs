@@ -16,6 +16,7 @@ module Generate.JavaScript.Name
   , makeLoopSentinelName
   , makeTailCallLoopHoistName
   , makeTailCallLoopReturnName
+  , makeTailCallFunctionParamName
   , dollar
   )
   where
@@ -126,7 +127,12 @@ makeTailCallLoopHoistName name =
 
 makeTailCallLoopReturnName :: Name.Name -> Name
 makeTailCallLoopReturnName name =
-  Name ("$tailcallloopreturn" <> Name.toBuilder name)
+  Name ("$tailcallloopreturn$" <> Name.toBuilder name)
+
+
+makeTailCallFunctionParamName :: Name.Name -> Name
+makeTailCallFunctionParamName name =
+  Name ("$tailcallfunctionparam$" <> Name.toBuilder name)
 
 
 dollar :: Name

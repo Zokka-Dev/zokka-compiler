@@ -701,7 +701,7 @@ generateTailCall mode name args =
 
     toRealVars (argName, _) =
       JS.ExprStmt $
-        JS.Assign (JS.LRef (JsName.fromLocal argName)) (JS.Ref (JsName.makeTemp argName))
+        JS.Assign (JS.LRef (JsName.makeTailCallFunctionParamName argName)) (JS.Ref (JsName.makeTemp argName))
   in
   JS.Vars (map toTempVars args)
   : map toRealVars args
@@ -725,29 +725,42 @@ generateDef mode def =
 makeTailCallLoopContinueSentinel :: Name.Name -> JS.Expr
 makeTailCallLoopContinueSentinel name = JS.Object [ (JsName.makeLoopSentinelName name, JS.Bool True) ]
 
+remapFromTailCallParamToLocalVariable :: Name.Name -> (JsName.Name, JS.Expr)
+remapFromTailCallParamToLocalVariable name = 
+  (JsName.fromLocal name, JS.Ref (JsName.makeTailCallFunctionParamName name))
 
+remapFromTailCallParamsToLocalVariables :: [Name.Name] -> JS.Stmt
+remapFromTailCallParamsToLocalVariables variables = JS.Vars (map remapFromTailCallParamToLocalVariable variables)
+
+-- We hoist out the body of the while loop into a separate function to solve
+-- var-scoping issues and then replace the body with a single stub that
+-- basically just calls the hoisted function.
 generateTailDef :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> Code
 generateTailDef mode name argNames body =
-  generateFunction (map JsName.fromLocal argNames) $ JsBlock $
+  generateFunction functionArgNames $ JsBlock $
     [ JS.Var (JsName.makeLoopSentinelName name) loopContinueSentinel
     , loopAsFunction
     , JS.Labelled (JsName.fromLocal name) $
-        JS.While (JS.Bool True) loopBodyA
+        JS.While (JS.Bool True) loopBodyStub
     ]
   where
+    -- We need to remap function args because if we have a closure with a
+    -- function arg, we still have scoping issues
+    functionArgNames = map JsName.makeTailCallFunctionParamName argNames
+    remapArgNames = remapFromTailCallParamsToLocalVariables argNames
     loopContinueSentinel = makeTailCallLoopContinueSentinel name
     loopAsFunctionName = JsName.makeTailCallLoopHoistName name
-    loopAsFunction = JS.Var loopAsFunctionName (JS.Function Nothing [] [loopBody])
+    loopAsFunction = JS.Var loopAsFunctionName (JS.Function Nothing [] [remapArgNames, loopBodyHoisted])
     loopReturnName = JsName.makeTailCallLoopReturnName name
     loopCondition = JS.Infix
       JS.OpEq
         (JS.Ref loopReturnName)
         (JS.Ref (JsName.makeLoopSentinelName name))
-    loopBodyA = JS.Block
+    loopBodyStub = JS.Block
       [ JS.Var loopReturnName (JS.Call (JS.Ref loopAsFunctionName) [])
       , JS.IfStmt loopCondition (JS.Continue (Just $ JsName.fromLocal name)) (JS.Return (JS.Ref loopReturnName))
       ]
-    loopBody =
+    loopBodyHoisted =
       codeToStmt $ generate mode body
 
 
