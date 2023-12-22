@@ -1,7 +1,9 @@
-module TCOProducesBadClosures exposing (..)
+module TCOProducesBadClosures exposing (tcoProducesBadClosuresTest)
 
-import Html
-import Debug
+-- From https://github.com/elm/compiler/issues/2268
+
+import Test exposing (Test, test)
+import Expect
 
 makeLazy : List a -> List (() -> a) -> List (() -> a)
 makeLazy list accum =
@@ -15,8 +17,8 @@ makeLazy list accum =
 tcoMakeLazy : List a -> List (() -> a) -> List (() -> a)
 tcoMakeLazy list accum =
     case list of
-        item :: items ->
-            tcoMakeLazy items ((\_ -> item) :: accum)
+        itemEscape :: items ->
+            tcoMakeLazy items ((\_ -> itemEscape) :: accum)
 
         _ ->
             accum
@@ -30,4 +32,6 @@ badOutput =
     tcoMakeLazy [ 1, 2, 3 ] [] |> List.map (\f -> f ())
 
 
-main = Html.text (Debug.toString goodOutput ++ Debug.toString badOutput)
+tcoProducesBadClosuresTest = test "Running a TCO version with closures capturing local variables should equal running a TCO version without closures" <|
+    \_ -> badOutput |> Expect.equal goodOutput
+
