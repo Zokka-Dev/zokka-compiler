@@ -32,6 +32,8 @@ if __name__ == "__main__":
         project_dir = os.path.join(existing_elm_code_to_test_dir, name)
         print(f"=========\nRunning tests found in {project_dir}\n=========\n")
         elm_test_result = subprocess.run(run_elm_test_cmd, cwd=project_dir)
+        if not elm_test_result.returncode == 0:
+            raise Exception(f"We failed while running tests in {project_dir}")
 
     total_test_duration = timeit.default_timer() - start_time
 
