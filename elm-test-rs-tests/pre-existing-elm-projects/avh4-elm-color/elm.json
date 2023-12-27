@@ -1,0 +1,19 @@
+{
+    "type": "package",
+    "name": "avh4/elm-color",
+    "summary": "Standard representation of colors, encouraging sharing between packages",
+    "license": "BSD-3-Clause",
+    "version": "1.0.0",
+    "exposed-modules": [
+        "Color"
+    ],
+    "elm-version": "0.19.0 <= v < 0.20.0",
+    "dependencies": {
+        "elm/core": "1.0.0 <= v < 2.0.0"
+    },
+    "test-dependencies": {
+        "elm-explorations/test": "2.0.0 <= v < 3.0.0",
+        "rtfeldman/elm-hex": "1.0.0 <= v < 2.0.0",
+        "NoRedInk/elm-json-decode-pipeline": "1.0.0 <= v < 2.0.0"
+    }
+}

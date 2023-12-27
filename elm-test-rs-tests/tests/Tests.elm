@@ -8,6 +8,7 @@ import TCOMiscompilation0 exposing (tcoMiscompilation0Test)
 -- import TCOMiscompilation1 exposing (tcoMiscompilation1Test)
 import TCOMiscompilation2 exposing (tcoMiscompilation2Test)
 import TCOMiscompilation3 exposing (tcoMiscompilation3Test)
+import TCOMiscompilation4 exposing (tcoMiscompilation4Test0, tcoMiscompilation4Test1)
 
 
 suite : Test
@@ -19,4 +20,5 @@ suite = describe "TCO tests"
     -- , tcoMiscompilation1Test
     , tcoMiscompilation2Test
     , tcoMiscompilation3Test
+    , tcoMiscompilation4Test0, tcoMiscompilation4Test1
     ]

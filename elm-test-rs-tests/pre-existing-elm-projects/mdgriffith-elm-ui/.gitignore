@@ -1,0 +1,28 @@
+# elm-package generated files
+elm-stuff/
+# elm-repl generated files
+repl-temp-*
+.DS_Store
+*/index.html
+index.html
+.elm-static-html
+
+tests/html-generation/rendered/
+
+env
+elm.js
+
+examples/temporary/
+
+.vscode
+
+
+sauce.env
+
+__pycache__
+node_modules
+benchmarks/tmp
+benchmarks/results
+tests/tmp
+
+tmp

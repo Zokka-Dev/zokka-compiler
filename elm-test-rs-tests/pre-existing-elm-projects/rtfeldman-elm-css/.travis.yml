@@ -1,0 +1,12 @@
+language: elm
+
+elm:
+  - "latest-0.19.1"
+
+elm-format: "0.8.2"
+
+install: ":"
+
+script:
+  - elm-format --validate
+  - elm-test

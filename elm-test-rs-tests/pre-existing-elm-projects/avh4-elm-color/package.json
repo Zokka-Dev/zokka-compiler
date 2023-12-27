@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "test": "elm-test && elm make --docs=documentation.json && (cd example && elm make Main.elm) && elm-format --validate . && (elm diff || true)"
+  },
+  "devDependencies": {
+    "elm": "^0.19.0-bugfix2",
+    "elm-format": "^0.8.0",
+    "elm-test": "^0.19.0-beta8"
+  }
+}
