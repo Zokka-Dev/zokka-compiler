@@ -11,6 +11,7 @@ module Data.Utf8
   , endsWithWord8
   , split
   , join
+  , joinConsecutivePairSep
   --
   , getUnder256
   , putUnder256
@@ -247,6 +248,38 @@ joinHelp sep mba offset str strings =
           writeWord8 mba dotOffset sep
           let !newOffset = dotOffset + 1
           joinHelp sep mba newOffset s ss
+
+
+joinConsecutivePairSep :: (Word8, Word8) -> [Utf8 t] -> Utf8 t
+joinConsecutivePairSep sep strings =
+  case strings of
+    [] ->
+      empty
+
+    str:strs ->
+      runST $
+      do  let !len = List.foldl' (\w s -> w + 2 + size s) (size str) strs
+          mba <- newByteArray len
+          joinConsecutivePairSepHelp sep mba 0 str strs
+          freeze mba
+
+
+joinConsecutivePairSepHelp :: (Word8, Word8) -> MBA s -> Int -> Utf8 t -> [Utf8 t] -> ST s ()
+joinConsecutivePairSepHelp sep@(sep0, sep1) mba offset str strings =
+  let
+    !len = size str
+  in
+  case strings of
+    [] ->
+      copy str 0 mba offset len
+
+    s:ss ->
+      do  copy str 0 mba offset len
+          let !dotOffset = offset + len
+          writeWord8 mba dotOffset sep0
+          writeWord8 mba (dotOffset + 1) sep1
+          let !newOffset = dotOffset + 2
+          joinConsecutivePairSepHelp sep mba newOffset s ss
 
 
 

@@ -1,11 +1,13 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MagicHash #-}
 module Generate.JavaScript.Builder
   ( stmtToBuilder
   , exprToBuilder
   , Expr(..), LValue(..)
   , Stmt(..), Case(..)
   , InfixOp(..), PrefixOp(..)
+  , sanitizeScriptElementString
   )
   where
 
@@ -22,7 +24,42 @@ import Data.Monoid ((<>))
 import qualified Generate.JavaScript.Name as Name
 import Generate.JavaScript.Name (Name)
 import qualified Json.Encode as Json
+import qualified Elm.String as ES
+import qualified Data.Utf8 as Utf8
+import qualified GHC.Word
 
+
+backslash :: GHC.Word.Word8
+backslash = 0x5c
+
+forwardslash :: GHC.Word.Word8
+forwardslash = 0x2f
+
+exclamationMark :: GHC.Word.Word8
+exclamationMark = 0x21
+
+
+
+-- We need to remove escape / because otherwise we can end up with
+-- https://github.com/elm-lang/elm-make/issues/174 Which is tracked from
+-- https://github.com/elm/compiler/issues/1377
+--
+-- In particular we are trying to solve problems where string literals are
+-- </script> or <!-- Note that this is only a problem for string literals, and
+-- in HTML tags, so for efficiency's sake we might choose to only use this where
+-- there are indeed string literals and when we are generating a full HTML file
+-- (this is not required for script.js as the HTML parser does not run in those)
+--
+-- We are following the recommendations laid out in the living standard here:
+-- https://html.spec.whatwg.org/multipage/scripting.html#restrictions-for-contents-of-script-elements
+sanitizeScriptElementString :: ES.String -> ES.String
+sanitizeScriptElementString = sanitizeHtmlComment . sanitizeScriptTag
+
+sanitizeScriptTag :: ES.String -> ES.String
+sanitizeScriptTag str = Utf8.joinConsecutivePairSep (backslash, forwardslash) (Utf8.split forwardslash str)
+
+sanitizeHtmlComment :: ES.String -> ES.String
+sanitizeHtmlComment str = Utf8.joinConsecutivePairSep (backslash, exclamationMark) (Utf8.split exclamationMark str)
 
 
 -- EXPRESSIONS

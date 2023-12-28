@@ -96,7 +96,6 @@ chompChar pos end row col numChars mostRecent =
 
 -- STRINGS
 
-
 string :: (Row -> Col -> x) -> (E.String -> Row -> Col -> x) -> Parser x ES.String
 string toExpectation toError =
   P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->

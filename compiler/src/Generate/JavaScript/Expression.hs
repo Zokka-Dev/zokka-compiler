@@ -64,7 +64,7 @@ generate mode expression =
             JS.String (Utf8.toBuilder char)
 
     Opt.Str string ->
-      JsExpr $ JS.String (Utf8.toBuilder string)
+      JsExpr $ JS.String (Utf8.toBuilder (JS.sanitizeScriptElementString string))
 
     Opt.Int int ->
       JsExpr $ JS.Int int
