@@ -28,6 +28,7 @@ jobs:
 
     # Add steps here to build your Haskell project using Cabal
     - name: Build Project
+      shell: bash
       run: |
         cp cabal.project.freeze.ghc92 cabal.project.freeze
         cp cabal.project.prod cabal.project
