@@ -2,5 +2,3 @@ packages:.
 
 package *
     optimization: 0
-
-executable-static: True
