@@ -1,8 +1,8 @@
 {
-  "name": "@elm_binaries/linux_x64",
-  "version": "0.19.1-0",
-  "description": "Download the Elm binary for Linux (x64)",
-  "repository": "https://github.com/elm/compiler",
+  "name": "@changlinli/zokka-binary-linux_x64",
+  "version": "0.191.0-alpha.10",
+  "description": "Download the Zokka binary for Linux (x64)",
+  "repository": "https://github.com/Zokka-Dev/zokka-compiler",
   "license": "BSD-3-Clause",
   "os": [ "linux" ],
   "cpu": [ "x64" ]

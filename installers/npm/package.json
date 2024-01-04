@@ -1,18 +1,18 @@
 {
-  "name": "elm",
-  "version": "0.19.1-6",
+  "name": "@changlinli/zokka",
+  "version": "0.191.0-alpha.13",
   "description": "Installer for Elm: just downloads the binary into node_modules",
   "license": "BSD-3-Clause",
   "repository": {
     "type": "git",
-    "url": "https://github.com/elm/compiler.git"
+    "url": "https://github.com/Zokka-Dev/zokka-compiler"
   },
-  "homepage": "https://github.com/elm/compiler/tree/master/installers/npm",
-  "bugs": "https://github.com/elm/compiler/issues",
+  "homepage": "https://github.com/Zokka-Dev/zokka-compiler",
+  "bugs": "https://github.com/Zokka-Dev/zokka-compiler/issues",
   "author": {
-    "name": "Evan Czaplicki",
-    "email": "evan@elm-lang.org",
-    "url": "https://github.com/evancz"
+    "name": "Zokka Devs",
+    "email": "npm_mail@zokka-lang.com",
+    "url": "https://github.com/Zokka-Dev/"
   },
   "engines": {
     "node": ">=7.0.0"
@@ -24,21 +24,21 @@
     "install.js",
     "binary.js",
     "bin",
-    "bin/elm"
+    "bin/zokka"
   ],
   "keywords": [
     "bin",
     "binary",
     "binaries",
     "elm",
+    "zokka",
     "install",
     "installer"
   ],
-  "bin": { "elm": "bin/elm" },
+  "bin": { "zokka": "bin/zokka" },
   "optionalDependencies": {
-    "@elm_binaries/darwin_arm64": "0.19.1-0",
-    "@elm_binaries/darwin_x64": "0.19.1-0",
-    "@elm_binaries/linux_x64": "0.19.1-0",
-    "@elm_binaries/win32_x64": "0.19.1-0"
+    "@changlinli/zokka-binary-darwin_x64": "0.191.0-alpha.10",
+    "@changlinli/zokka-binary-linux_x64": "0.191.0-alpha.10",
+    "@changlinli/zokka-binary-win32_x64": "0.191.0-alpha.10"
   }
 }
