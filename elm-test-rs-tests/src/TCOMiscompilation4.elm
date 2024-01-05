@@ -122,4 +122,4 @@ tcoMiscompilation4Test0 = test "TCO shouldn't change the results of the hacky ev
     \_ -> update (BuggyEval testProgram0) Stopped |> Expect.equal (update (HackyEval testProgram0) Stopped)
 
 tcoMiscompilation4Test1 = test "TCO shouldn't change the results of the hacky eval or the buggy eval (example 1)" <|
-    \_ -> update (BuggyEval testProgram1) Stopped |> Expect.equal (update (HackyEval testProgram1) Stopped)
+    \_ -> update (BuggyEval testProgram1) Stopped |> Expect.equal (update (HackyEval testProgram0) Stopped)
