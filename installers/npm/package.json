@@ -1,6 +1,6 @@
 {
-  "name": "@changlinli/zokka",
-  "version": "0.191.0-alpha.13",
+  "name": "zokka",
+  "version": "0.191.0-alpha.15",
   "description": "Installer for Elm: just downloads the binary into node_modules",
   "license": "BSD-3-Clause",
   "repository": {
@@ -37,8 +37,8 @@
   ],
   "bin": { "zokka": "bin/zokka" },
   "optionalDependencies": {
-    "@changlinli/zokka-binary-darwin_x64": "0.191.0-alpha.10",
-    "@changlinli/zokka-binary-linux_x64": "0.191.0-alpha.10",
-    "@changlinli/zokka-binary-win32_x64": "0.191.0-alpha.10"
+    "@zokka/zokka-binary-darwin_x64": "0.191.0-alpha.15",
+    "@zokka/zokka-binary-linux_x64": "0.191.0-alpha.15",
+    "@zokka/zokka-binary-win32_x64": "0.191.0-alpha.15"
   }
 }
