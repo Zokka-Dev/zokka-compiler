@@ -28,6 +28,8 @@ import qualified Data.Map as Map
 import qualified Data.Binary as Binary
 import Data.Coerce (coerce)
 import Parse.Primitives (Col, Row)
+import Http (Sha, shaToChars)
+import Control.Monad (when)
 
 data REPOSITORYURL
 data PACKAGEURL
@@ -108,6 +110,14 @@ packageUrlEncoder :: PackageUrl -> E.Value
 packageUrlEncoder packageUrl = E.string (coerce packageUrl)
 
 
+sha1Decoder :: D.Decoder e HumanReadableShaDigest
+sha1Decoder = fmap coerce D.string
+
+
+sha1Encoder :: HumanReadableShaDigest -> E.Value
+sha1Encoder (HumanReadableShaDigest shaDigest) = E.string shaDigest
+
+
 data CustomSingleRepositoryData =
   CustomSingleRepositoryData
     { _repositoryType :: !RepositoryType
@@ -134,7 +144,7 @@ customSingleRepositoryDataDecoder =
     pure (CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl})
 
 customSingleRepositoryDataEncoder :: CustomSingleRepositoryData -> E.Value
-customSingleRepositoryDataEncoder (CustomSingleRepositoryData repositoryType repositoryUrl) = 
+customSingleRepositoryDataEncoder (CustomSingleRepositoryData repositoryType repositoryUrl) =
   E.object
     [ (Utf8.fromChars "repository-type", repositoryTypeEncoder repositoryType)
     , (Utf8.fromChars "repository-url", repositoryUrlEncoder repositoryUrl)
@@ -186,12 +196,29 @@ singlePackageFileTypeEncoder :: SinglePackageFileType -> E.Value
 singlePackageFileTypeEncoder TarballType = E.string tarballTypeString
 singlePackageFileTypeEncoder ZipfileType = E.string zipfileTypeString
 
+
+newtype HumanReadableShaDigest = HumanReadableShaDigest Json.String
+
+
+humanReadableShaDigestToString :: HumanReadableShaDigest -> String
+humanReadableShaDigestToString (HumanReadableShaDigest jsonString) = Utf8.toChars jsonString
+
+
+humanReadableShaDigestToJsonString :: HumanReadableShaDigest -> Json.String
+humanReadableShaDigestToJsonString (HumanReadableShaDigest shaDigest) = shaDigest
+
+
+shaToHumanReadableShaDigest :: Sha -> HumanReadableShaDigest
+shaToHumanReadableShaDigest = HumanReadableShaDigest . Utf8.fromChars . Http.shaToChars
+
+
 data SinglePackageLocationData =
   SinglePackageLocationData
     { _fileType :: !SinglePackageFileType
     , _packageName :: !Name
     , _version :: !Version
     , _url :: !PackageUrl
+    , _shaHash :: !HumanReadableShaDigest
     }
 
 data CustomRepositoryDataParseError
@@ -200,7 +227,13 @@ data CustomRepositoryDataParseError
   | InvalidVersionString (Row, Col)
   | InvalidPackageName (Row, Col)
   | UnsupportedRepositoryType Json.String [Json.String]
+  | InvalidHashType Json.String [Json.String]
   deriving Show
+
+
+sha1HashTypeString :: Json.String
+sha1HashTypeString = Utf8.fromChars "sha-1"
+
 
 singlePackageLocationDataDecoder :: D.Decoder CustomRepositoryDataParseError SinglePackageLocationData
 singlePackageLocationDataDecoder =
@@ -209,21 +242,27 @@ singlePackageLocationDataDecoder =
     packageName <- D.field "package-name" (D.mapError InvalidVersionString Elm.Package.decoder)
     version <- D.field "version" (D.mapError InvalidPackageName Elm.Version.decoder)
     url <- D.field "url" packageUrlDecoder
+    hashType <- D.field "hash-type" D.string
+    when (hashType /= sha1HashTypeString) $ D.failure (InvalidHashType hashType [sha1HashTypeString])
+    hash <- D.field "hash" sha1Decoder
     pure $
       SinglePackageLocationData
         { _fileType=fileType
         , _packageName=packageName
         , _version=version
         , _url=url
+        , _shaHash=hash
         }
 
 singlePackageLocationDataEncoder :: SinglePackageLocationData -> E.Value
-singlePackageLocationDataEncoder (SinglePackageLocationData fileType packageName version url) =
+singlePackageLocationDataEncoder (SinglePackageLocationData fileType packageName version url shaHash) =
   E.object
     [ (Utf8.fromChars "file-type", singlePackageFileTypeEncoder fileType)
     , (Utf8.fromChars "package-name", Elm.Package.encode packageName)
     , (Utf8.fromChars "version", Elm.Version.encode version)
     , (Utf8.fromChars "url", packageUrlEncoder url)
+    , (Utf8.fromChars "hash-type", E.string sha1HashTypeString)
+    , (Utf8.fromChars "hash", E.string . humanReadableShaDigestToJsonString $ shaHash)
     ]
 
 data CustomRepositoriesData =

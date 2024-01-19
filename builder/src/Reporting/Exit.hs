@@ -2308,3 +2308,15 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
             , D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Json.toChars) repoTypeSuggestions
             ]
         )
+    InvalidHashType hashType hashTypeSuggestions ->
+      toSnippet "UNKNOWN HASH TYPE" Nothing
+        ( D.reflow $
+            "You created a single packages entry with an invalid hash type. We currently only support sha-1."
+        ,
+          D.stack
+            [ D.reflow "You wrote that the hash-type was "
+            , D.red $ D.indent 4 $ D.fromChars (Json.toChars hashType)
+            , D.reflow "You should change it to one of our supported hash types."
+            , D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Json.toChars) hashTypeSuggestions
+            ]
+        )
