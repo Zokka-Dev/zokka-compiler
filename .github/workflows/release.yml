@@ -127,5 +127,5 @@ jobs:
 
     - name: Publish to NPM
       run: |
-        python publish-to-npm.py --windows-binary-source-location=./zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}/zokka --darwin-binary-location=./zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}/zokka --linux-binary-source-location=./zokka-compiler-linux-x86_64-${{ steps.get_version.outputs.tag }}/zokka --new-version=${{ steps.get_version.outputs.tag }}
+        python publish-to-npm.py --windows-binary-source-location=./zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}/zokka --darwin-binary-source-location=./zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}/zokka --linux-binary-source-location=./zokka-compiler-linux-x86_64-${{ steps.get_version.outputs.tag }}/zokka --new-version=${{ steps.get_version.outputs.tag }}
 
