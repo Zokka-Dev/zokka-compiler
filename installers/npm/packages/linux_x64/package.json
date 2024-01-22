@@ -1,9 +1,13 @@
 {
   "name": "@zokka/zokka-binary-linux_x64",
-  "version": "0.191.0-alpha.15",
+  "version": "0.191.0-alpha.17",
   "description": "Download the Zokka binary for Linux (x64)",
   "repository": "https://github.com/Zokka-Dev/zokka-compiler",
   "license": "BSD-3-Clause",
-  "os": [ "linux" ],
-  "cpu": [ "x64" ]
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ]
 }
