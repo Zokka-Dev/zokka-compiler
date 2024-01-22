@@ -15,10 +15,7 @@ jobs:
     # Use older version of alpine that predates this change
     # https://git.musl-libc.org/cgit/musl/commit/?id=246f1c811448f37a44b41cd8df8d0ef9736d95f4
     # Otherwise we error out when linking statically complaining about sendfile64 in snap-server
-    container:
-      image: alpine:3.16
-      # See https://github.com/actions/runner/issues/2033#issuecomment-1598547465
-      options: --user 1001
+    container: alpine:3.16
     # A lot of this comes from https://github.com/hasufell/stack2cabal/blob/160ae10b9e78c398803ed7ba4ab9d49c553df42d/.github/workflows/release.yaml#L32
     steps:
       - name: Install system dependencies
