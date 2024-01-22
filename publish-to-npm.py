@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import shutil
+import stat
 import subprocess
 
 # Expect NPM_TOKEN as environment variable rather than argument to prevent the
@@ -56,21 +57,20 @@ darwin_directory = "./installers/npm/packages/darwin_x64/"
 windows_directory = "./installers/npm/packages/win32_x64/"
 linux_directory = "./installers/npm/packages/linux_x64/"
 
-try:
-    shutil.copyfile(darwin_binary_source_location, darwin_directory + "/zokka")
-except shutil.SameFileError:
-    print(f"Not copying {darwin_binary_source_location} because location has not changed")
-    pass
-try:
-    shutil.copyfile(windows_binary_source_location, windows_directory + "/zokka.exe")
-except shutil.SameFileError:
-    print(f"Not copying {windows_binary_source_location} because location has not changed")
-    pass
-try:
-    shutil.copyfile(linux_binary_source_location, linux_directory + "/zokka")
-except shutil.SameFileError:
-    print(f"Not copying {linux_binary_source_location} because location has not changed")
-    pass
+def copy_and_chmod_file(source, destination):
+    try:
+        executable = destination
+        shutil.copyfile(darwin_binary_source_location, executable)
+        current_stat = os.stat(executable)
+        os.chmod(executable, current_stat.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    except shutil.SameFileError:
+        print(f"Not copying {darwin_binary_source_location} because location has not changed")
+        pass
+
+copy_and_chmod_file(darwin_binary_source_location, darwin_directory + "/zokka")
+copy_and_chmod_file(windows_binary_source_location, windows_directory + "/zokka.exe")
+copy_and_chmod_file(linux_binary_source_location, linux_directory + "/zokka")
 
 for directory in [darwin_directory, windows_directory, linux_directory]:
     with open(directory + "package.json", "r+") as f:
