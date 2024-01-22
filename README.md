@@ -190,6 +190,8 @@ packages by adding them as entries to `single-package-locations`.
             "package-name": "someauthor/somecoolpackage",
             "version": "1.0.0",
             "url": "https://example.com/my-custom-library-1-0-0.zip"
+            "hash-type": "sha-1",
+            "hash": "somerealhashherelike293b123abb920323d127b"
         }
     ]
 }
@@ -278,7 +280,9 @@ location.
             "file-type": "zipfile",
             "package-name": "elm-janitor/core",
             "version": "1.0.0",
-            "url": "https://github.com/elm-janitor/core/archive/refs/heads/stack-1.0.5.zip"
+            "url": "https://github.com/elm-janitor/core/archive/refs/heads/stack-1.0.5.zip",
+            "hash-type": "sha-1",
+            "hash": "f8b911c7d976533bce684b3c8da8f93151092bb2a"
         }
     ]
 }
