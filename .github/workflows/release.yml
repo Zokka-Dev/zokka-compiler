@@ -111,3 +111,20 @@ jobs:
       with:
         name: zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
+  publish-artifacts:
+    runs-on: ubuntu-latest
+    needs: [linux-build, build]
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Extract Git Tag
+      id: get_version
+      run: echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
+
+    - name: Download all workflow run artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Publish to NPM
+      run: |
+        python publish-to-npm.py --windows-binary-source-location=./zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}/zokka --darwin-binary-location=./zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}/zokka --linux-binary-source-location=./zokka-compiler-linux-x86_64-${{ steps.get_version.outputs.tag }}/zokka --new-version=${{ steps.get_version.outputs.tag }}
+
