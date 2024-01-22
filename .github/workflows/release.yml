@@ -59,7 +59,7 @@ jobs:
 
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: zokka-compiler-linux-x86_64-${{ steps.get_version.outputs.tag }}
           path: ./output/zokka
@@ -100,14 +100,14 @@ jobs:
     # Upload artifacts
     - if: ${{ matrix.os == 'macos-latest' }}
       name: Upload Artifacts (Mac)
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
 
     - if: ${{ matrix.os == 'windows-latest' }}
       name: Upload Artifacts (Windows)
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
