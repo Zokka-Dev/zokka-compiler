@@ -37,6 +37,7 @@ import Deps.Registry (ZokkaRegistries)
 import qualified Deps.Registry as Registry
 import qualified Data.Utf8 as Utf8
 import Logging.Logger (printLog)
+import Elm.CustomRepositoryData (CustomSingleRepositoryData(..))
 
 
 
@@ -377,9 +378,10 @@ getDocs cache zokkaRegistry manager name version =
         else
           do  let registryKeyMaybe = Registry.lookupPackageRegistryKey zokkaRegistry name version
               -- FIXME: Handle the non-repository URL case better
-              repositoryUrl <- case registryKeyMaybe of
+              repositoryData <- case registryKeyMaybe of
                 Just (Registry.RepositoryUrlKey repositoryUrl) -> pure repositoryUrl
-                _ -> printLog "Had a bad thing happen in getDocs" >> pure (Utf8.fromChars "https://example.com/badbadbad")
+                _ -> printLog "Had a bad thing happen in getDocs" >> undefined -- FIXME: Should really get rid of this!
+              let repositoryUrl = _repositoryUrl repositoryData
               let url = Website.metadata repositoryUrl name version "docs.json"
               Http.get manager url [] Exit.DP_Http $ \body ->
                 case D.fromByteString Docs.decoder body of

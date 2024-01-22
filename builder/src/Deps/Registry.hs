@@ -90,8 +90,8 @@ lookupPackageRegistryKey ZokkaRegistries{_packagesToLocations=packagesToLocation
 
 
 data RegistryKey
-  = RepositoryUrlKey RepositoryUrl
-  | PackageUrlKey PackageUrl
+  = RepositoryUrlKey CustomSingleRepositoryData
+  | PackageUrlKey SinglePackageLocationData
   deriving (Eq, Ord, Show)
 
 
@@ -147,9 +147,9 @@ fetch :: Http.Manager -> Stuff.ZokkaSpecificCache -> CustomRepositoriesData -> T
 fetch manager cache (CustomRepositoriesData customFullRepositories singlePackageLocations) customRepoConfigLastModified =
   do
     -- FIXME: this is pretty awful
-    let fetchSingleRepo repoData = (,) (RepositoryUrlKey $ _repositoryUrl repoData) <$> fetchSingleCustomRepository manager repoData
+    let fetchSingleRepo repoData = (,) (RepositoryUrlKey repoData) <$> fetchSingleCustomRepository manager repoData
     fullRepositoryFetchResults <- traverse fetchSingleRepo customFullRepositories
-    let singlePackageRegistries = (\locData -> (PackageUrlKey $ _url locData, createRegistryFromSinglePackageLocation locData)) <$> singlePackageLocations
+    let singlePackageRegistries = (\locData -> (PackageUrlKey locData, createRegistryFromSinglePackageLocation locData)) <$> singlePackageLocations
     let allResults = (++) singlePackageRegistries <$> mapM sequence fullRepositoryFetchResults
     case allResults of
       Left err -> pure $ Left err
@@ -230,7 +230,7 @@ updateSingleRegistry :: Http.Manager -> RegistryKey -> Registry -> IO (Either Ex
 updateSingleRegistry manager registryKey registry =
   case registryKey of
     -- FIXME: need to deal with bare repos
-    RepositoryUrlKey repositoryUrl -> updateSingleRegistryFromStandardElmRepo manager repositoryUrl registry
+    RepositoryUrlKey repositoryData -> updateSingleRegistryFromStandardElmRepo manager (_repositoryUrl repositoryData) registry
     -- With package URLs, only one package can correspond to a single URL so there is no sensible notion of "update"
     PackageUrlKey _ -> pure $ Right registry
 
@@ -293,11 +293,11 @@ bail _ _ =
 
 -- FIXME: This needs to be fixed to allow barebones servers
 customSingleRepositoryDataToRegistryKey :: CustomSingleRepositoryData -> RegistryKey
-customSingleRepositoryDataToRegistryKey CustomSingleRepositoryData{_repositoryUrl=repositoryUrl} = RepositoryUrlKey repositoryUrl
+customSingleRepositoryDataToRegistryKey repositoryData = RepositoryUrlKey repositoryData
 
 --FIXME: PackageUrlKey probably needs to include the kind of package it is for decompression reasons
 singlePackageLocationDataToRegistryKey :: SinglePackageLocationData -> RegistryKey
-singlePackageLocationDataToRegistryKey SinglePackageLocationData{_url=url}= PackageUrlKey url
+singlePackageLocationDataToRegistryKey singlePackageLocationData= PackageUrlKey singlePackageLocationData
 
 doesRegistryAgreeWithCustomRepositoriesData :: CustomRepositoriesData -> ZokkaRegistries -> Bool
 doesRegistryAgreeWithCustomRepositoriesData (CustomRepositoriesData fullRepositories singlePackages) registry =
@@ -371,11 +371,11 @@ instance Binary RegistryKey where
     t <- get :: Get Word8
     case t of
       0 -> do
-        repositoryUrl <- get :: Get RepositoryUrl
-        pure $ RepositoryUrlKey repositoryUrl
+        customSingleRepositoryData <- get :: Get CustomSingleRepositoryData
+        pure $ RepositoryUrlKey customSingleRepositoryData
       1 -> do
-        packageUrl <- get :: Get PackageUrl
-        pure $ PackageUrlKey packageUrl
+        singlePackageLocationData <- get :: Get SinglePackageLocationData
+        pure $ PackageUrlKey singlePackageLocationData
       _ -> 
         -- FIXME: Better error message
         error "Corrupt registry key! We should only have a 0 or 1 here."

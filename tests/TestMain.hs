@@ -19,14 +19,51 @@ import qualified Data.Utf8 as Utf8
 import qualified Data.Map.Strict as Map
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
+import Elm.CustomRepositoryData (SinglePackageFileType, SinglePackageLocationData(..), CustomSingleRepositoryData (CustomSingleRepositoryData, _repositoryType, _repositoryUrl), HumanReadableShaDigest(..), shaToHumanReadableShaDigest, RepositoryType)
 import File (Time(..))
 import Data.Fixed (Fixed(..))
+import qualified Data.Digest.Pure.SHA as SHA
+import Data.ByteString.Lazy (fromStrict)
 
 utf8String :: Hedgehog.Gen (Utf8.Utf8 a)
 utf8String = Utf8.fromChars <$> Gen.string (Range.linear 0 40) Gen.unicode
 
+singlePackageFileTypeGen :: Hedgehog.Gen SinglePackageFileType
+singlePackageFileTypeGen = Gen.element [minBound..]
+
+humanReadableShaDigestGen :: Hedgehog.Gen HumanReadableShaDigest
+humanReadableShaDigestGen = fmap (shaToHumanReadableShaDigest . SHA.sha1 . fromStrict) (Gen.bytes (Range.linear 0 100))
+
+packageNameGen :: Hedgehog.Gen Pkg.Name
+packageNameGen =
+  Pkg.Name <$> utf8String <*> utf8String
+
+singlePackageocationDataGen :: Hedgehog.Gen SinglePackageLocationData
+singlePackageocationDataGen = do
+  fileType <- singlePackageFileTypeGen
+  packageName <- packageNameGen
+  version <- versionGen
+  url <- utf8String
+  shaHash <- humanReadableShaDigestGen
+  pure $ SinglePackageLocationData
+    { _fileType=fileType
+    , _packageName = packageName
+    , _version = version
+    , _url = url
+    , _shaHash = shaHash
+    }
+
+repositoryTypeGen :: Hedgehog.Gen RepositoryType
+repositoryTypeGen = Gen.element [minBound..]
+
+customSingleRepositoryDataGen :: Hedgehog.Gen CustomSingleRepositoryData
+customSingleRepositoryDataGen = do
+  repositoryType <- repositoryTypeGen
+  repositoryUrl <- utf8String
+  pure $ CustomSingleRepositoryData {_repositoryUrl=repositoryUrl, _repositoryType=repositoryType}
+
 registryKeyGen :: Hedgehog.Gen RegistryKey
-registryKeyGen = Gen.choice [ fmap PackageUrlKey utf8String, fmap RepositoryUrlKey utf8String ]
+registryKeyGen = Gen.choice [ fmap PackageUrlKey singlePackageocationDataGen, fmap RepositoryUrlKey customSingleRepositoryDataGen ]
 
 knownVersionsGen :: Hedgehog.Gen KnownVersions
 knownVersionsGen = do

@@ -35,7 +35,7 @@ import qualified Http
 import qualified Json.Decode as D
 import qualified Reporting.Exit as Exit
 import qualified Stuff
-import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder)
+import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, CustomSingleRepositoryData(..), SinglePackageLocationData(..))
 import Data.Maybe (fromJust)
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Reporting.Exit (RegistryProblem(..))
@@ -327,8 +327,9 @@ getConstraints pkg vsn =
                         do  let registryKeyMaybe = Registry.lookupPackageRegistryKey registry pkg vsn
                             -- FIXME: I feel like this entire case should be nicer
                             case registryKeyMaybe of
-                              Just (Registry.RepositoryUrlKey repositoryUrl) ->
+                              Just (Registry.RepositoryUrlKey repositoryData) ->
                                 let
+                                  repositoryUrl = _repositoryUrl repositoryData
                                   url = Website.metadata repositoryUrl pkg vsn "elm.json"
                                 in do
                                   result <- Http.get manager url [] id (return . Right)
@@ -345,8 +346,9 @@ getConstraints pkg vsn =
 
                                         Left _ ->
                                           err (Exit.SolverBadHttpData pkg vsn url)
-                              Just (Registry.PackageUrlKey packageUrl) ->
+                              Just (Registry.PackageUrlKey singlePackageData) ->
                                 do
+                                  let packageUrl = _url singlePackageData
                                   let url = Utf8.toChars packageUrl
                                   result <-
                                     -- FIXME: Use custom error instead of SolverBadHttpData for bad ZIP data

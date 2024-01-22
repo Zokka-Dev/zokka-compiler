@@ -14,6 +14,10 @@ module Elm.CustomRepositoryData
   , defaultCustomRepositoriesData
   , defaultCustomRepositoriesDataElmPackageRepoOnly
   , CustomRepositoryDataParseError(..)
+  , HumanReadableShaDigest
+  , humanReadableShaDigestIsEqualToSha
+  , humanReadableShaDigestToString
+  , shaToHumanReadableShaDigest
   )
   where
 
@@ -37,7 +41,7 @@ data PACKAGEURL
 data RepositoryType
   = DefaultPackageServer
   | BarebonesPackageServer
-  deriving (Enum, Bounded)
+  deriving (Enum, Bounded, Show, Ord, Eq)
 
 allRepositoryTypes :: [RepositoryType]
 allRepositoryTypes = [(minBound :: RepositoryType) .. ]
@@ -123,6 +127,7 @@ data CustomSingleRepositoryData =
     { _repositoryType :: !RepositoryType
     , _repositoryUrl :: !RepositoryUrl
     }
+    deriving (Show, Ord, Eq)
 
 standardElmRepository :: CustomSingleRepositoryData
 standardElmRepository = CustomSingleRepositoryData
@@ -153,7 +158,7 @@ customSingleRepositoryDataEncoder (CustomSingleRepositoryData repositoryType rep
 data SinglePackageFileType
   = TarballType
   | ZipfileType
-  deriving (Enum, Bounded)
+  deriving (Enum, Bounded, Show, Ord, Eq)
 
 tarballTypeString :: Json.String
 tarballTypeString = Json.fromChars "tarball"
@@ -198,6 +203,7 @@ singlePackageFileTypeEncoder ZipfileType = E.string zipfileTypeString
 
 
 newtype HumanReadableShaDigest = HumanReadableShaDigest Json.String
+  deriving (Eq, Ord, Show)
 
 
 humanReadableShaDigestToString :: HumanReadableShaDigest -> String
@@ -212,6 +218,11 @@ shaToHumanReadableShaDigest :: Sha -> HumanReadableShaDigest
 shaToHumanReadableShaDigest = HumanReadableShaDigest . Utf8.fromChars . Http.shaToChars
 
 
+humanReadableShaDigestIsEqualToSha :: HumanReadableShaDigest -> Sha -> Bool
+humanReadableShaDigestIsEqualToSha (HumanReadableShaDigest shaDigest) sha =
+  Utf8.toChars shaDigest == shaToChars sha
+
+
 data SinglePackageLocationData =
   SinglePackageLocationData
     { _fileType :: !SinglePackageFileType
@@ -220,6 +231,7 @@ data SinglePackageLocationData =
     , _url :: !PackageUrl
     , _shaHash :: !HumanReadableShaDigest
     }
+  deriving (Eq, Ord, Show)
 
 data CustomRepositoryDataParseError
   -- UnsupportedFileTypeError, first string is the string that a user tried to input as a file type, list of strings are suggestions of syntactically close filetypes
@@ -228,7 +240,7 @@ data CustomRepositoryDataParseError
   | InvalidPackageName (Row, Col)
   | UnsupportedRepositoryType Json.String [Json.String]
   | InvalidHashType Json.String [Json.String]
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 
 sha1HashTypeString :: Json.String
@@ -304,3 +316,94 @@ customRepostoriesDataEncoder (CustomRepositoriesData customFullRepositories cust
     [ (Utf8.fromChars "repositories", E.list customSingleRepositoryDataEncoder customFullRepositories)
     , (Utf8.fromChars "single-package-locations", E.list singlePackageLocationDataEncoder customSinglePackageRepositories)
     ]
+
+instance Binary.Binary RepositoryType where
+  get = do
+    t <- Binary.get :: Binary.Get Binary.Word8
+    case t of
+      0 -> pure DefaultPackageServer
+      1 -> pure BarebonesPackageServer
+      _ -> 
+        -- FIXME: Better error message
+        error "Corrupt repository type! We should only have a 0 or 1 here."
+  put repositoryType = case repositoryType of
+    DefaultPackageServer -> Binary.put (0 :: Binary.Word8)
+    BarebonesPackageServer -> Binary.put (1 :: Binary.Word8)
+
+instance Binary.Binary CustomSingleRepositoryData where
+  get = do
+    repositoryType <- Binary.get :: Binary.Get RepositoryType
+    repositoryUrl <- Binary.get :: Binary.Get RepositoryUrl
+    pure $ CustomSingleRepositoryData
+      { _repositoryType = repositoryType
+      , _repositoryUrl = repositoryUrl
+      }
+
+  put CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl} =
+    do
+      Binary.put repositoryType
+      Binary.put repositoryUrl
+
+  -- = TarballType
+  -- | ZipfileType
+instance Binary.Binary SinglePackageFileType where
+  get = do
+    t <- Binary.get :: Binary.Get Binary.Word8
+    case t of
+      0 -> pure TarballType
+      1 -> pure ZipfileType
+      _ -> 
+        -- FIXME: Better error message
+        error "Corrupt SinglePackageFileType! We should only have a 0 or 1 here."
+  
+  put singlePackageFileType = case singlePackageFileType of
+    TarballType -> Binary.put (0 :: Binary.Word8)
+    ZipfileType -> Binary.put (1 :: Binary.Word8)
+
+instance Binary.Binary HumanReadableShaDigest where
+  get = do
+    -- FIXME: This is really hacky to use a PackageURL
+    shaDigestAsUtf8String <- Binary.get :: Binary.Get PackageUrl
+    pure (HumanReadableShaDigest (coerce shaDigestAsUtf8String))
+
+  put (HumanReadableShaDigest shaDigestAsUtf8String) = do
+    Binary.put (coerce shaDigestAsUtf8String :: PackageUrl)
+
+
+-- data SinglePackageLocationData =
+--   SinglePackageLocationData
+--     { _fileType :: !SinglePackageFileType
+--     , _packageName :: !Name
+--     , _version :: !Version
+--     , _url :: !PackageUrl
+--     , _shaHash :: !HumanReadableShaDigest
+--     }
+--   deriving (Eq, Ord, Show)
+instance Binary.Binary SinglePackageLocationData where
+  get = do
+    fileType <- Binary.get :: Binary.Get SinglePackageFileType
+    packageName <- Binary.get :: Binary.Get Name
+    version <- Binary.get :: Binary.Get Version
+    url <- Binary.get :: Binary.Get PackageUrl
+    shaHash <- Binary.get :: Binary.Get HumanReadableShaDigest
+    pure $ SinglePackageLocationData
+      { _fileType = fileType
+      , _packageName = packageName
+      , _version = version
+      , _url = url
+      , _shaHash = shaHash
+      }
+
+  put SinglePackageLocationData
+      { _fileType = fileType
+      , _packageName = packageName
+      , _version = version
+      , _url = url
+      , _shaHash = shaHash
+      }
+      = do
+        Binary.put fileType
+        Binary.put packageName
+        Binary.put version
+        Binary.put url
+        Binary.put shaHash

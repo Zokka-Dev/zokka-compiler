@@ -63,13 +63,16 @@ import Elm.PackageOverrideData (PackageOverrideData(..))
 import Data.Function ((&))
 import Data.Map ((!))
 import Deps.Registry (ZokkaRegistries)
-import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl)
+import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl, HumanReadableShaDigest, humanReadableShaDigestIsEqualToSha, humanReadableShaDigestToString)
+import qualified Elm.CustomRepositoryData as CustomRepositoryData
 import Control.Exception (SomeException, catches, Handler (..), BlockedIndefinitelyOnMVar (BlockedIndefinitelyOnMVar), throwIO, Exception)
 import qualified Reporting.Annotation as Report.Annotation
 import qualified Elm.PackageOverrideData as PackageOverrideData
 import Data.Tuple (swap)
 import qualified Elm.Constraint as C
 import Logging.Logger (printLog)
+import Reporting.Exit (PackageProblem(PP_BadArchiveHash))
+import qualified Elm.CustomRepositoryData as CustomRepositoriesData
 
 
 
@@ -321,8 +324,8 @@ verifyPkg env time (Outline.PkgOutline pkg _ _ _ exposed direct testDirect elm) 
 
 groupByOriginalPkg :: [PackageOverrideData] -> Map.Map Pkg.Name (Pkg.Name, V.Version)
 groupByOriginalPkg packageOverrides =
-  Map.fromListWith 
-    const 
+  Map.fromListWith
+    const
     (fmap (\po -> (PackageOverrideData._originalPackageName po, (PackageOverrideData._overridePackageName po, PackageOverrideData._overridePackageVersion po))) packageOverrides)
 
 verifyApp :: Env -> File.Time -> Outline.AppOutline -> Task Details
@@ -511,7 +514,7 @@ type Dep =
 
 verifyDep :: Reporting.DKey -> BuildData -> Http.Manager -> ZokkaRegistries -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name C.Constraint -> IO Dep
 verifyDep key buildData manager zokkaRegistry depsMVar solution directDeps =
-  let 
+  let
     fingerprint = Map.intersectionWith (\(Solver.Details v _) _ -> v) solution directDeps
     cacheFilePath = cacheFilePathFromBuildData buildData
     -- These are the pkg names and versions that we actually perform downloading and error reporting on
@@ -519,7 +522,7 @@ verifyDep key buildData manager zokkaRegistry depsMVar solution directDeps =
       case buildData of
         BuildOriginalPackage (OriginalPackageBuildData { _pkg=pkg, _version=vsn }) ->
           (pkg, vsn)
-        BuildWithOverridingPackage 
+        BuildWithOverridingPackage
           (OverridingPackageBuildData {_overridingPkg=overridingPkg, _overridingPkgVersion=overridingPkgVer}) ->
             (overridingPkg, overridingPkgVer)
     downloadPackageAction = downloadPackageToFilePath cacheFilePath zokkaRegistry manager primaryPkg primaryPkgVersion
@@ -609,14 +612,14 @@ data OriginalPackageBuildData = OriginalPackageBuildData
 data BuildData
   = BuildOriginalPackage OriginalPackageBuildData
   | BuildWithOverridingPackage OverridingPackageBuildData
-  
+
 
 cacheFilePathFromBuildData :: BuildData -> FilePath
 cacheFilePathFromBuildData buildData =
   case buildData of
     BuildOriginalPackage (OriginalPackageBuildData { _pkg=pkg, _version=vsn, _buildCache=cache }) ->
       Stuff.package cache pkg vsn
-    BuildWithOverridingPackage 
+    BuildWithOverridingPackage
       (OverridingPackageBuildData {_originalPkg=origPkg, _originalPkgVersion=origPkgVer, _overridingPkg=overPkg, _overridingPkgVersion=overPkgVer, _overridingCache=cache}) ->
         Stuff.packageOverride cache origPkg origPkgVer overPkg overPkgVer
 
@@ -628,7 +631,7 @@ build key buildData depsMVar f fs =
     (pkg, vsn) = case buildData of
       BuildOriginalPackage (OriginalPackageBuildData {_pkg=pkg, _version=vsn}) ->
         (pkg, vsn)
-      BuildWithOverridingPackage 
+      BuildWithOverridingPackage
         (OverridingPackageBuildData {_originalPkg=origPkg, _originalPkgVersion=origPkgVer}) ->
           (origPkg, origPkgVer)
 
@@ -678,7 +681,7 @@ build key buildData depsMVar f fs =
                               maybeResults <- traverse readMVar rmvars
                               case sequence maybeResults of
                                 Nothing ->
-                                  do  
+                                  do
                                       printLog ("maybeResults were Nothing for " ++ show pkg ++ " vsn " ++ show vsn ++ " and deps from status were " ++ show (fmap extractDepsFromStatus statuses))
                                       Reporting.report key Reporting.DBroken
                                       return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
@@ -1013,16 +1016,16 @@ toDocs result =
 downloadPackage :: Stuff.PackageCache -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
 downloadPackage cache zokkaRegistries manager pkg vsn =
   case Registry.lookupPackageRegistryKey zokkaRegistries pkg vsn of
-    Just (Registry.RepositoryUrlKey repositoryUrl) ->
+    Just (Registry.RepositoryUrlKey repositoryData) ->
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
         printLog (show exists ++ "A" ++ Stuff.package cache pkg vsn)
-        downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn
-    Just (Registry.PackageUrlKey packageUrl) ->
+        downloadPackageFromElmPackageRepo cache (CustomRepositoryData._repositoryUrl repositoryData) manager pkg vsn
+    Just (Registry.PackageUrlKey packageData) ->
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
         printLog (show exists ++ "B" ++ Stuff.package cache pkg vsn)
-        downloadPackageDirectly cache packageUrl manager pkg vsn
+        downloadPackageDirectly cache (CustomRepositoryData._url packageData) manager pkg vsn
     Nothing ->
       let
         --FIXME
@@ -1035,16 +1038,16 @@ downloadPackage cache zokkaRegistries manager pkg vsn =
 downloadPackageToFilePath :: FilePath -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
 downloadPackageToFilePath filePath zokkaRegistries manager pkg vsn =
   case Registry.lookupPackageRegistryKey zokkaRegistries pkg vsn of
-    Just (Registry.RepositoryUrlKey repositoryUrl) ->
+    Just (Registry.RepositoryUrlKey repositoryData) ->
       do
         exists <- Dir.doesDirectoryExist filePath
         printLog (show exists ++ "A (toFilePath)" ++ filePath)
-        downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl manager pkg vsn
-    Just (Registry.PackageUrlKey packageUrl) ->
+        downloadPackageFromElmPackageRepoToFilePath filePath (CustomRepositoryData._repositoryUrl repositoryData) manager pkg vsn
+    Just (Registry.PackageUrlKey packageData) ->
       do
         exists <- Dir.doesDirectoryExist filePath
         printLog (show exists ++ "B (toFilePath)" ++ filePath)
-        downloadPackageDirectlyToFilePath filePath packageUrl manager
+        downloadPackageDirectlyToFilePath filePath (CustomRepositoriesData._url packageData) (CustomRepositoriesData._shaHash packageData) manager
     Nothing ->
       let
         --FIXME
@@ -1065,17 +1068,22 @@ downloadPackageDirectly cache packageUrl manager pkg vsn =
           printLog "hello world 2! FIXME"
           File.writePackage (Stuff.package cache pkg vsn) archive
 
-downloadPackageDirectlyToFilePath :: FilePath -> PackageUrl -> Http.Manager -> IO (Either Exit.PackageProblem ())
-downloadPackageDirectlyToFilePath filePath packageUrl manager =
+downloadPackageDirectlyToFilePath :: FilePath -> PackageUrl -> HumanReadableShaDigest -> Http.Manager -> IO (Either Exit.PackageProblem ())
+downloadPackageDirectlyToFilePath filePath packageUrl expectedShaDigest manager =
   let
     urlString = Utf8.toChars packageUrl
   in
     Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
     -- FIXME: Deal with the SHA hash instead of ignoring it
-      \(_, archive) ->
-        Right <$> do
-          printLog "hello world 2! FIXME (toFilePath)"
-          File.writePackage filePath archive
+      \(receivedShaHash, archive) ->
+        if humanReadableShaDigestIsEqualToSha expectedShaDigest receivedShaHash
+          then
+            Right <$> do
+              printLog "hello world 2! FIXME (toFilePath)"
+              File.writePackage filePath archive
+          else
+            -- FIXME Maybe use a custom error type instead of PP_BadArchiveHash that points to where the hash is defined in the custom-repo config
+            pure (Left (PP_BadArchiveHash urlString (humanReadableShaDigestToString expectedShaDigest) (Http.shaToChars receivedShaHash)))
 
 
 downloadPackageFromElmPackageRepo :: Stuff.PackageCache -> RepositoryUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())

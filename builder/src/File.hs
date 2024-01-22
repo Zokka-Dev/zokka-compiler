@@ -173,11 +173,8 @@ encodingError path ioErr =
 writeBuilder :: FilePath -> B.Builder -> IO ()
 writeBuilder path builder =
   IO.withBinaryFile path IO.WriteMode $ \handle ->
-    do  printLog "writeBuilder 1"
-        IO.hSetBuffering handle (IO.BlockBuffering Nothing)
-        printLog "writeBuilder 2"
+    do  IO.hSetBuffering handle (IO.BlockBuffering Nothing)
         B.hPutBuilder handle builder
-        printLog "writeBuilder 3"
 
 
 

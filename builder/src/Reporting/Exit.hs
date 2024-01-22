@@ -2189,42 +2189,6 @@ replToReport problem =
 
 
 
-      -- toSnippet "INVALID PACKAGE NAME" (toHighlight row col)
-      --   ( D.reflow $
-      --       "I got stuck while reading your elm.json file. I ran into trouble with the package name:"
-      --   , D.stack
-      --       [ D.fillSep
-      --           ["Package","names","are","always","written","as"
-      --           ,D.green "\"author/project\""
-      --           ,"so","I","am","expecting","to","see","something","like:"
-      --           ]
-      --       , D.dullyellow $ D.indent 4 $ D.vcat $
-      --           [ "\"mdgriffith/elm-ui\""
-      --           , "\"w0rm/elm-physics\""
-      --           , "\"Microsoft/elm-json-tree-view\""
-      --           , "\"FordLabs/elm-star-rating\""
-      --           , "\"1602/json-schema\""
-      --           ]
-      --       , D.reflow
-      --           "The author name should match your GitHub name exactly, and the project name\
-      --           \ needs to follow these rules:"
-      --       , D.indent 4 $ D.vcat $
-      --           [ "+--------------------------------------+-----------+-----------+"
-      --           , "| RULE                                 | BAD       | GOOD      |"
-      --           , "+--------------------------------------+-----------+-----------+"
-      --           , "| only lower case, digits, and hyphens | elm-HTTP  | elm-http  |"
-      --           , "| no leading digits                    | 3D        | elm-3d    |"
-      --           , "| no non-ASCII characters              | elm-bjørn | elm-bear  |"
-      --           , "| no underscores                       | elm_ui    | elm-ui    |"
-      --           , "| no double hyphens                    | elm--hash | elm-hash  |"
-      --           , "| no starting or ending hyphen         | -elm-tar- | elm-tar   |"
-      --           , "+--------------------------------------+-----------+-----------+"
-      --           ]
-      --       , D.toSimpleNote $
-      --           "These rules only apply to the project name, so you should never need\
-      --           \ to change your GitHub name!"
-      --       ]
-      --   )
 -- CUSTOM PACKAGE REPOSITORIES CONFIG
 
 toCustomPackageRepositoryProblemReport :: FilePath -> Code.Source -> Json.Context -> A.Region -> CustomRepositoryDataParseError -> Help.Report

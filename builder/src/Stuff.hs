@@ -246,7 +246,7 @@ getElmHome =
 -- is a bit more valuable than just the cache).
 getOrCreateZokkaCacheDir :: IO FilePath
 getOrCreateZokkaCacheDir = do
-    cacheDir <- getCacheDir "zokka-cache"
+    cacheDir <- getCacheDir ("zokka-cache-" ++ zokkaVersion)
     Dir.createDirectoryIfMissing True cacheDir
     pure cacheDir
 
@@ -264,3 +264,8 @@ getOrCreateZokkaCustomRepositoryConfig =
     zokkaDir <- getZokkaDir
     Dir.createDirectoryIfMissing True zokkaDir
     pure $ ZokkaCustomRepositoryConfigFilePath (zokkaDir </> "custom-package-repository-config.json")
+
+
+-- We should eventually make this something that's determined programmatically. This is a hack for now.
+zokkaVersion :: String
+zokkaVersion = "0.191.0"
