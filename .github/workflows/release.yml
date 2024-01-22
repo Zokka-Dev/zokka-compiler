@@ -53,7 +53,9 @@ jobs:
       # Extract the current git tag
       - name: Extract Git Tag
         id: get_version
-        run: echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
+        run: |
+          git config --global --add safe.directory /__w/zokka-compiler/zokka-compiler
+          echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
 
 
       - name: Upload Artifacts
