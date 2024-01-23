@@ -26,13 +26,6 @@ darwin_binary_source_location = args.darwin_binary_source_location
 linux_binary_source_location = args.linux_binary_source_location
 new_version = args.new_version
 
-if "alpha" in new_version:
-    additional_npm_flags = ["--tag", "alpha"]
-elif "beta" in new_version:
-    additional_npm_flags = ["--tag", "beta"]
-else:
-    additional_npm_flags = []
-
 def rewrite_version_of_package_json(package_json, version):
     package_json_copy = copy.deepcopy(package_json)
     package_json_copy["version"] = version
@@ -60,12 +53,12 @@ linux_directory = "./installers/npm/packages/linux_x64/"
 def copy_and_chmod_file(source, destination):
     try:
         executable = destination
-        shutil.copyfile(darwin_binary_source_location, executable)
+        shutil.copyfile(source, executable)
         current_stat = os.stat(executable)
         os.chmod(executable, current_stat.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     except shutil.SameFileError:
-        print(f"Not copying {darwin_binary_source_location} because location has not changed")
+        print(f"Not copying {source} because location has not changed")
         pass
 
 copy_and_chmod_file(darwin_binary_source_location, darwin_directory + "/zokka")
@@ -79,7 +72,13 @@ for directory in [darwin_directory, windows_directory, linux_directory]:
         f.seek(0)
         json.dump(new_package_json, f, indent=2)
         f.truncate()
-    subprocess.run(["npm", "publish", "--tag", "latest"] + additional_npm_flags, cwd=directory)
+    if "alpha" in new_version:
+        subprocess.run(["npm", "publish", "--tag", "alpha"], cwd=directory)
+    elif "beta" in new_version:
+        subprocess.run(["npm", "publish", "--tag", "beta"], cwd=directory)
+    else:
+        subprocess.run(["npm", "publish"], cwd=directory)
+
 
 with open(top_level_npm_directory + "package.json", "r+") as f:
     package_metadata = json.load(f)
@@ -89,4 +88,13 @@ with open(top_level_npm_directory + "package.json", "r+") as f:
     json.dump(new_package_metadata, f, indent=2)
     f.truncate()
 
-subprocess.run(["npm", "publish", "--tag", "latest"] + additional_npm_flags, cwd=top_level_npm_directory)
+if "alpha" in new_version:
+    subprocess.run(["npm", "publish", "--tag", "alpha"], cwd=top_level_npm_directory)
+    # Apparently npm doesn't allow multiple flags at once with publish, so
+    # we need to manually add latest with npm-dist-tag
+    subprocess.run(["npm", "dist-tag", f"zokka@{new_version}", "latest"], cwd=top_level_npm_directory)
+elif "beta" in new_version:
+    subprocess.run(["npm", "publish", "--tag", "beta"], cwd=top_level_npm_directory)
+    subprocess.run(["npm", "dist-tag", f"zokka@{new_version}", "latest"], cwd=top_level_npm_directory)
+else:
+    subprocess.run(["npm", "publish"], cwd=top_level_npm_directory)
