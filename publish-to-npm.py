@@ -92,9 +92,9 @@ if "alpha" in new_version:
     subprocess.run(["npm", "publish", "--tag", "alpha"], cwd=top_level_npm_directory)
     # Apparently npm doesn't allow multiple flags at once with publish, so
     # we need to manually add latest with npm-dist-tag
-    subprocess.run(["npm", "dist-tag", f"zokka@{new_version}", "latest"], cwd=top_level_npm_directory)
+    subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"], cwd=top_level_npm_directory)
 elif "beta" in new_version:
     subprocess.run(["npm", "publish", "--tag", "beta"], cwd=top_level_npm_directory)
-    subprocess.run(["npm", "dist-tag", f"zokka@{new_version}", "latest"], cwd=top_level_npm_directory)
+    subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"], cwd=top_level_npm_directory)
 else:
     subprocess.run(["npm", "publish"], cwd=top_level_npm_directory)
