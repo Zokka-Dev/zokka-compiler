@@ -14,3 +14,6 @@ dist-newstyle
 # We let developers instead choose which one of cabal.project.freeze.ghc92 or 
 # cabal.project.freeze.ghc94 they want to use locally
 cabal.project.freeze
+
+# Scratch files for easy personal use
+*.scratch.*
