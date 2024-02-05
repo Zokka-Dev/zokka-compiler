@@ -98,11 +98,18 @@ jobs:
       run: echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
 
     # Upload artifacts
-    - if: ${{ matrix.os == 'macos-latest' }}
-      name: Upload Artifacts (Mac)
+    - if: ${{ matrix.os == 'macos-12' }}
+      name: Upload Artifacts (Mac x86)
       uses: actions/upload-artifact@v4
       with:
         name: zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}
+        path: ./output/zokka
+
+    - if: ${{ matrix.os == 'macos-14' }}
+      name: Upload Artifacts (Mac ARM)
+      uses: actions/upload-artifact@v4
+      with:
+        name: zokka-compiler-macos-arm_64-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
 
     - if: ${{ matrix.os == 'windows-latest' }}
