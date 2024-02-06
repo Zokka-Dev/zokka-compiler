@@ -10,11 +10,14 @@ permissions:
   contents: read
 
 jobs:
+  # For developing Linux binaries we want to make this a static executable
   linux-build:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest]
+        include:
+          - os: ubuntu-latest
+            binary-fragment-name: linux-x86_64
     runs-on: ${{ matrix.os }}
     # Use older version of alpine that predates this change
     # https://git.musl-libc.org/cgit/musl/commit/?id=246f1c811448f37a44b41cd8df8d0ef9736d95f4
@@ -41,7 +44,7 @@ jobs:
       shell: bash
 
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Build Project
       shell: bash
@@ -64,7 +67,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: zokka-compiler-linux-x86_64-${{ steps.get_version.outputs.tag }}
+        name: zokka-compiler-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
 
   build:
@@ -80,7 +83,7 @@ jobs:
             binary-fragment-name: windows-x86_64
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Haskell
       uses: haskell-actions/setup@v2
@@ -116,7 +119,7 @@ jobs:
     needs: [linux-build, build]
     steps:
     - name: Checkout files
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Extract Git Tag
       id: get_version
