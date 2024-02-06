@@ -11,11 +11,11 @@ permissions:
 
 jobs:
   linux-build:
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     # Use older version of alpine that predates this change
     # https://git.musl-libc.org/cgit/musl/commit/?id=246f1c811448f37a44b41cd8df8d0ef9736d95f4
     # Otherwise we error out when linking statically complaining about sendfile64 in snap-server
@@ -61,27 +61,24 @@ jobs:
         git config --global --add safe.directory /__w/zokka-compiler/zokka-compiler
         echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
 
-    - if: ${{ matrix.os == 'macos-14' }}
-      name: Upload Artifacts (Linux ARM 64)
-      uses: actions/upload-artifact@v4
-      with:
-        name: zokka-compiler-linux-arm_64-${{ steps.get_version.outputs.tag }}
-        path: ./output/zokka
-
-    - if: ${{ matrix.os == 'ubuntu-latest' }}
-      name: Upload Artifacts (Linux ARM 64)
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: zokka-compiler-linux-x86_64-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
 
   build:
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
       matrix:
-        os: [macos-12, windows-latest, macos-14]
-    
+        include:
+          - os: macos-12
+            binary-fragment-name: macos-x86_64
+          - os: macos-14
+            binary-fragment-name: macos-arm_64
+          - os: windows-latest
+            binary-fragment-name: windows-x86_64
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v3
 
@@ -109,25 +106,10 @@ jobs:
       run: echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
 
     # Upload artifacts
-    - if: ${{ matrix.os == 'macos-12' }}
-      name: Upload Artifacts (Mac x86)
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}
-        path: ./output/zokka
-
-    - if: ${{ matrix.os == 'macos-14' }}
-      name: Upload Artifacts (Mac ARM)
-      uses: actions/upload-artifact@v4
-      with:
-        name: zokka-compiler-macos-arm_64-${{ steps.get_version.outputs.tag }}
-        path: ./output/zokka
-
-    - if: ${{ matrix.os == 'windows-latest' }}
-      name: Upload Artifacts (Windows)
-      uses: actions/upload-artifact@v4
-      with:
-        name: zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}
+        name: zokka-compiler-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
   publish-artifacts:
     runs-on: ubuntu-latest
@@ -147,5 +129,5 @@ jobs:
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       run: |
-        python publish-to-npm.py --windows-binary-source-location=./zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}/zokka --darwin-binary-source-location=./zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}/zokka --linux-binary-source-location=./zokka-compiler-linux-x86_64-${{ steps.get_version.outputs.tag }}/zokka --new-version=${{ steps.get_version.outputs.tag }}
+        python publish-to-npm.py --windows-x86-binary-source-location=./zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}/zokka --darwin-binary-source-location=./zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}/zokka --linux-binary-source-location=./zokka-compiler-linux-x86_64-${{ steps.get_version.outputs.tag }}/zokka --new-version=${{ steps.get_version.outputs.tag }}
 

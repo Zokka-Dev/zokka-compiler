@@ -14,16 +14,18 @@ parser = argparse.ArgumentParser(
     description="Publishes npm packages",
 )
 
-parser.add_argument("-w", "--windows-binary-source-location")
-parser.add_argument("-d", "--darwin-binary-source-location")
-parser.add_argument("-l", "--linux-binary-source-location")
+parser.add_argument("-w", "--windows-x86-binary-source-location")
+parser.add_argument("-d", "--darwin-x86-binary-source-location")
+parser.add_argument("-l", "--linux-x86-binary-source-location")
+parser.add_argument("-d", "--darwin-arm-binary-source-location")
+parser.add_argument("-l", "--linux-arm-binary-source-location")
 parser.add_argument("-e", "--new-version")
 
 args = parser.parse_args()
 
-windows_binary_source_location = args.windows_binary_source_location
-darwin_binary_source_location = args.darwin_binary_source_location
-linux_binary_source_location = args.linux_binary_source_location
+windows_binary_source_location = args.windows_x86_binary_source_location
+darwin_binary_source_location = args.darwin_x86_binary_source_location
+linux_binary_source_location = args.linux_x86_binary_source_location
 new_version = args.new_version
 
 def rewrite_version_of_package_json(package_json, version):
