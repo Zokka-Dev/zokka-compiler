@@ -723,7 +723,11 @@ generateDef mode def =
 
 
 makeTailCallLoopContinueSentinel :: Name.Name -> JS.Expr
-makeTailCallLoopContinueSentinel name = JS.Object [ (JsName.makeLoopSentinelName name, JS.Bool True) ]
+-- We create an empty object here because we will compare later in the JS
+-- code by reference via ===. Since we compare by reference, the actual
+-- contents of the object don't matter and we can save some memory by just
+-- using empty objects.
+makeTailCallLoopContinueSentinel name = JS.Object []
 
 remapFromTailCallParamToLocalVariable :: Name.Name -> (JsName.Name, JS.Expr)
 remapFromTailCallParamToLocalVariable name = 
