@@ -69,7 +69,7 @@ def copy_and_chmod_file(source, destination):
         os.chmod(executable, current_stat.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     except shutil.SameFileError:
-        print(f"Not copying {source} because location has not changed")
+        print(f"You are asking to copy {source} to {destination}, which are just the exact same file path, so no copying is taking place and just leave the file as-is.")
         pass
 
 copy_and_chmod_file(darwin_x86_binary_source_location, darwin_x86_directory + "/zokka")
