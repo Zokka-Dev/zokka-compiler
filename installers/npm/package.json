@@ -40,6 +40,7 @@
   },
   "optionalDependencies": {
     "@zokka/zokka-binary-darwin_x64": "meant-to-be-automatically-set",
+    "@zokka/zokka-binary-darwin_arm64": "meant-to-be-automatically-set",
     "@zokka/zokka-binary-linux_x64": "meant-to-be-automatically-set",
     "@zokka/zokka-binary-win32_x64": "meant-to-be-automatically-set"
   }

@@ -1,9 +1,13 @@
 {
-  "name": "@elm_binaries/darwin_arm64",
-  "version": "0.19.1-0",
-  "description": "Download the Elm binary for macOS (arm64)",
-  "repository": "https://github.com/elm/compiler",
+  "name": "@zokka/zokka-binary-darwin_arm64",
+  "version": "meant-to-be-automatically-set",
+  "description": "Download the Zokka binary for macOS (arm64)",
+  "repository": "https://github.com/Zokka-Dev/zokka-compiler",
   "license": "BSD-3-Clause",
-  "os": [ "darwin" ],
-  "cpu": [ "arm64" ]
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
 }
