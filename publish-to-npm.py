@@ -14,12 +14,13 @@ parser = argparse.ArgumentParser(
     description="Publishes npm packages",
 )
 
-parser.add_argument("-w", "--windows-x86-binary-source-location")
-parser.add_argument("-d", "--darwin-x86-binary-source-location")
-parser.add_argument("-l", "--linux-x86-binary-source-location")
-parser.add_argument("-a", "--darwin-arm64-binary-source-location")
+parser.add_argument("-w", "--windows-x86-binary-source-location", required=True)
+parser.add_argument("-d", "--darwin-x86-binary-source-location", required=True)
+parser.add_argument("-l", "--linux-x86-binary-source-location", required=True)
+parser.add_argument("-a", "--darwin-arm64-binary-source-location", required=True)
 parser.add_argument("-i", "--linux-arm64-binary-source-location")
-parser.add_argument("-e", "--new-version")
+parser.add_argument("-e", "--new-version", required=True)
+parser.add_argument("-n", "--npm-dry-run", action=argparse.BooleanOptionalAction)
 
 args = parser.parse_args()
 
@@ -28,6 +29,11 @@ darwin_x86_binary_source_location = args.darwin_x86_binary_source_location
 darwin_arm64_binary_source_location = args.darwin_arm64_binary_source_location
 linux_binary_source_location = args.linux_x86_binary_source_location
 new_version = args.new_version
+try:
+    dry_run = args.npm_dry_run 
+except AttributeError:
+    dry_run = False
+
 
 def rewrite_version_of_package_json(package_json, version):
     package_json_copy = copy.deepcopy(package_json)
@@ -71,6 +77,8 @@ copy_and_chmod_file(darwin_arm64_binary_source_location, darwin_arm64_directory 
 copy_and_chmod_file(windows_binary_source_location, windows_directory + "/zokka.exe")
 copy_and_chmod_file(linux_binary_source_location, linux_directory + "/zokka")
 
+additional_npm_args = [ "--dry-run" ] if dry_run else []
+
 for directory in [darwin_x86_directory, darwin_arm64_directory, windows_directory, linux_directory]:
     with open(directory + "package.json", "r+") as f:
         package_json = json.load(f)
@@ -79,11 +87,11 @@ for directory in [darwin_x86_directory, darwin_arm64_directory, windows_director
         json.dump(new_package_json, f, indent=2)
         f.truncate()
     if "alpha" in new_version:
-        subprocess.run(["npm", "publish", "--tag", "alpha"], cwd=directory)
+        subprocess.run(["npm", "publish", "--tag", "alpha"] + additional_npm_args, cwd=directory)
     elif "beta" in new_version:
-        subprocess.run(["npm", "publish", "--tag", "beta"], cwd=directory)
+        subprocess.run(["npm", "publish", "--tag", "beta"] + additional_npm_args, cwd=directory)
     else:
-        subprocess.run(["npm", "publish"], cwd=directory)
+        subprocess.run(["npm", "publish"] + additional_npm_args, cwd=directory)
 
 
 with open(top_level_npm_directory + "package.json", "r+") as f:
@@ -95,12 +103,24 @@ with open(top_level_npm_directory + "package.json", "r+") as f:
     f.truncate()
 
 if "alpha" in new_version:
-    subprocess.run(["npm", "publish", "--tag", "alpha"], cwd=top_level_npm_directory)
+    subprocess.run(["npm", "publish", "--tag", "alpha"] + additional_npm_args, cwd=top_level_npm_directory)
     # Apparently npm doesn't allow multiple flags at once with publish, so
     # we need to manually add latest with npm-dist-tag
-    subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"], cwd=top_level_npm_directory)
+    # Note that according to
+    # https://docs.npmjs.com/cli/v9/commands/npm-publish#dry-run dist-tag does
+    # not honor the --dry-run flag so we have to do it manually
+    if dry_run:
+        print("Skipping setting published package as latest version because this is a dry-run.")
+    else:
+        subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"] + additional_npm_args, cwd=top_level_npm_directory)
 elif "beta" in new_version:
-    subprocess.run(["npm", "publish", "--tag", "beta"], cwd=top_level_npm_directory)
-    subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"], cwd=top_level_npm_directory)
+    subprocess.run(["npm", "publish", "--tag", "beta"] + additional_npm_args, cwd=top_level_npm_directory)
+    # Note that according to
+    # https://docs.npmjs.com/cli/v9/commands/npm-publish#dry-run dist-tag does
+    # not honor the --dry-run flag so we have to do it manually
+    if dry_run:
+        print("Skipping setting published package as latest version because this is a dry-run.")
+    else:
+        subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"] + additional_npm_args, cwd=top_level_npm_directory)
 else:
-    subprocess.run(["npm", "publish"], cwd=top_level_npm_directory)
+    subprocess.run(["npm", "publish"] + additional_npm_args, cwd=top_level_npm_directory)
