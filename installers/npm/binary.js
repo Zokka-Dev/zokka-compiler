@@ -135,9 +135,5 @@ function missingSubPackageHelp(subPackageName)
 function findSubPackage(platform, arch)
 {
   var packagePrefix = '@zokka/zokka-binary-';
-  if (platform === 'darwin') {
-    return packagePrefix + 'darwin_x64';
-  } else {
-    return packagePrefix + process.platform + '_' + process.arch;
-  }
+  return packagePrefix + process.platform + '_' + process.arch;
 }
