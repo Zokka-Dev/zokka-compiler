@@ -5,7 +5,7 @@
   "license": "BSD-3-Clause",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Zokka-Dev/zokka-compiler"
+    "url": "git+https://github.com/Zokka-Dev/zokka-compiler.git"
   },
   "homepage": "https://github.com/Zokka-Dev/zokka-compiler",
   "bugs": "https://github.com/Zokka-Dev/zokka-compiler/issues",
@@ -39,9 +39,9 @@
     "zokka": "bin/zokka"
   },
   "optionalDependencies": {
-    "@zokka/zokka-binary-darwin_x64": "meant-to-be-automatically-set",
-    "@zokka/zokka-binary-darwin_arm64": "meant-to-be-automatically-set",
-    "@zokka/zokka-binary-linux_x64": "meant-to-be-automatically-set",
-    "@zokka/zokka-binary-win32_x64": "meant-to-be-automatically-set"
+    "@zokka/zokka-binary-darwin_x64": "0.191.0-alpha.18",
+    "@zokka/zokka-binary-darwin_arm64": "0.191.0-alpha.18",
+    "@zokka/zokka-binary-linux_x64": "0.191.0-alpha.18",
+    "@zokka/zokka-binary-win32_x64": "0.191.0-alpha.18"
   }
 }
