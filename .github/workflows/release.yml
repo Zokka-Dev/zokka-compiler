@@ -10,49 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  # Using QEMU for architectures that are not yet supported or still a pain to run on GitHub actions
-  qemu-build:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Run with QEMU
-      uses: uraimo/run-on-arch-action@v2
-      with:
-        arch: aarch64
-        distro: ubuntu22.04
-        githubToken: ${{ github.token }}
-        shell: /bin/bash
-        # Create an output directory
-        setup: |
-          mkdir -p "./output"
-        # Mount the output directory as /output in the container
-        dockerRunArgs: |
-          --volume "./output:/output"
-        install: |
-          apt install curl gcc g++ gmp-dev ncurses-dev libffi-dev make xz gzip tar perl git bash sudo binutils-gold
-          apt install zlib zlib-dev zlib-static gmp gmp-dev ncurses-static
-          curl --proto '=https' --tlsv1.2 -sSf https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup > /usr/bin/ghcup
-          chmod +x /usr/bin/ghcup
-          echo "$HOME/.ghcup/bin" $GITHUB_PATH
-          ghcup install ghc   --force -i /usr/local     9.2.8
-          ghcup install cabal --force -i /usr/local/bin 3.10
-        run: |
-          cp cabal.project.freeze.ghc92 cabal.project.freeze
-          cp cabal.project.prod cabal.project
-          cabal update
-          cabal build --enable-executable-static # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
-          OUTPUT_BIN=$(cabal list-bin zokka)
-          mkdir -p output
-          # NOTE THAT THIS IS A GLOBAL OUTPUT FOLDER! To deal with the docker mounting
-          cp $OUTPUT_BIN /output/zokka
-          git config --global --add safe.directory /__w/zokka-compiler/zokka-compiler
-          echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: zokka-compiler-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
-        path: ./output/zokka
   # For developing Linux binaries we want to make this a static executable
   linux-build:
     strategy:
