@@ -17,11 +17,15 @@
   ```
   Note that this means that packages once created can never be deleted,
   otherwise the number of packages would change and mess up the `n` counter.
++ `/packages/{author}/{project-name}/{version}/elm.json`: returns a JSON object
+  that is a copy of the usual `elm.json` file in an Elm project. Note that
+  `{version}` can be `latest` in which case it should be the highest version.
 + `/packages/{author}/{project-name}/{version}/endpoint.json`: returns a JSON
   object listing the location of a zipped version of the package as well as the
   SHA1 hash of the zipfile. An example is provided below. Note that the
   URL structure of the `url` does not have to have any relation to the package
-  name.
+  name. Note that `{version}` can be `latest` in which case it should be the
+  highest version.
   ```
   { "url": "https://example.com/some-random-path/zipfile.zip"
   , "hash": "18367cfdec746ce00766c5888813d1b2b1305685"

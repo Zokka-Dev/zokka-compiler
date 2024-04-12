@@ -131,3 +131,23 @@ to be the zipfile containing the entire package.
   ....
   --boundary--
   ```
+
+### Design
+
+The original Elm package website creates a directory of files on disk and uses
+that entirely for its persistent state, i.e. it is not backed by a database.
+On the one hand this is quite nice for making sure
+
+On the other hand, it tightly couples the package website's design to a single
+filesystem and makes it difficult to e.g. serve packages from S3 or some sort of
+key-value store that doesn't support efficient enumeration. It also somewhat
+complicates backups. There are solutions that allow for us to live-replicate a
+DB to ensure we never lose any data. Those solutions seem to be a bit trickier
+for filesystems (most I've seen seem to replicate on some predetermined
+schedule).
+
+In order to do per-user authentication (something we'll need to implement since
+we're dropping the GitHub dependence), we'll need some sort of database anyway.
+
+As such, I've decided to code up the package server from scratch. There are few
+enough API endpoints that it's a feasible task and the moving away from . The package
