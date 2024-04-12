@@ -48,3 +48,13 @@ CREATE TABLE permissions (
     id INTEGER PRIMARY KEY NOT NULL,
     level TEXT NOT NULL
 );
+
+-- See https://sqlite.org/sqlar.html
+-- If sz is equal to size of data then no compression is performed
+CREATE TABLE sqlar(
+  name TEXT PRIMARY KEY,  -- name of the file
+  mode INT,               -- access permissions
+  mtime INT,              -- last modification time
+  sz INT,                 -- original file size
+  data BLOB               -- compressed content
+);
