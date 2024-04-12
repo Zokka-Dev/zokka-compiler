@@ -1,15 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import Network.Wai
-import Network.Wai.Handler.Warp
-import Network.HTTP.Types.Status
-import Network.HTTP.Types.Header
+import Network.HTTP.Types.Status (status200)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..))
-import Web.Scotty
-import Database.SQLite.Simple
-import Database.SQLite.Simple.FromRow
-import Data.Text
+import Web.Scotty (scotty, get, post, pathParam, queryParam, json, text, status)
+import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection, field, withConnection, Only (..))
+import Data.Text (Text, splitOn)
 
 data Package = Package 
   { pkgId :: Int
