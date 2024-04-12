@@ -9,28 +9,30 @@ import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..))
 import Web.Scotty
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromRow
+import Data.Text
 
 data Package = Package 
-    { pkgId :: String
-    , name :: String
-    , version :: String
-    , location :: String
-    , hash :: String
+    { pkgId :: Int
+    , author :: Text
+    , project :: Text
+    , version :: Text
+    , location :: Text
+    , hash :: Text
     }
 instance FromRow Package where
-  fromRow = Package <$> field <*> field <*> field <*> field <*> field
+  fromRow = Package <$> field <*> field <*> field <*> field <*> field <*> field
 instance ToRow Package where
-  toRow (Package pkgId name version location hash) = toRow (pkgId, name, version, location, hash)
+  toRow (Package pkgId author project version location hash) = toRow (pkgId, author, project, version, location, hash)
 instance ToJSON Package where
-  toJSON (Package pkgId name version location hash) = object ["id" .= pkgId, "name" .= name, "version" .= version, "location" .= location,  "hash" .= hash]
+  toJSON (Package pkgId author project version location hash) = object ["id" .= pkgId, "author" .= author, "project" .= project, "version" .= version, "location" .= location,  "hash" .= hash]
 
 dbConfig :: String
-dbConfig = "dbname=package_server.db"
+dbConfig = "package_server_db.db"
 
 getPackages :: IO [Package]
 getPackages = do
   conn <- open dbConfig
-  r <- query_ conn "SELECT * from packages" :: IO [Package]
+  r <- query_ conn "SELECT * from Packages" :: IO [Package]
   close conn
   return r
 
@@ -51,11 +53,10 @@ main :: IO ()
 main = scotty 3000 $ do
 
   post "/register" $ do
-    name <- param "name"
-    version <- param "version"
-    location <- param "location"
-    hash <- param "hash"
-    liftIO $ postPackage (Package name version location hash)
+    name <- queryParam "name"
+    version <- queryParam "version"
+    let author : project : _ = splitOn "/" name
+    liftIO $ postPackage (Package 0 author project version "some-location" "some-hash")
     status status200
     json $ object [ "success" .= String "Package registered successfully." ]
 
@@ -64,7 +65,7 @@ main = scotty 3000 $ do
     json packages
 
   get "/all-packages/since/:n" $ do
-    n <- param "n"
+    n <- pathParam "n"
     packages <- liftIO $ getRecentPackages n
     json packages
 
