@@ -3,9 +3,12 @@
 import Network.HTTP.Types.Status (status200)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..))
-import Web.Scotty (scotty, get, post, pathParam, queryParam, json, text, status)
+import Web.Scotty (scotty, get, post, pathParam, queryParam, json, text, status, files, File, ActionM)
 import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection, field, withConnection, Only (..))
 import Data.Text (Text, splitOn)
+import Data.ByteString.Lazy (ByteString)
+import Data.Foldable (traverse_)
+import Network.Wai.Parse (FileInfo(..))
 
 data Package = Package 
   { pkgId :: Int
@@ -61,11 +64,20 @@ postPackage :: PackageCreationRequest -> IO ()
 postPackage pkg = withCustomConnection dbConfig
   (\conn -> execute conn "INSERT INTO packages (author, project, version, location, hash, repository_id) VALUES (?,?,?,?,?,?)" pkg)
 
+saveFile :: File ByteString -> IO ()
+saveFile (fieldName, FileInfo{fileName=fileName, fileContent=fileContent}) =
+  do
+    withCustomConnection dbConfig
+      (\conn -> execute conn "INSERT INTO sqlar (name, mode, mtime, sz, data) VALUES (?, 420, 0, length(?), ?)" (fileName, fileContent, fileContent))
+
 main :: IO ()
 main = scotty 3000 $ do
   post "/register" $ do
-    name <- queryParam "name"
-    version <- queryParam "version"
+    name <- queryParam "name" :: ActionM Text
+    version <- queryParam "version" :: ActionM Text
+    uploadedFiles <- files
+    liftIO $ print (length uploadedFiles)
+    traverse_ (liftIO . saveFile) uploadedFiles
     let author : project : _ = splitOn "/" name
     liftIO $ postPackage (PackageCreationRequest author project version "some-location" "some-hash" 0)
     status status200

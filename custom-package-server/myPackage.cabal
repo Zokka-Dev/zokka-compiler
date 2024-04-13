@@ -16,6 +16,7 @@ Common myPackage-common
                        transformers,
                        scotty,
                        wai,
+                       wai-extra,
                        warp,
                        sqlite-simple,
                        bytestring,
