@@ -13,6 +13,7 @@ Common myPackage-common
   build-depends:       base >= 4.7 && < 5,
                        aeson,
                        text,
+                       containers,
                        transformers,
                        scotty,
                        wai,

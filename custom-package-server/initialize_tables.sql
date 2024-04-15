@@ -3,9 +3,9 @@ CREATE TABLE packages (
     project TEXT NOT NULL,
     author TEXT NOT NULL,
     version TEXT NOT NULL,
-    location TEXT NOT NULL,
     hash TEXT NOT NULL,
     repository_id INTEGER NOT NULL,
+    elm_json BLOB NOT NULL,
     FOREIGN KEY (repository_id) REFERENCES repositories(id)
 );
 
@@ -16,18 +16,18 @@ CREATE INDEX idx_packages_repository_id ON packages(repository_id);
 CREATE TABLE repositories (
     id INTEGER PRIMARY KEY NOT NULL,
     human_readable_name TEXT NOT NULL,
-    url_safe_name TEXT NOT NULL
+    url_safe_name TEXT NOT NULL UNIQUE,
+    owner_user_id INTEGER NOT NULL,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id)
 );
+
+CREATE INDEX idx_repositories_owner_user_id ON repositories(owner_user_id);
 
 CREATE TABLE users (
     id INTEGER PRIMARY KEY NOT NULL,
     username TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    repository_id INTEGER NOT NULL,
-    FOREIGN KEY (repository_id) REFERENCES repositories(id)
+    password_hash TEXT NOT NULL
 );
-
-CREATE INDEX idx_users_repository_id ON users(repository_id);
 
 CREATE TABLE auth_tokens (
     id INTEGER PRIMARY KEY NOT NULL,
@@ -58,3 +58,6 @@ CREATE TABLE sqlar(
   sz INT,                 -- original file size
   data BLOB               -- compressed content
 );
+
+INSERT INTO users (id, username, password_hash) VALUES (0, 'testuser0', 'somepasswordhash');
+INSERT INTO repositories (id, human_readable_name, url_safe_name, owner_user_id) VALUES (0, 'Fun Repository', 'fun-repository', 0);
