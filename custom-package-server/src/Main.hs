@@ -26,6 +26,7 @@ import qualified Database.SQLite.Simple.Ok as SSO
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as TLB
 import qualified Data.Text.Lazy.Builder.Int as TLBI
+import qualified Web.Sqids as WS
 
 
 data Package = Package
@@ -67,7 +68,7 @@ instance ToJSON Package where
 instance FromField Value where
   fromField :: SSF.FieldParser Value
   fromField field = case SSF.fieldData field of
-    SS.SQLBlob byteString -> case decode (BL.fromStrict byteString) of 
+    SS.SQLBlob byteString -> case decode (BL.fromStrict byteString) of
       Nothing -> SSF.returnError SSF.ConversionFailed field "The SQL field was not valid JSON: "
       Just value -> SSO.Ok value
     SS.SQLFloat _ -> SSF.returnError SSF.ConversionFailed field "A JSON SQL field is expected to be a blob"
@@ -180,8 +181,8 @@ saveNewPackage :: PackageCreationRequest -> IO ()
 saveNewPackage pkg = withCustomConnection dbConfig
   (\conn -> withTransaction conn $ do
     savePartialPackage conn partialPackage
-    savePackageFiles 
-      conn 
+    savePackageFiles
+      conn
       (partialPkgRepositoryId partialPackage)
       (partialPkgAuthor partialPackage)
       (partialPkgProject partialPackage)
@@ -206,11 +207,11 @@ filesToMap = foldr insertFile Map.empty
     insertFile file@(fieldName, _) = Map.insert fieldName file
 
 decodeFormFileToJson :: FileInfo ByteString -> Maybe Value
-decodeFormFileToJson FileInfo{fileContent=fileContent} = 
+decodeFormFileToJson FileInfo{fileContent=fileContent} =
   decode fileContent
 
 decodeFormFileToJsonActionM :: Text -> FileInfo ByteString -> ActionM Value
-decodeFormFileToJsonActionM errorPrefix fileInfo@FileInfo{fileContent=fileContent} = 
+decodeFormFileToJsonActionM errorPrefix fileInfo@FileInfo{fileContent=fileContent} =
   case decodeFormFileToJson fileInfo of
     Nothing -> do
       status status400
@@ -234,16 +235,26 @@ parsePackageCreationRequest repositoryId = do
     let (_, FileInfo{fileContent=packageZip}) = (Map.!) filesMap "package.zip"
     pure (PackageCreationRequest author project version "some-hash" repositoryId elmJson docsJson readmeMd packageZip)
 
+
+-- This is a pretty weak layer of obfuscation that exists purely to mask
+-- incrementing IDs. The security issues exposed by incrementing IDs are minor
+-- all things considered, so our mitigation is also pretty minor where we just
+-- use sqids.
 convertTextToRepositoryId :: Text -> ActionM Int
 convertTextToRepositoryId repositoryIdText =
-  case decimal repositoryIdText of
-    Left errMsg -> do
-      status status400
-      -- FIXME: Make this error message better
-      text $ T.unwords ["The repository ID provided was not a valid integer. It was: ", T.pack errMsg]
-      finish
-    Right (repositoryId, _) ->
+  case WS.sqids (WS.decode repositoryIdText) of
+    Left errMsg ->
+      do
+        status status400
+        text $ T.unwords ["The repository ID provided is not a valid ID. The ID provided was: ", repositoryIdText ]
+        finish
+    Right [repositoryId] ->
       pure repositoryId
+    Right _ ->
+      do
+        status status400
+        text $ T.unwords ["The repository ID provided is not a valid ID. The ID provided was: ", repositoryIdText ]
+        finish
 
 main :: IO ()
 main = scotty 3000 $ do
