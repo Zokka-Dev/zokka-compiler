@@ -11,6 +11,7 @@ CREATE TABLE packages (
 
 CREATE INDEX idx_packages_project ON packages(project);
 CREATE INDEX idx_packages_author ON packages(author);
+CREATE INDEX idx_packages_version ON packages(version);
 CREATE INDEX idx_packages_repository_id ON packages(repository_id);
 
 CREATE TABLE repositories (
