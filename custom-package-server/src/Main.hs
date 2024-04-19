@@ -1,14 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE InstanceSigs #-}
 
-import Network.HTTP.Types.Status (status400)
+import Network.HTTP.Types.Status (status400, status401, Status, status403)
+import Network.Wai.Middleware.RequestLogger (logStdout)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..), encode, decode)
 import qualified Data.Aeson.Types as DAT
-import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw)
+import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam)
 import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection, field, withConnection, Only (..), withTransaction)
 import Data.Text (Text, splitOn)
-import Data.Text.Encoding (decodeUtf8Lenient)
+import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
 import Data.Text.Read (decimal)
 import qualified Data.Text as T
 import Data.ByteString.Lazy (ByteString)
@@ -17,6 +18,7 @@ import Network.Wai.Parse (FileInfo(..))
 import qualified Data.Map as Map
 import Web.Scotty.Trans.Strict (text)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString as BS
 import Database.SQLite.Simple.FromField (FromField (..))
 import Database.SQLite.Simple.ToField (ToField (..))
 import qualified Database.SQLite.Simple.FromField as SSF
@@ -27,6 +29,9 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as TLB
 import qualified Data.Text.Lazy.Builder.Int as TLBI
 import qualified Debug.Trace
+import Control.Monad (when)
+import System.Entropy (getEntropy)
+import qualified Crypto.Argon2 as CA
 
 
 data Package = Package
@@ -176,7 +181,7 @@ getElmJson repositoryId author project version = withCustomConnection dbConfig
   (\conn -> head <$> query conn "SELECT elm_json FROM packages WHERE repository_id = ? AND author = ? AND project = ? AND version = ?" (repositoryId, author, project, version))
 
 generateEndpointJson :: Text -> Int -> Text -> Text -> Text -> IO Value
-generateEndpointJson websitePrefix repositoryId author project version = 
+generateEndpointJson websitePrefix repositoryId author project version =
   do
     (Only hash) <- withCustomConnection dbConfig queryForHash
     pure $ object [ "hash" .= hash, "url" .= T.concat [websitePrefix, "/", intToText repositoryId, "/", author, "/", project, "/", version, "/package.zip"] ]
@@ -265,40 +270,188 @@ mimeTypeFromFileName fileName =
     Just "json" -> "application/json"
     Just "zip" -> "application/zip"
 
+customAuthSchemeName = "CustomZokkaRepoAuthToken"
+
+authTokenToRepositoryId :: Text -> IO (Only Int)
+authTokenToRepositoryId authToken = withCustomConnection dbConfig
+  -- FIXME: Deal with the broken head here
+  (\conn -> head <$> query conn "SELECT repository_id FROM auth_tokens WHERE token_value = ?" (Only authToken))
+
+retrieveRepositoryIdForAuthToken :: ActionM Int
+retrieveRepositoryIdForAuthToken =
+  do
+    authTokenValue <- header "Authorization"
+    case authTokenValue of
+      Nothing ->
+        do
+          status status401
+          text (T.concat ["WWW-Authenticate: ", customAuthSchemeName, " realm=\"Access to the repository API\""])
+          finish
+      Just authHeaderValue ->
+        do
+          -- FIXME: Have a more robust thing than just splitting on single
+          -- space, should split more generally on whitespace
+          -- FIXME: Deal with error cases here
+          let authScheme : authToken : _ = splitOn " " (TL.toStrict authHeaderValue)
+          when (authScheme /= customAuthSchemeName) (do {status status403; text "Token not authorized for this repository!"; finish})
+          (Only repositoryId) <- liftIO $ authTokenToRepositoryId authToken
+          pure repositoryId
+
+-- FIXME: UNSAFE!!! FIX THIS.
+retrieveUserNameForAuthToken :: ActionM Text
+retrieveUserNameForAuthToken =
+  do
+    authTokenValue <- header "Authorization"
+    case authTokenValue of
+      Nothing ->
+        do
+          status status401
+          text (T.concat ["WWW-Authenticate: Basic realm=\"Access to the dashboard\""])
+          finish
+      Just authHeaderValue ->
+        do
+          -- FIXME: Have a more robust thing than just splitting on single
+          -- space, should split more generally on whitespace
+          -- FIXME: Deal with error cases here
+          let authScheme : authToken : _ = splitOn " " (TL.toStrict authHeaderValue)
+          when (authScheme /= customAuthSchemeName) (do {status status403; text "Token not authorized for this repository!"; finish})
+          pure authToken
+
+failOnCondition :: Text -> Status -> Bool -> ActionM ()
+failOnCondition msg statusCode condition = when condition failureAction
+  where
+    failureAction =
+      do
+        status statusCode
+        text msg
+        finish
+
+failOnWrongRepositoryId :: Bool -> ActionM ()
+-- FIXME: Better error message
+failOnWrongRepositoryId isWrongRepositoryId = failOnCondition "Wrong Repository ID!" status400 isWrongRepositoryId
+
+authAgainstRepositoryId :: Int -> ActionM ()
+authAgainstRepositoryId expectedRepositoryId =
+  do
+    authedRepositoryId <- retrieveRepositoryIdForAuthToken
+    failOnWrongRepositoryId (expectedRepositoryId /= authedRepositoryId)
+
+saltSize :: Int
+saltSize = 20
+
+createUser :: Text -> Text -> IO ()
+createUser username password =
+  do
+    salt <- getEntropy saltSize
+    let passwordBytes = encodeUtf8 password
+    let hashResult = CA.hash CA.defaultHashOptions passwordBytes salt
+    case hashResult of
+      Right successfulHash ->
+        withCustomConnection dbConfig
+          (\conn -> execute conn "INSERT INTO users (username, password_hash, password_salt) VALUES (?,?,?)" (username, successfulHash, salt))
+      Left _ ->
+        -- FIXME: Deal with this error case and see if it actually works
+        undefined
+
+loginUser :: Text -> Text -> IO Text
+loginUser username password =
+  do
+    (expectedPasswordHash, passwordSalt) <- withCustomConnection dbConfig
+    -- FIXME: Deal with head
+      (\conn -> head <$> (query conn "SELECT password_hash, password_salt FROM users WHERE username = ?" (Only username) :: IO [(BS.ByteString, BS.ByteString)]))
+    let passwordBytes = encodeUtf8 password
+    let hashResult = CA.hash CA.defaultHashOptions passwordBytes passwordSalt
+    case hashResult of
+      Right successfulHash ->
+        -- FIXME: Deal with this error case
+        -- FIXME: UNSAFE! Use an actual JWT token!
+        if successfulHash == expectedPasswordHash then pure username else undefined
+      -- FIXME: Deal with this error case
+      Left _ ->
+        undefined
+
+-- FIXME: Actually do a JWT decode to find the user here
+verifyLoginToken :: Text -> IO Text
+verifyLoginToken = pure
+
+userIdByUserName :: Connection -> Text -> IO (Only Int)
+-- FIXME: Fix unsafe head call
+userIdByUserName conn username = head <$> query conn "SELECT id FROM users WHERE username = ?" (Only username)
+
+createTokenQuery :: Connection -> Int -> Int -> IO Text
+createTokenQuery conn userId repositoryId =
+  do
+    -- FIXME: Actually generate a random token!
+    let token = intToText userId
+    execute conn "INSERT INTO auth_tokens (token_value, user_id, permission_id, repository_id) VALUES (?,?,0,?)" (token, userId, repositoryId)
+    pure token
+
+createToken :: Text -> Int -> IO Text
+createToken username repositoryId = withCustomConnection dbConfig
+  (\conn -> withTransaction conn $
+    do
+      (Only userId) <- userIdByUserName conn username
+      createTokenQuery conn userId repositoryId
+  )
+
+createRepositoryQuery :: Connection -> Text -> Text -> Int -> IO ()
+createRepositoryQuery conn repositoryName repositorySafeUrlName userId =
+  execute conn "INSERT INTO repositories (human_readable_name, url_safe_name, owner_user_id) VALUES (?,?,?)" (repositoryName, repositorySafeUrlName, userId)
+
+createRepository :: Text -> Text -> Text -> IO ()
+createRepository repositoryName repositorySafeUrlName username = withCustomConnection dbConfig
+  (\conn -> withTransaction conn $
+    do
+      (Only userId) <- userIdByUserName conn username
+      createRepositoryQuery conn repositoryName repositorySafeUrlName userId
+  )
+
+getTokensQuery :: Connection -> Int -> IO [Only Text]
+getTokensQuery conn repositoryId = query conn "SELECT token_value FROM auth_tokens WHERE repository_id = ?" (Only repositoryId)
+
+getTokens :: Int -> IO [Only Text]
+getTokens repositoryId = withCustomConnection dbConfig (\conn -> getTokensQuery conn repositoryId)
+
 main :: IO ()
 main = scotty 3000 $ do
+  middleware logStdout
   post "/:repository-id/upload-package" $ do
     -- Because we need the string :repository-id, I call pathParam here instead
     -- of moving pathParam into parsePackageCreationRequest to make sure that
     -- the strings match between pathParam and the string to post
     repositoryId <- pathParam "repository-id"
+    authAgainstRepositoryId repositoryId
     packageCreationRequest <- parsePackageCreationRequest repositoryId
     liftIO $ saveNewPackage packageCreationRequest
     json $ object [ "success" .= String "Package registered successfully." ]
 
   get "/:repository-id/all-packages" $ do
     repositoryId <- pathParam "repository-id"
+    authAgainstRepositoryId repositoryId
     packages <- liftIO $ getPackages repositoryId
     json packages
 
   get "/:repository-id/all-packages/since/:n" $ do
     n <- pathParam "n"
     repositoryId <- pathParam "repository-id"
+    authAgainstRepositoryId repositoryId
     packages <- liftIO $ getRecentPackages n repositoryId
     json packages
 
   -- Special case elm.json because it doesn't live in sqlar
   get "/:repository-id/packages/:author/:project/:version/elm.json" $ do
     repositoryId <- pathParam "repository-id"
+    authAgainstRepositoryId repositoryId
     author <- pathParam "author"
     project <- pathParam "project"
     version <- pathParam "version"
     (Only elmJson) <- liftIO $ getElmJson repositoryId author project version
     json elmJson
-  
+
   -- Special case endpoint.json because it's dynamically generated
   get "/:repository-id/packages/:author/:project/:version/endpoint.json" $ do
     repositoryId <- pathParam "repository-id"
+    authAgainstRepositoryId repositoryId
     author <- pathParam "author"
     project <- pathParam "project"
     version <- pathParam "version"
@@ -308,6 +461,7 @@ main = scotty 3000 $ do
 
   get "/:repository-id/packages/:author/:project/:version/:filename" $ do
     repositoryId <- pathParam "repository-id"
+    authAgainstRepositoryId repositoryId
     author <- pathParam "author"
     project <- pathParam "project"
     version <- pathParam "version"
@@ -315,6 +469,38 @@ main = scotty 3000 $ do
     (Only fileBlob) <- liftIO $ getPackageDataBlob repositoryId author project version filename
     setHeader "Content-Type" (mimeTypeFromFileName (TL.fromStrict filename))
     raw fileBlob
+
+  post "/dashboard/user" $ do
+    username <- formParam "username"
+    password <- formParam "password"
+    liftIO $ createUser username password
+    text "Successfully created a user!"
+
+  post "/dashboard/login" $ do
+    username <- formParam "username"
+    password <- formParam "password"
+    loginToken <- liftIO $ loginUser username password
+    text loginToken
+
+  post "/dashboard/repository" $ do
+    username <- retrieveUserNameForAuthToken
+    repositoryName <- queryParam "repository-name"
+    repositoryUrlSafeName <- queryParam "repository-url-safe-name"
+    liftIO $ createRepository repositoryName repositoryUrlSafeName username
+
+  post "/dashboard/repository/:repository-id/token" $ do
+    repositoryId <- pathParam "repository-id"
+    username <- retrieveUserNameForAuthToken
+    tokenValue <- liftIO $ createToken username repositoryId
+    text tokenValue
+
+  get "/dashboard/repository/:repository-id/all-tokens" $ do
+    repositoryId <- pathParam "repository-id"
+    username <- retrieveUserNameForAuthToken
+    -- FIXME: Check the username here!
+    tokens <- liftIO $ getTokens repositoryId
+    let tokenStrings = fmap (\(Only x) -> x) tokens
+    json tokenStrings
 
 
   get "/" $ do

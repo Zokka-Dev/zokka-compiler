@@ -26,9 +26,12 @@ CREATE INDEX idx_repositories_owner_user_id ON repositories(owner_user_id);
 
 CREATE TABLE users (
     id INTEGER PRIMARY KEY NOT NULL,
-    username TEXT NOT NULL,
-    password_hash TEXT NOT NULL
+    username TEXT NOT NULL UNIQUE,
+    password_hash BLOB NOT NULL,
+    password_salt BLOB NOT NULL
 );
+
+CREATE INDEX idx_users_username ON users(username);
 
 CREATE TABLE auth_tokens (
     id INTEGER PRIMARY KEY NOT NULL,
@@ -42,6 +45,7 @@ CREATE TABLE auth_tokens (
 );
 
 CREATE INDEX idx_auth_tokens_user_id ON auth_tokens(user_id);
+CREATE INDEX idx_auth_tokens_token_value ON auth_tokens(token_value);
 CREATE INDEX idx_auth_tokens_permission_id ON auth_tokens(permission_id);
 CREATE INDEX idx_auth_tokens_repository_id ON auth_tokens(repository_id);
 
@@ -60,5 +64,9 @@ CREATE TABLE sqlar(
   data BLOB               -- compressed content
 );
 
+INSERT INTO permissions (id, level) VALUES (0, 'read');
+INSERT INTO permissions (id, level) VALUES (1, 'write');
+
 INSERT INTO users (id, username, password_hash) VALUES (0, 'testuser0', 'somepasswordhash');
 INSERT INTO repositories (id, human_readable_name, url_safe_name, owner_user_id) VALUES (0, 'Fun Repository', 'fun-repository', 0);
+INSERT INTO auth_tokens (id, token_value, user_id, permission_id, repository_id) VALUES (0, 'test-token', 0, 1, 0);
