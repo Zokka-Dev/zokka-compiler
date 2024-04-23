@@ -1,12 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 import Network.HTTP.Types.Status (status400, status401, Status, status403)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..), encode, decode)
 import qualified Data.Aeson.Types as DAT
-import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam)
+import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam, Parsable)
 import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection, field, withConnection, Only (..), withTransaction)
 import Data.Text (Text, splitOn)
 import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
@@ -32,7 +33,10 @@ import qualified Debug.Trace
 import Control.Monad (when)
 import System.Entropy (getEntropy)
 import qualified Crypto.Argon2 as CA
+import qualified Data.ByteString.Base64 as Base64
 
+newtype RepositoryId = RepositoryId { unRepositoryId :: Int }
+  deriving (ToField, FromField, ToJSON, Parsable, Eq)
 
 data Package = Package
   { pkgId :: Int
@@ -51,7 +55,7 @@ data Package = Package
   -- source code out of our SQLite database if that proves to be a performance
   -- bottleneck.
   , hash :: Text
-  , repositoryId :: Int
+  , repositoryId :: RepositoryId
   , elmJson :: Value
   }
 
@@ -88,7 +92,7 @@ data PartialPackage = PartialPackage
   , partialPkgProject :: Text
   , partialPkgVersion :: Text
   , partialPkgHash :: Text
-  , partialPkgRepositoryId :: Int
+  , partialPkgRepositoryId :: RepositoryId
   , partialPkgElmJson :: Value
   }
 instance FromRow PartialPackage where
@@ -110,7 +114,7 @@ data PackageCreationRequest = PackageCreationRequest
   , pkgCreateReqProject :: Text
   , pkgCreateReqVersion :: Text
   , pkgCreateReqHash :: Text
-  , pkgCreateReqRepositoryId :: Int
+  , pkgCreateReqRepositoryId :: RepositoryId
   , pkgCreateElmJson :: Value
   , pkgCreateDocsJson :: Value
   , pkgCreateREADMEMd :: ByteString
@@ -163,28 +167,28 @@ withCustomConnection dbName action = withConnection dbName actionWithFKConstrain
 
 
 -- Maybe add? Be able to tell when a repository doesn't exist?
-getPackages :: Int -> IO [Package]
+getPackages :: RepositoryId -> IO [Package]
 getPackages repositoryId = withCustomConnection dbConfig
   (\conn -> query conn "SELECT * FROM packages p WHERE repository_id = ?" (Only repositoryId) :: IO [Package])
 
-getRecentPackages :: Int -> Int -> IO [Package]
+getRecentPackages :: Int -> RepositoryId -> IO [Package]
 getRecentPackages n repositoryId = withCustomConnection dbConfig
   (\conn -> query conn "SELECT * FROM packages WHERE id > ? AND repository_id = ?" (n, repositoryId))
 
 --FIXME: Deal with all the unsafe head calls
-getPackageDataBlob :: Int -> Text -> Text -> Text -> Text -> IO (Only ByteString)
+getPackageDataBlob :: RepositoryId -> Text -> Text -> Text -> Text -> IO (Only ByteString)
 getPackageDataBlob repositoryId author project version filename = withCustomConnection dbConfig
-  (\conn -> head <$> query conn "SELECT data FROM sqlar WHERE name = ?" (Only $ Debug.Trace.traceShowId (T.concat [intToText repositoryId, "/", author, "/", project, "/", version, "/", filename])))
+  (\conn -> head <$> query conn "SELECT data FROM sqlar WHERE name = ?" (Only $ Debug.Trace.traceShowId (T.concat [intToText (unRepositoryId repositoryId), "/", author, "/", project, "/", version, "/", filename])))
 
-getElmJson :: Int -> Text -> Text -> Text -> IO (Only Value)
+getElmJson :: RepositoryId -> Text -> Text -> Text -> IO (Only Value)
 getElmJson repositoryId author project version = withCustomConnection dbConfig
   (\conn -> head <$> query conn "SELECT elm_json FROM packages WHERE repository_id = ? AND author = ? AND project = ? AND version = ?" (repositoryId, author, project, version))
 
-generateEndpointJson :: Text -> Int -> Text -> Text -> Text -> IO Value
+generateEndpointJson :: Text -> RepositoryId -> Text -> Text -> Text -> IO Value
 generateEndpointJson websitePrefix repositoryId author project version =
   do
     (Only hash) <- withCustomConnection dbConfig queryForHash
-    pure $ object [ "hash" .= hash, "url" .= T.concat [websitePrefix, "/", intToText repositoryId, "/", author, "/", project, "/", version, "/package.zip"] ]
+    pure $ object [ "hash" .= hash, "url" .= T.concat [websitePrefix, "/", intToText (unRepositoryId repositoryId), "/", author, "/", project, "/", version, "/package.zip"] ]
   where
     queryForHash :: Connection -> IO (Only Text)
     queryForHash conn = head <$> query conn "SELECT hash FROM packages WHERE repository_id = ? AND author = ? AND project = ? AND version = ?" (repositoryId, author, project, version)
@@ -192,7 +196,7 @@ generateEndpointJson websitePrefix repositoryId author project version =
 savePartialPackage :: Connection -> PartialPackage -> IO ()
 savePartialPackage conn = execute conn "INSERT INTO packages (author, project, version, hash, repository_id, elm_json) VALUES (?,?,?,?,?,?)"
 
-savePackageFiles :: Connection -> Int -> Text -> Text -> Text -> PackageFiles -> IO ()
+savePackageFiles :: Connection -> RepositoryId -> Text -> Text -> Text -> PackageFiles -> IO ()
 savePackageFiles conn repositoryId author project version (PackageFiles docsJson readmeMd packageZip) =
   do
     saveAction "docs.json" (encode docsJson)
@@ -219,11 +223,11 @@ saveNewPackage pkg = withCustomConnection dbConfig
 intToText :: Integral a => a -> T.Text
 intToText = TL.toStrict . TLB.toLazyText . TLBI.decimal
 
-saveSingleFile :: Connection -> Int -> Text -> Text -> Text-> Text -> ByteString -> IO ()
+saveSingleFile :: Connection -> RepositoryId -> Text -> Text -> Text-> Text -> ByteString -> IO ()
 saveSingleFile conn repositoryId author project version fileName fileContent =
   execute conn "INSERT INTO sqlar (name, mode, mtime, sz, data) VALUES (?, 420, 0, length(?), ?)" (fileNameWithRepoId, fileContent, fileContent)
   where
-    fileNameWithRepoId = T.concat [intToText repositoryId, "/", author, "/", project, "/", version, "/", fileName]
+    fileNameWithRepoId = T.concat [intToText (unRepositoryId repositoryId), "/", author, "/", project, "/", version, "/", fileName]
 
 filesToMap :: [File a] -> Map.Map Text (File a)
 filesToMap = foldr insertFile Map.empty
@@ -245,7 +249,7 @@ decodeFormFileToJsonActionM errorPrefix fileInfo@FileInfo{fileContent=fileConten
     Just a ->
       pure a
 
-parsePackageCreationRequest :: Int -> ActionM PackageCreationRequest
+parsePackageCreationRequest :: RepositoryId -> ActionM PackageCreationRequest
 parsePackageCreationRequest repositoryId = do
     name <- queryParam "name" :: ActionM Text
     version <- queryParam "version" :: ActionM Text
@@ -272,12 +276,12 @@ mimeTypeFromFileName fileName =
 
 customAuthSchemeName = "CustomZokkaRepoAuthToken"
 
-authTokenToRepositoryId :: Text -> IO (Only Int)
+authTokenToRepositoryId :: Text -> IO (Only RepositoryId)
 authTokenToRepositoryId authToken = withCustomConnection dbConfig
   -- FIXME: Deal with the broken head here
   (\conn -> head <$> query conn "SELECT repository_id FROM auth_tokens WHERE token_value = ?" (Only authToken))
 
-retrieveRepositoryIdForAuthToken :: ActionM Int
+retrieveRepositoryIdForAuthToken :: ActionM RepositoryId
 retrieveRepositoryIdForAuthToken =
   do
     authTokenValue <- header "Authorization"
@@ -330,7 +334,7 @@ failOnWrongRepositoryId :: Bool -> ActionM ()
 -- FIXME: Better error message
 failOnWrongRepositoryId isWrongRepositoryId = failOnCondition "Wrong Repository ID!" status400 isWrongRepositoryId
 
-authAgainstRepositoryId :: Int -> ActionM ()
+authAgainstRepositoryId :: RepositoryId -> ActionM ()
 authAgainstRepositoryId expectedRepositoryId =
   do
     authedRepositoryId <- retrieveRepositoryIdForAuthToken
@@ -378,15 +382,39 @@ userIdByUserName :: Connection -> Text -> IO (Only Int)
 -- FIXME: Fix unsafe head call
 userIdByUserName conn username = head <$> query conn "SELECT id FROM users WHERE username = ?" (Only username)
 
-createTokenQuery :: Connection -> Int -> Int -> IO Text
+userHasAccessToRepositoryQuery :: Connection -> Int -> RepositoryId -> IO (Only Bool)
+userHasAccessToRepositoryQuery conn userId repositoryId =
+  -- Note that this call to head is not unsafe because we are guaranteed that a COUNT call will always produce one row
+  head <$> query conn "SELECT COUNT(id) > 0 FROM repositories WHERE owner_user_id = ? AND id = ?" (userId, repositoryId)
+
+-- FIXME: Use actual types
+verifyUserNameHasAccessToRepository :: Text -> RepositoryId -> IO Bool
+verifyUserNameHasAccessToRepository username repositoryId =
+  withCustomConnection dbConfig
+    (\conn ->
+      withTransaction conn $ do
+        (Only userId) <- userIdByUserName conn username
+        (Only hasAccess) <- userHasAccessToRepositoryQuery conn userId repositoryId
+        pure hasAccess
+    )
+
+authUserNameAgainstRepository :: Text -> RepositoryId -> ActionM ()
+authUserNameAgainstRepository username repositoryId =
+  do
+    hasAccess <- liftIO $ verifyUserNameHasAccessToRepository username repositoryId
+    failOnCondition (T.concat ["You are logged in as ", username, " who does not have access to repository ", intToText (unRepositoryId repositoryId)]) status403 (not hasAccess)
+
+tokenSizeInBytes = 20
+
+createTokenQuery :: Connection -> Int -> RepositoryId -> IO Text
 createTokenQuery conn userId repositoryId =
   do
-    -- FIXME: Actually generate a random token!
-    let token = intToText userId
+    tokenAsBytes <- getEntropy tokenSizeInBytes
+    let token = decodeUtf8Lenient (Base64.encode tokenAsBytes)
     execute conn "INSERT INTO auth_tokens (token_value, user_id, permission_id, repository_id) VALUES (?,?,0,?)" (token, userId, repositoryId)
     pure token
 
-createToken :: Text -> Int -> IO Text
+createToken :: Text -> RepositoryId -> IO Text
 createToken username repositoryId = withCustomConnection dbConfig
   (\conn -> withTransaction conn $
     do
@@ -406,11 +434,70 @@ createRepository repositoryName repositorySafeUrlName username = withCustomConne
       createRepositoryQuery conn repositoryName repositorySafeUrlName userId
   )
 
-getTokensQuery :: Connection -> Int -> IO [Only Text]
+getTokensQuery :: Connection -> RepositoryId -> IO [Only Text]
 getTokensQuery conn repositoryId = query conn "SELECT token_value FROM auth_tokens WHERE repository_id = ?" (Only repositoryId)
 
-getTokens :: Int -> IO [Only Text]
+getTokens :: RepositoryId -> IO [Only Text]
 getTokens repositoryId = withCustomConnection dbConfig (\conn -> getTokensQuery conn repositoryId)
+
+data AuthTokenPermission = ReadOnly | ReadWrite
+
+instance ToJSON AuthTokenPermission where
+  toJSON ReadOnly = "ReadOnly"
+  toJSON ReadWrite = "ReadWrite"
+
+data AuthToken = AuthToken
+  { _authTokenValue :: Text
+  , _authTokenPermission :: AuthTokenPermission
+  , _authTokenUserId :: Int
+  }
+
+instance ToJSON AuthToken where
+  toJSON (AuthToken tokenValue tokenPermission tokenUserId) = object
+    [ "value" .= tokenValue
+    , "permission" .= tokenPermission
+    , "userId" .= tokenUserId
+    ]
+
+data DashboardData = DashboardData
+  { _dashboardDataPackages :: [Package]
+  , _dashboardDataAuthTokens :: [AuthToken]
+  }
+
+instance ToJSON DashboardData where
+  toJSON :: DashboardData -> Value
+  toJSON (DashboardData packages authTokens) = object
+    [ "packages" .= toJSON packages
+    , "authTokens" .= toJSON authTokens
+    ]
+
+allPackagesForReposForUsernameQuery :: Connection -> Text -> IO [Package]
+allPackagesForReposForUsernameQuery conn username =
+  query conn "SELECT p.* FROM packages p INNER JOIN repositories r ON p.repository_id = r.id INNER JOIN users u ON r.owner_user_id = u.id WHERE u.username = ?" (Only username)
+
+allPackagesForReposForUsername :: Text -> IO [Package]
+allPackagesForReposForUsername username = withCustomConnection dbConfig (`allPackagesForReposForUsernameQuery` username)
+
+allAuthTokensForReposForUsernameQuery :: Connection -> Text -> IO [AuthToken]
+allAuthTokensForReposForUsernameQuery conn username =
+  fmap (fmap tupleToAuthToken) queryResult
+  where
+    queryResult :: IO [(Text, Int, Int)]
+    queryResult = query conn "SELECT token_value, permission_id, user_id FROM auth_tokens t INNER JOIN users u ON t.user_id = u.id WHERE u.username = ?" (Only username)
+    -- FIXME low: Deal with error case here (even those this is probably a db bug if it occurs)
+    intToAuthTokenPermission 0 = ReadOnly
+    intToAuthTokenPermission 1 = ReadWrite
+    tupleToAuthToken (tokenValue, tokenPermission, userId) = AuthToken {_authTokenValue=tokenValue, _authTokenPermission=intToAuthTokenPermission tokenPermission, _authTokenUserId=userId}
+
+allAuthTokensForReposForUsername :: Text -> IO [AuthToken]
+allAuthTokensForReposForUsername username = withCustomConnection dbConfig (\conn -> allAuthTokensForReposForUsernameQuery conn username)
+
+getTopLevelDashboard :: Text -> IO DashboardData
+getTopLevelDashboard username =
+  do
+    packages <- allPackagesForReposForUsername username
+    authTokens <- allAuthTokensForReposForUsername username
+    pure (DashboardData{_dashboardDataPackages=packages, _dashboardDataAuthTokens=authTokens})
 
 main :: IO ()
 main = scotty 3000 $ do
@@ -497,11 +584,15 @@ main = scotty 3000 $ do
   get "/dashboard/repository/:repository-id/all-tokens" $ do
     repositoryId <- pathParam "repository-id"
     username <- retrieveUserNameForAuthToken
-    -- FIXME: Check the username here!
+    authUserNameAgainstRepository username repositoryId
     tokens <- liftIO $ getTokens repositoryId
     let tokenStrings = fmap (\(Only x) -> x) tokens
     json tokenStrings
 
+  get "/dashboard" $ do
+    username <- retrieveUserNameForAuthToken
+    dashboardData <- liftIO $ getTopLevelDashboard username
+    json dashboardData
 
   get "/" $ do
     text "Welcome to the custom package site!"
