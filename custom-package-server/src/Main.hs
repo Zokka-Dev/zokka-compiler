@@ -468,7 +468,7 @@ instance ToJSON DashboardData where
   toJSON :: DashboardData -> Value
   toJSON (DashboardData packages authTokens) = object
     [ "packages" .= toJSON packages
-    , "authTokens" .= toJSON authTokens
+    , "auth-tokens" .= toJSON authTokens
     ]
 
 allPackagesForReposForUsernameQuery :: Connection -> Text -> IO [Package]

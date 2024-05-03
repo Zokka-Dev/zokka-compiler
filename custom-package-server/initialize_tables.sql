@@ -64,9 +64,26 @@ CREATE TABLE sqlar(
   data BLOB               -- compressed content
 );
 
+-- Even if we switch to a provider such as Auth0 for authentication, if we want
+-- the ability to provide logouts, we still need to store login session data.
+CREATE TABLE login_sessions(
+    id INTEGER PRIMARY KEY NOT NULL,
+    -- Store this as text rather than just a binary blob because this will
+    -- transmitted to the user and stored on their end with an expectation that
+    -- it will be sent back. Binary data can often run into weird encoding and
+    -- decoding descrepancies.
+    session_token_value TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX idx_login_sessions_session_token_value ON login_sessions(session_token_value);
+
 INSERT INTO permissions (id, level) VALUES (0, 'read');
 INSERT INTO permissions (id, level) VALUES (1, 'write');
 
-INSERT INTO users (id, username, password_hash) VALUES (0, 'testuser0', 'somepasswordhash');
+INSERT INTO users (id, username, password_hash, password_salt) VALUES (0, 'testuser0', 'somepasswordhash', 'somepasswordsalt');
 INSERT INTO repositories (id, human_readable_name, url_safe_name, owner_user_id) VALUES (0, 'Fun Repository', 'fun-repository', 0);
 INSERT INTO auth_tokens (id, token_value, user_id, permission_id, repository_id) VALUES (0, 'test-token', 0, 1, 0);
+INSERT INTO login_sessions (session_token_value, user_id) VALUES ('somelogintoken', 0);
