@@ -34,8 +34,19 @@ import Control.Monad (when)
 import System.Entropy (getEntropy)
 import qualified Crypto.Argon2 as CA
 import qualified Data.ByteString.Base64 as Base64
+import Data.Function ((&))
+
+safeHead :: [a] -> Maybe a
+safeHead (x : _) = Just x
+safeHead _ = Nothing
+
+unOnly :: Only a  -> a
+unOnly (Only x) = x
 
 newtype RepositoryId = RepositoryId { unRepositoryId :: Int }
+  deriving (ToField, FromField, ToJSON, Parsable, Eq)
+
+newtype UserId = UserId { unUserId :: Int }
   deriving (ToField, FromField, ToJSON, Parsable, Eq)
 
 data Package = Package
@@ -274,12 +285,25 @@ mimeTypeFromFileName fileName =
     Just "json" -> "application/json"
     Just "zip" -> "application/zip"
 
+customAuthSchemeName :: Text
 customAuthSchemeName = "CustomZokkaRepoAuthToken"
 
 authTokenToRepositoryId :: Text -> IO (Only RepositoryId)
 authTokenToRepositoryId authToken = withCustomConnection dbConfig
   -- FIXME: Deal with the broken head here
   (\conn -> head <$> query conn "SELECT repository_id FROM auth_tokens WHERE token_value = ?" (Only authToken))
+
+newtype SessionToken = SessionToken { unSessionToken :: Text }
+  deriving (ToField, FromField, ToJSON, Parsable, Eq)
+
+validateSessionTokenQuery :: Connection -> SessionToken -> IO (Maybe UserId)
+validateSessionTokenQuery conn sessionToken = 
+  -- FIXME: Deal with the broken head here
+  query conn "SELECT user_id FROM login_sessions WHERE session_token_value = ?" (Only sessionToken)
+    & fmap (fmap unOnly . safeHead)
+
+validateLoginSessionToken :: SessionToken -> IO (Maybe UserId)
+validateLoginSessionToken sessionToken = withCustomConnection dbConfig (\conn -> validateSessionTokenQuery conn sessionToken)
 
 retrieveRepositoryIdForAuthToken :: ActionM RepositoryId
 retrieveRepositoryIdForAuthToken =
@@ -301,9 +325,8 @@ retrieveRepositoryIdForAuthToken =
           (Only repositoryId) <- liftIO $ authTokenToRepositoryId authToken
           pure repositoryId
 
--- FIXME: UNSAFE!!! FIX THIS.
-retrieveUserNameForAuthToken :: ActionM Text
-retrieveUserNameForAuthToken =
+retrieveUserIdForLoginSessionToken :: ActionM UserId
+retrieveUserIdForLoginSessionToken =
   do
     authTokenValue <- header "Authorization"
     case authTokenValue of
@@ -317,9 +340,17 @@ retrieveUserNameForAuthToken =
           -- FIXME: Have a more robust thing than just splitting on single
           -- space, should split more generally on whitespace
           -- FIXME: Deal with error cases here
-          let authScheme : authToken : _ = splitOn " " (TL.toStrict authHeaderValue)
-          when (authScheme /= customAuthSchemeName) (do {status status403; text "Token not authorized for this repository!"; finish})
-          pure authToken
+          let authScheme : loginSessionToken : _ = splitOn " " (TL.toStrict authHeaderValue)
+          -- FIXME: Deal with authScheme
+          maybeUserId <- liftIO $ validateLoginSessionToken (SessionToken loginSessionToken)
+          case maybeUserId of
+            Nothing ->
+              do
+                status status403
+                text "Invalid login session token!"
+                finish
+            Just userId ->
+              pure userId
 
 failOnCondition :: Text -> Status -> Bool -> ActionM ()
 failOnCondition msg statusCode condition = when condition failureAction
@@ -378,35 +409,33 @@ loginUser username password =
 verifyLoginToken :: Text -> IO Text
 verifyLoginToken = pure
 
-userIdByUserName :: Connection -> Text -> IO (Only Int)
+userIdByUserName :: Connection -> Text -> IO (Only UserId)
 -- FIXME: Fix unsafe head call
 userIdByUserName conn username = head <$> query conn "SELECT id FROM users WHERE username = ?" (Only username)
 
-userHasAccessToRepositoryQuery :: Connection -> Int -> RepositoryId -> IO (Only Bool)
+userHasAccessToRepositoryQuery :: Connection -> UserId -> RepositoryId -> IO (Only Bool)
 userHasAccessToRepositoryQuery conn userId repositoryId =
   -- Note that this call to head is not unsafe because we are guaranteed that a COUNT call will always produce one row
   head <$> query conn "SELECT COUNT(id) > 0 FROM repositories WHERE owner_user_id = ? AND id = ?" (userId, repositoryId)
 
--- FIXME: Use actual types
-verifyUserNameHasAccessToRepository :: Text -> RepositoryId -> IO Bool
-verifyUserNameHasAccessToRepository username repositoryId =
+verifyUserIdHasAccessToRepository :: UserId -> RepositoryId -> IO Bool
+verifyUserIdHasAccessToRepository userId repositoryId =
   withCustomConnection dbConfig
     (\conn ->
       withTransaction conn $ do
-        (Only userId) <- userIdByUserName conn username
         (Only hasAccess) <- userHasAccessToRepositoryQuery conn userId repositoryId
         pure hasAccess
     )
 
-authUserNameAgainstRepository :: Text -> RepositoryId -> ActionM ()
-authUserNameAgainstRepository username repositoryId =
+authUserIdAgainstRepository :: UserId -> RepositoryId -> ActionM ()
+authUserIdAgainstRepository userId repositoryId =
   do
-    hasAccess <- liftIO $ verifyUserNameHasAccessToRepository username repositoryId
-    failOnCondition (T.concat ["You are logged in as ", username, " who does not have access to repository ", intToText (unRepositoryId repositoryId)]) status403 (not hasAccess)
+    hasAccess <- liftIO $ verifyUserIdHasAccessToRepository userId repositoryId
+    failOnCondition (T.concat ["You do not have access to repository ", intToText (unRepositoryId repositoryId)]) status403 (not hasAccess)
 
 tokenSizeInBytes = 20
 
-createTokenQuery :: Connection -> Int -> RepositoryId -> IO Text
+createTokenQuery :: Connection -> UserId -> RepositoryId -> IO Text
 createTokenQuery conn userId repositoryId =
   do
     tokenAsBytes <- getEntropy tokenSizeInBytes
@@ -414,24 +443,20 @@ createTokenQuery conn userId repositoryId =
     execute conn "INSERT INTO auth_tokens (token_value, user_id, permission_id, repository_id) VALUES (?,?,0,?)" (token, userId, repositoryId)
     pure token
 
-createToken :: Text -> RepositoryId -> IO Text
-createToken username repositoryId = withCustomConnection dbConfig
+createToken :: UserId -> RepositoryId -> IO Text
+createToken userId repositoryId = withCustomConnection dbConfig
   (\conn -> withTransaction conn $
-    do
-      (Only userId) <- userIdByUserName conn username
-      createTokenQuery conn userId repositoryId
+    createTokenQuery conn userId repositoryId
   )
 
-createRepositoryQuery :: Connection -> Text -> Text -> Int -> IO ()
+createRepositoryQuery :: Connection -> Text -> Text -> UserId -> IO ()
 createRepositoryQuery conn repositoryName repositorySafeUrlName userId =
   execute conn "INSERT INTO repositories (human_readable_name, url_safe_name, owner_user_id) VALUES (?,?,?)" (repositoryName, repositorySafeUrlName, userId)
 
-createRepository :: Text -> Text -> Text -> IO ()
-createRepository repositoryName repositorySafeUrlName username = withCustomConnection dbConfig
+createRepository :: Text -> Text -> UserId -> IO ()
+createRepository repositoryName repositorySafeUrlName userId = withCustomConnection dbConfig
   (\conn -> withTransaction conn $
-    do
-      (Only userId) <- userIdByUserName conn username
-      createRepositoryQuery conn repositoryName repositorySafeUrlName userId
+    createRepositoryQuery conn repositoryName repositorySafeUrlName userId
   )
 
 getTokensQuery :: Connection -> RepositoryId -> IO [Only Text]
@@ -471,32 +496,32 @@ instance ToJSON DashboardData where
     , "auth-tokens" .= toJSON authTokens
     ]
 
-allPackagesForReposForUsernameQuery :: Connection -> Text -> IO [Package]
-allPackagesForReposForUsernameQuery conn username =
-  query conn "SELECT p.* FROM packages p INNER JOIN repositories r ON p.repository_id = r.id INNER JOIN users u ON r.owner_user_id = u.id WHERE u.username = ?" (Only username)
+allPackagesForReposForUserIdQuery :: Connection -> UserId -> IO [Package]
+allPackagesForReposForUserIdQuery conn userId =
+  query conn "SELECT p.* FROM packages p INNER JOIN repositories r ON p.repository_id = r.id WHERE r.owner_user_id = ?" (Only userId)
 
-allPackagesForReposForUsername :: Text -> IO [Package]
-allPackagesForReposForUsername username = withCustomConnection dbConfig (`allPackagesForReposForUsernameQuery` username)
+allPackagesForReposForUserId :: UserId -> IO [Package]
+allPackagesForReposForUserId userId = withCustomConnection dbConfig (`allPackagesForReposForUserIdQuery` userId)
 
-allAuthTokensForReposForUsernameQuery :: Connection -> Text -> IO [AuthToken]
-allAuthTokensForReposForUsernameQuery conn username =
+allAuthTokensForReposForUsernameQuery :: Connection -> UserId -> IO [AuthToken]
+allAuthTokensForReposForUsernameQuery conn userId =
   fmap (fmap tupleToAuthToken) queryResult
   where
     queryResult :: IO [(Text, Int, Int)]
-    queryResult = query conn "SELECT token_value, permission_id, user_id FROM auth_tokens t INNER JOIN users u ON t.user_id = u.id WHERE u.username = ?" (Only username)
+    queryResult = query conn "SELECT token_value, permission_id, user_id FROM auth_tokens WHERE user_id = ?" (Only userId)
     -- FIXME low: Deal with error case here (even those this is probably a db bug if it occurs)
     intToAuthTokenPermission 0 = ReadOnly
     intToAuthTokenPermission 1 = ReadWrite
     tupleToAuthToken (tokenValue, tokenPermission, userId) = AuthToken {_authTokenValue=tokenValue, _authTokenPermission=intToAuthTokenPermission tokenPermission, _authTokenUserId=userId}
 
-allAuthTokensForReposForUsername :: Text -> IO [AuthToken]
-allAuthTokensForReposForUsername username = withCustomConnection dbConfig (\conn -> allAuthTokensForReposForUsernameQuery conn username)
+allAuthTokensForReposForUserId :: UserId -> IO [AuthToken]
+allAuthTokensForReposForUserId userId = withCustomConnection dbConfig (\conn -> allAuthTokensForReposForUsernameQuery conn userId)
 
-getTopLevelDashboard :: Text -> IO DashboardData
-getTopLevelDashboard username =
+getTopLevelDashboard :: UserId -> IO DashboardData
+getTopLevelDashboard userId =
   do
-    packages <- allPackagesForReposForUsername username
-    authTokens <- allAuthTokensForReposForUsername username
+    packages <- allPackagesForReposForUserId userId
+    authTokens <- allAuthTokensForReposForUserId userId
     pure (DashboardData{_dashboardDataPackages=packages, _dashboardDataAuthTokens=authTokens})
 
 main :: IO ()
@@ -570,28 +595,28 @@ main = scotty 3000 $ do
     text loginToken
 
   post "/dashboard/repository" $ do
-    username <- retrieveUserNameForAuthToken
+    userId <- retrieveUserIdForLoginSessionToken
     repositoryName <- queryParam "repository-name"
     repositoryUrlSafeName <- queryParam "repository-url-safe-name"
-    liftIO $ createRepository repositoryName repositoryUrlSafeName username
+    liftIO $ createRepository repositoryName repositoryUrlSafeName userId
 
   post "/dashboard/repository/:repository-id/token" $ do
     repositoryId <- pathParam "repository-id"
-    username <- retrieveUserNameForAuthToken
-    tokenValue <- liftIO $ createToken username repositoryId
+    userId <- retrieveUserIdForLoginSessionToken
+    tokenValue <- liftIO $ createToken userId repositoryId
     text tokenValue
 
   get "/dashboard/repository/:repository-id/all-tokens" $ do
     repositoryId <- pathParam "repository-id"
-    username <- retrieveUserNameForAuthToken
-    authUserNameAgainstRepository username repositoryId
+    userId <- retrieveUserIdForLoginSessionToken
+    authUserIdAgainstRepository userId repositoryId
     tokens <- liftIO $ getTokens repositoryId
     let tokenStrings = fmap (\(Only x) -> x) tokens
     json tokenStrings
 
   get "/dashboard" $ do
-    username <- retrieveUserNameForAuthToken
-    dashboardData <- liftIO $ getTopLevelDashboard username
+    userId <- retrieveUserIdForLoginSessionToken
+    dashboardData <- liftIO $ getTopLevelDashboard userId
     json dashboardData
 
   get "/" $ do
