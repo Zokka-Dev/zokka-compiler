@@ -184,7 +184,15 @@ fetchSingleCustomRepository manager customRepositoryData =
         repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
         repositoryAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
       in
-      undefined
+      fetchFromRepositoryUrlWithRepoAuthToken manager repositoryUrl repositoryAuthToken
+
+
+fetchFromRepositoryUrlWithRepoAuthToken :: Http.Manager -> RepositoryUrl -> RepositoryAuthToken -> IO (Either Exit.RegistryProblem Registry)
+fetchFromRepositoryUrlWithRepoAuthToken manager repositoryUrl repositoryAuthToken =
+  getWithHeaders manager repositoryUrl "/all-packages" [createAuthHeader repositoryAuthToken] allPkgsDecoder $
+    \versions ->
+      do  let size = Map.foldr' addEntry 0 versions
+          pure $ Registry size versions
 
 
 fetchFromRepositoryUrl :: Http.Manager -> RepositoryUrl -> IO (Either Exit.RegistryProblem Registry)
@@ -281,7 +289,7 @@ updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo oldRegistry@(Regist
     serverUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
     repoAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
   in
-  postWithHeaders manager serverUrl ("/all-packages/since/" ++ show size) [createAuthHeader repoAuthToken] (D.list newPkgDecoder) $
+  getWithHeaders manager serverUrl ("/all-packages/since/" ++ show size) [createAuthHeader repoAuthToken] (D.list newPkgDecoder) $
     \news ->
       case news of
         [] ->
@@ -392,21 +400,38 @@ getVersions' name zokkaRegistry =
 
 -- POST
 
+-- FIXME: It's really unclear whether we should have post stuff here, since technically everything should be doable with a GET?
 postWithHeaders :: Http.Manager -> RepositoryUrl -> String -> [Header] -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
 postWithHeaders manager repositoryUrl path headers decoder callback =
   let
     url = Website.route repositoryUrl path []
   in
-  Http.post manager url headers Exit.RP_Http $
-    \body ->
-      case D.fromByteString decoder body of
-        Right a -> Right <$> callback a
-        Left _ -> return $ Left $ Exit.RP_Data url body
+  do
+    print "Hello there!"
+    Http.post manager url headers Exit.RP_Http $
+      \body ->
+        case D.fromByteString decoder body of
+          Right a -> Right <$> callback a
+          Left _ -> return $ Left $ Exit.RP_Data url body
 
 post :: Http.Manager -> RepositoryUrl -> String -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
 post manager repositoryUrl path decoder callback =
   postWithHeaders manager repositoryUrl path [] decoder callback
 
+
+-- GET
+
+-- FIXME: This maybe should just replace all the POSTs?
+getWithHeaders :: Http.Manager -> RepositoryUrl -> String -> [Header] -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
+getWithHeaders manager repositoryUrl path headers decoder callback =
+  let
+    url = Website.route repositoryUrl path []
+  in
+  Http.get manager url headers Exit.RP_Http $
+    \body ->
+      case D.fromByteString decoder body of
+        Right a -> Right <$> callback a
+        Left _ -> return $ Left $ Exit.RP_Data url body
 
 
 -- BINARY

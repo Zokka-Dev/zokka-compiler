@@ -12,12 +12,14 @@ module File
   , remove
   , removeDir
   , writePackageReturnElmJson
+  , listAllElmFilesRecursively
   )
   where
 
 
 import qualified Codec.Archive.Zip as Zip
 import Control.Exception (catch)
+import Control.Monad (forM)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BS
@@ -284,3 +286,24 @@ removeDir path =
       if exists_
         then Dir.removeDirectoryRecursive path
         else return ()
+
+
+-- RECURSIVE OPERATIONS
+
+
+listAllElmFilesRecursively :: FilePath -> IO [FilePath]
+listAllElmFilesRecursively startPath = do
+    names <- Dir.listDirectory startPath
+    paths <- forM names $ \name -> do
+      let path = startPath </> name
+      isDirectory <- Dir.doesDirectoryExist path
+      if isDirectory
+          then listAllElmFilesRecursively path
+          else 
+            let 
+              (_, ext) = FP.splitExtension path
+            in
+            if ext == ".elm"
+              then pure [path]
+              else pure []
+    return (concat paths)

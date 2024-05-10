@@ -15,9 +15,11 @@ module Http
   , getArchive
   -- upload
   , upload
+  , uploadWithHeaders
   , filePart
   , jsonPart
   , stringPart
+  , bytesPart
   )
   where
 
@@ -41,6 +43,7 @@ import qualified Network.HTTP.Client.MultipartFormData as Multi
 
 import qualified Json.Encode as Encode
 import qualified Elm.Version as V
+import Data.ByteString (ByteString)
 
 
 
@@ -210,8 +213,8 @@ readArchiveHelp body (AS len sha zip) =
 -- UPLOAD
 
 
-upload :: Manager -> String -> [Multi.Part] -> IO (Either Error ())
-upload manager url parts =
+uploadWithHeaders :: Manager -> String -> [Multi.Part] -> [Header] -> IO (Either Error ())
+uploadWithHeaders manager url parts headers =
   handle (handleSomeException url id) $
   handle (handleHttpException url id) $
   do  req0 <- parseUrlThrow url
@@ -219,11 +222,15 @@ upload manager url parts =
         Multi.formDataBody parts $
           req0
             { method = methodPost
-            , requestHeaders = addDefaultHeaders []
+            , requestHeaders = addDefaultHeaders headers
             , responseTimeout = responseTimeoutNone
             }
       withResponse req1 manager $ \_ ->
         return (Right ())
+
+upload :: Manager -> String -> [Multi.Part] -> IO (Either Error ())
+upload manager url parts =
+  uploadWithHeaders manager url parts []
 
 
 filePart :: String -> FilePath -> Multi.Part
@@ -243,3 +250,8 @@ jsonPart name filePath value =
 stringPart :: String -> String -> Multi.Part
 stringPart name string =
   Multi.partBS (String.fromString name) (BS.pack string)
+
+
+bytesPart :: String -> FilePath -> ByteString -> Multi.Part
+bytesPart name filePath bytes =
+  Multi.partFileRequestBody (String.fromString name) filePath (RequestBodyBS bytes)

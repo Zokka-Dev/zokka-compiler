@@ -37,10 +37,11 @@
 
 ## POST paths:
 
-+ `/register?name={package-name}&version={version}`: A
-  `multipart/form-data` request that looks something like the following:
++ `/{repository-id}/upload-package?name={package-name}&version={version}`: A
+  `multipart/form-data` request that looks something like the following (with
+  `repository-id` set to `example-repository`):
   ```
-  POST /register HTTP/1.1
+  POST /example-repository/register HTTP/1.1
   Host: foo.example
   Content-Type: multipart/form-data;boundary="boundary"
 

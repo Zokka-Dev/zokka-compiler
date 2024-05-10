@@ -189,7 +189,7 @@ load :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.Details Detai
 load style scope root =
   do  newTime <- File.getTime (root </> "elm.json")
       maybeDetails <- File.readBinary (Stuff.details root)
-      printLog "Made it to LOAD 1"
+      printLog "Finished file operations for generating the Details data structure"
       case maybeDetails of
         Nothing ->
           generate style scope root newTime
@@ -204,7 +204,7 @@ loadForReactorTH :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.D
 loadForReactorTH style scope root =
   do  newTime <- File.getTime (root </> "elm.json")
       maybeDetails <- File.readBinary (Stuff.details root)
-      printLog "Made it to LOAD 1"
+      printLog "Finished file operations for generating the Details data structure"
       case maybeDetails of
         Nothing ->
           generateForReactorTH style scope root newTime
@@ -333,8 +333,6 @@ verifyApp env time outline@(Outline.AppOutline elmVersion srcDirs direct _ _ _ p
   if elmVersion == V.compiler
   then
     do  stated <- checkAppDeps outline
-        noredinkexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/NoRedInk/elm-json-decode-pipeline/1.0.0"
-        Task.io $ printLog (show noredinkexists ++ "does the NoRedInk file path exist before verifying constraints")
         actual <- verifyConstraints env (Map.map Con.exactly stated)
         -- FIXME: Think about what to do with multiple packageOverrides that have the same keys (probably shouldn't be possible?)
         let originalPkgToOverridingPkg = groupByOriginalPkg packageOverrides

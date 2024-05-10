@@ -258,7 +258,7 @@ publish =
 
     publishArgs = oneOf 
       [ require0 Publish.NoArgs
-      , require1 id (Publish.PublishToRepository <$> repositoryUrl)
+      , require1 id (Publish.PublishToRepository <$> repositoryLocalName)
       ]
   in
   Terminal.Command "publish" Uncommon details example publishArgs noFlags Publish.run

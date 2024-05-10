@@ -2,7 +2,7 @@
 module Terminal.Helpers
   ( version
   , elmFile
-  , repositoryUrl
+  , repositoryLocalName
   , package
   )
   where
@@ -22,7 +22,7 @@ import qualified Elm.Version as V
 import qualified Parse.Primitives as P
 import qualified Stuff
 import qualified Reporting.Suggest as Suggest
-import Elm.CustomRepositoryData (RepositoryUrl)
+import Elm.CustomRepositoryData (RepositoryLocalName)
 import Deps.Registry (Registry(Registry))
 
 
@@ -73,21 +73,21 @@ exampleVersions chars =
 -- REPOSITORY URL
 
 
-repositoryUrl :: Parser RepositoryUrl
-repositoryUrl =
+repositoryLocalName :: Parser RepositoryLocalName
+repositoryLocalName =
   Parser
-    { _singular = "repository URL"
-    , _plural = "repository URLs"
-    , _parser = parseRepositoryUrl
+    { _singular = "local repository name"
+    , _plural = "local repository names"
+    , _parser = parseRepositoryLocalName
     , _suggest = \_ -> return []
-    , _examples = exampleRepositoryUrls
+    , _examples = exampleRepositoryLocalNames
     }
 
-parseRepositoryUrl :: String -> Maybe RepositoryUrl
-parseRepositoryUrl str = Just $ Utf8.fromChars str
+parseRepositoryLocalName :: String -> Maybe RepositoryLocalName
+parseRepositoryLocalName str = Just $ Utf8.fromChars str
 
-exampleRepositoryUrls :: String -> IO [String]
-exampleRepositoryUrls _ = pure ["https://package-server.zokka-lang.com", "https://www.example.com/my-package"]
+exampleRepositoryLocalNames :: String -> IO [String]
+exampleRepositoryLocalNames _ = pure ["my-custom-zokka-repository", "another-zokka-repository"]
 
 
 -- ELM FILE

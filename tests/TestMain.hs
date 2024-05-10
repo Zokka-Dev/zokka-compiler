@@ -60,14 +60,16 @@ defaultPackageRepoGen :: Hedgehog.Gen DefaultPackageServerRepo
 defaultPackageRepoGen =
   do
     repositoryUrl <- utf8String
-    pure (DefaultPackageServerRepo {_defaultPackageServerRepoTypeUrl=repositoryUrl})
+    repositoryLocalName <- utf8String
+    pure (DefaultPackageServerRepo {_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName})
 
 pzrPackageServerRepoGen :: Hedgehog.Gen PZRPackageServerRepo
 pzrPackageServerRepoGen =
   do
     repositoryUrl <- utf8String
     authToken <- utf8String
-    pure (PZRPackageServerRepo {_pzrPackageServerRepoTypeUrl=repositoryUrl, _pzrPackageServerRepoAuthToken=authToken})
+    repositoryLocalName <- utf8String
+    pure (PZRPackageServerRepo {_pzrPackageServerRepoTypeUrl=repositoryUrl, _pzrPackageServerRepoAuthToken=authToken, _pzrPackageServerRepoLocalName=repositoryLocalName})
 
 customSingleRepositoryDataGen :: Hedgehog.Gen CustomSingleRepositoryData
 customSingleRepositoryDataGen = do
