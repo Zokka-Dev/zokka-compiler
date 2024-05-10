@@ -398,7 +398,7 @@ instance Binary.Binary CustomSingleRepositoryData where
         do
           Binary.put PZRPackageServer
           Binary.put (_pzrPackageServerRepoTypeUrl pzrPackageServer)
-          Binary.put (_pzrPackageServerRepoTypeUrl pzrPackageServer)
+          Binary.put (_pzrPackageServerRepoAuthToken pzrPackageServer)
 
   -- = TarballType
   -- | ZipfileType
@@ -426,15 +426,6 @@ instance Binary.Binary HumanReadableShaDigest where
     Binary.put (coerce shaDigestAsUtf8String :: PackageUrl)
 
 
--- data SinglePackageLocationData =
---   SinglePackageLocationData
---     { _fileType :: !SinglePackageFileType
---     , _packageName :: !Name
---     , _version :: !Version
---     , _url :: !PackageUrl
---     , _shaHash :: !HumanReadableShaDigest
---     }
---   deriving (Eq, Ord, Show)
 instance Binary.Binary SinglePackageLocationData where
   get = do
     fileType <- Binary.get :: Binary.Get SinglePackageFileType
