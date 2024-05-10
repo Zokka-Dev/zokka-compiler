@@ -293,17 +293,59 @@ authTokenToRepositoryId authToken = withCustomConnection dbConfig
   -- FIXME: Deal with the broken head here
   (\conn -> head <$> query conn "SELECT repository_id FROM auth_tokens WHERE token_value = ?" (Only authToken))
 
-newtype SessionToken = SessionToken { unSessionToken :: Text }
+-- We use a Text instead of a ByteString as the underlying datatype because
+-- ultimately we are using Base64 encoding when we have strings, which are not
+-- arbitrary byte sequences.
+newtype Base64EncodedBytes = Base64EncodedBytes { unBase64EncodedBytes :: Text }
   deriving (ToField, FromField, ToJSON, Parsable, Eq)
 
-validateSessionTokenQuery :: Connection -> SessionToken -> IO (Maybe UserId)
-validateSessionTokenQuery conn sessionToken = 
+encodeBase64 :: BS.ByteString -> Base64EncodedBytes
+encodeBase64 bytes = Base64EncodedBytes (decodeUtf8Lenient (Base64.encode bytes))
+
+decodeBase64 :: Base64EncodedBytes -> BS.ByteString
+decodeBase64 (Base64EncodedBytes base64EncodedBytes) =
+  case Base64.decode (encodeUtf8 base64EncodedBytes) of
+    Right bytes -> bytes
+    -- We just error out because we should be guaranteed that a value of
+    -- Base64EncodedBytes is in fact valid base64
+    Left err -> error err
+
+-- FIXME: Actually use the error that comes back from Base64.decode
+validateTextIsBase64 :: Text -> Maybe Base64EncodedBytes
+validateTextIsBase64 str =
+  case Base64.decode (encodeUtf8 str) of
+    Right _ -> Just $ Base64EncodedBytes str
+    Left _ -> Nothing
+
+newtype SessionToken = SessionToken { unSessionToken :: Base64EncodedBytes }
+  deriving (ToField, FromField, ToJSON, Parsable, Eq)
+
+newtype SessionTokenHash = SessionTokenHash { unSessionTokenHash :: ByteString }
+  deriving (ToField, FromField, Eq)
+
+-- Session tokens are randomly generated so an additional salt gives us no real
+-- security advantage (since salts protect against rainbow attacks which only
+-- make sense for duplicates, but we have enough random bits that it is
+-- vanishingly unlikely that a duplicate token has ever been generated)
+sessionTokenSalt :: BS.ByteString
+sessionTokenSalt = ""
+
+hashSessionToken :: SessionToken -> SessionTokenHash
+hashSessionToken (SessionToken sessionTokenRawText)= SessionTokenHash undefined
+  where
+    hashedBytes = securelyHashBytes (decodeBase64 sessionTokenRawText) sessionTokenSalt
+
+validateSessionTokenQuery :: Connection -> SessionTokenHash -> IO (Maybe UserId)
+validateSessionTokenQuery conn sessionTokenHash =
   -- FIXME: Deal with the broken head here
-  query conn "SELECT user_id FROM login_sessions WHERE session_token_value = ?" (Only sessionToken)
+  query conn "SELECT user_id FROM login_sessions WHERE session_token_value_hash = ?" (Only sessionTokenHash)
     & fmap (fmap unOnly . safeHead)
 
-validateLoginSessionToken :: SessionToken -> IO (Maybe UserId)
+validateLoginSessionToken :: SessionTokenHash -> IO (Maybe UserId)
 validateLoginSessionToken sessionToken = withCustomConnection dbConfig (\conn -> validateSessionTokenQuery conn sessionToken)
+
+sessionTokenToText :: SessionToken -> Text
+sessionTokenToText (SessionToken sessionTokenAsBase64) = unBase64EncodedBytes sessionTokenAsBase64
 
 retrieveRepositoryIdForAuthToken :: ActionM RepositoryId
 retrieveRepositoryIdForAuthToken =
@@ -342,7 +384,17 @@ retrieveUserIdForLoginSessionToken =
           -- FIXME: Deal with error cases here
           let authScheme : loginSessionToken : _ = splitOn " " (TL.toStrict authHeaderValue)
           -- FIXME: Deal with authScheme
-          maybeUserId <- liftIO $ validateLoginSessionToken (SessionToken loginSessionToken)
+          let sessionTokenMaybe = validateTextIsBase64 loginSessionToken
+          sessionToken <- case sessionTokenMaybe of
+            Nothing ->
+              do
+                status status400
+                text "Login session token was not valid base64!"
+                finish
+            Just sessionTokenAsBase64 ->
+              pure (SessionToken sessionTokenAsBase64)
+          let sessionTokenHash = hashSessionToken sessionToken
+          maybeUserId <- liftIO $ validateLoginSessionToken sessionTokenHash
           case maybeUserId of
             Nothing ->
               do
@@ -374,44 +426,72 @@ authAgainstRepositoryId expectedRepositoryId =
 saltSize :: Int
 saltSize = 20
 
+
+-- FIXME: Deal with this error case and see if it actually works
+securelyHashBytes :: BS.ByteString -> BS.ByteString -> BS.ByteString
+securelyHashBytes bytes salt = case CA.hash CA.defaultHashOptions bytes salt of
+  Right successfulHash -> successfulHash
+  -- FIXME: Deal with this error case (see if it's actually possible to hit this error route)
+  Left _ -> undefined
+
 createUser :: Text -> Text -> IO ()
 createUser username password =
   do
     salt <- getEntropy saltSize
     let passwordBytes = encodeUtf8 password
-    let hashResult = CA.hash CA.defaultHashOptions passwordBytes salt
-    case hashResult of
-      Right successfulHash ->
-        withCustomConnection dbConfig
-          (\conn -> execute conn "INSERT INTO users (username, password_hash, password_salt) VALUES (?,?,?)" (username, successfulHash, salt))
-      Left _ ->
-        -- FIXME: Deal with this error case and see if it actually works
-        undefined
+    let successfulHash = securelyHashBytes passwordBytes salt
+    withCustomConnection dbConfig
+      (\conn -> execute conn "INSERT INTO users (username, password_hash, password_salt) VALUES (?,?,?)" (username, successfulHash, salt))
 
-loginUser :: Text -> Text -> IO Text
+
+insertSessionTokenHashQuery :: Connection -> SessionTokenHash -> UserId -> IO ()
+insertSessionTokenHashQuery conn sessionTokenHash userId = execute conn "INSERT INTO login_sessions (session_token_value_hash, user_id) VALUES (?, ?)" (sessionTokenHash, userId)
+
+insertSessionTokenHash :: SessionTokenHash -> UserId -> IO ()
+insertSessionTokenHash sessionTokenHash userId = withCustomConnection dbConfig (\conn -> insertSessionTokenHashQuery conn sessionTokenHash userId)
+
+sessionTokenSizeInBytes :: Int
+sessionTokenSizeInBytes = 80
+
+generateSessionToken :: IO SessionToken
+generateSessionToken =
+  do
+    tokenAsBytes <- getEntropy sessionTokenSizeInBytes
+    pure (SessionToken (encodeBase64 tokenAsBytes))
+
+loginUser :: Text -> Text -> IO SessionToken
 loginUser username password =
   do
     (expectedPasswordHash, passwordSalt) <- withCustomConnection dbConfig
     -- FIXME: Deal with head
       (\conn -> head <$> (query conn "SELECT password_hash, password_salt FROM users WHERE username = ?" (Only username) :: IO [(BS.ByteString, BS.ByteString)]))
     let passwordBytes = encodeUtf8 password
-    let hashResult = CA.hash CA.defaultHashOptions passwordBytes passwordSalt
-    case hashResult of
-      Right successfulHash ->
-        -- FIXME: Deal with this error case
-        -- FIXME: UNSAFE! Use an actual JWT token!
-        if successfulHash == expectedPasswordHash then pure username else undefined
-      -- FIXME: Deal with this error case
-      Left _ ->
-        undefined
+    let passwordHashResult = securelyHashBytes passwordBytes passwordSalt
+    newSessionToken <- generateSessionToken
+    let newSessionTokenHash = hashSessionToken newSessionToken
+    -- FIXME: This is kind of weird not to do it in a single transaction, but there aren't any immediate issues
+    userIdMaybe <- userIdByUserName username
+    case userIdMaybe of
+      Just userId ->
+        do
+          insertSessionTokenHash newSessionTokenHash userId
+          if passwordHashResult == expectedPasswordHash 
+            then pure newSessionToken 
+            -- FIXME: Deal with error case
+            else error "Gave me a bad password!"
+      Nothing ->
+        -- FIXME: Handle this case!
+        error "Gave me a bad username!"
 
 -- FIXME: Actually do a JWT decode to find the user here
 verifyLoginToken :: Text -> IO Text
 verifyLoginToken = pure
 
-userIdByUserName :: Connection -> Text -> IO (Only UserId)
--- FIXME: Fix unsafe head call
-userIdByUserName conn username = head <$> query conn "SELECT id FROM users WHERE username = ?" (Only username)
+userIdByUserNameQuery :: Connection -> Text -> IO (Maybe UserId)
+userIdByUserNameQuery conn username = fmap unOnly . safeHead <$> query conn "SELECT id FROM users WHERE username = ?" (Only username)
+
+userIdByUserName :: Text -> IO (Maybe UserId)
+userIdByUserName username = withCustomConnection dbConfig (\conn -> userIdByUserNameQuery conn username)
 
 userHasAccessToRepositoryQuery :: Connection -> UserId -> RepositoryId -> IO (Only Bool)
 userHasAccessToRepositoryQuery conn userId repositoryId =
@@ -433,6 +513,7 @@ authUserIdAgainstRepository userId repositoryId =
     hasAccess <- liftIO $ verifyUserIdHasAccessToRepository userId repositoryId
     failOnCondition (T.concat ["You do not have access to repository ", intToText (unRepositoryId repositoryId)]) status403 (not hasAccess)
 
+tokenSizeInBytes :: Int
 tokenSizeInBytes = 20
 
 createTokenQuery :: Connection -> UserId -> RepositoryId -> IO Text
@@ -592,7 +673,7 @@ main = scotty 3000 $ do
     username <- formParam "username"
     password <- formParam "password"
     loginToken <- liftIO $ loginUser username password
-    text loginToken
+    text (sessionTokenToText loginToken)
 
   post "/dashboard/repository" $ do
     userId <- retrieveUserIdForLoginSessionToken

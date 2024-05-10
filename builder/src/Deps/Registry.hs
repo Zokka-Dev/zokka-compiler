@@ -13,6 +13,7 @@ module Deps.Registry
   , getVersions'
   , mergeRegistries
   , lookupPackageRegistryKey
+  , createAuthHeader
   )
   where
 
@@ -32,7 +33,7 @@ import qualified Json.Decode as D
 import qualified Parse.Primitives as P
 import qualified Reporting.Exit as Exit
 import qualified Stuff
-import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData(..), RepositoryUrl, RepositoryType(..), SinglePackageLocationData(..), PackageUrl)
+import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData(..), RepositoryUrl, RepositoryType(..), SinglePackageLocationData(..), PackageUrl, DefaultPackageServerRepo (..), PZRPackageServerRepo(..), RepositoryAuthToken)
 import Data.Binary.Get (Get)
 import Data.Word (Word8)
 import qualified Data.Set as Set
@@ -41,6 +42,11 @@ import Data.Vector.Internal.Check (HasCallStack)
 import Data.Map.Utils (exchangeKeys, invertMap)
 import File (Time, getTime)
 import Stuff (ZokkaCustomRepositoryConfigFilePath(unZokkaCustomRepositoryConfigFilePath))
+import Http (Header)
+import qualified Data.Utf8 as Utf8
+import Data.ByteString.Char8 (pack)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as ByteString
 
 
 
@@ -166,11 +172,19 @@ createRegistryFromSinglePackageLocation SinglePackageLocationData{_packageName=p
 
 
 fetchSingleCustomRepository :: Http.Manager -> CustomSingleRepositoryData -> IO (Either Exit.RegistryProblem Registry)
-fetchSingleCustomRepository manager (CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl}) =
-  case repositoryType of
-    DefaultPackageServer -> fetchFromRepositoryUrl manager repositoryUrl
-    -- FIXME
-    BarebonesPackageServer -> error "not yet implemented"
+fetchSingleCustomRepository manager customRepositoryData =
+  case customRepositoryData of
+    DefaultPackageServerRepoData defaultPackageServerRepo -> 
+      let
+        repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
+      in
+      fetchFromRepositoryUrl manager repositoryUrl
+    PZRPackageServerRepoData pzrPackageServerRepo ->
+      let
+        repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
+        repositoryAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
+      in
+      undefined
 
 
 fetchFromRepositoryUrl :: Http.Manager -> RepositoryUrl -> IO (Either Exit.RegistryProblem Registry)
@@ -223,14 +237,15 @@ update manager cache zokkaRegistries customRepoConfigLastModified =
           pure $ Right newZokkaRegistries
 
 
-  -- = RepositoryUrlKey RepositoryUrl
-  -- | PackageUrlKey PackageUrl
-  -- deriving (Eq, Ord)
 updateSingleRegistry :: Http.Manager -> RegistryKey -> Registry -> IO (Either Exit.RegistryProblem Registry)
 updateSingleRegistry manager registryKey registry =
   case registryKey of
     -- FIXME: need to deal with bare repos
-    RepositoryUrlKey repositoryData -> updateSingleRegistryFromStandardElmRepo manager (_repositoryUrl repositoryData) registry
+    RepositoryUrlKey repositoryData -> case repositoryData of
+      DefaultPackageServerRepoData defaultPackageServerRepo -> 
+        updateSingleRegistryFromStandardElmRepo manager (_defaultPackageServerRepoTypeUrl defaultPackageServerRepo) registry
+      -- FIXME: This is inefficient, in that we just download the entire custom repo every time, but we hope that custom repos are still quite small
+      PZRPackageServerRepoData pzrPackageServerRepo -> updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo registry
     -- With package URLs, only one package can correspond to a single URL so there is no sensible notion of "update"
     PackageUrlKey _ -> pure $ Right registry
 
@@ -238,6 +253,35 @@ updateSingleRegistry manager registryKey registry =
 updateSingleRegistryFromStandardElmRepo :: Http.Manager -> RepositoryUrl -> Registry -> IO (Either Exit.RegistryProblem Registry)
 updateSingleRegistryFromStandardElmRepo manager repositoryUrl oldRegistry@(Registry size packages) =
   post manager repositoryUrl ("/all-packages/since/" ++ show size) (D.list newPkgDecoder) $
+    \news ->
+      case news of
+        [] ->
+          pure oldRegistry
+
+        _:_ ->
+          let
+            newSize = size + length news
+            newPkgs = foldr addNew packages news
+            newRegistry = Registry newSize newPkgs
+          in
+            pure newRegistry
+
+authSchemeName :: ByteString
+authSchemeName = "CustomZokkaRepoAuthToken"
+
+createAuthHeader :: RepositoryAuthToken -> Header
+createAuthHeader authTokenValue = ("Authorization", ByteString.concat [authSchemeName, " ", authTokenValueAsChars])
+  where
+    authTokenValueAsChars = pack (Utf8.toChars authTokenValue)
+
+
+updateSingleRegistryFromPZRRepo :: Http.Manager -> PZRPackageServerRepo -> Registry -> IO (Either Exit.RegistryProblem Registry)
+updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo oldRegistry@(Registry size packages) =
+  let
+    serverUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
+    repoAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
+  in
+  postWithHeaders manager serverUrl ("/all-packages/since/" ++ show size) [createAuthHeader repoAuthToken] (D.list newPkgDecoder) $
     \news ->
       case news of
         [] ->
@@ -291,13 +335,11 @@ bail _ _ =
 
 -- LATEST
 
--- FIXME: This needs to be fixed to allow barebones servers
 customSingleRepositoryDataToRegistryKey :: CustomSingleRepositoryData -> RegistryKey
-customSingleRepositoryDataToRegistryKey repositoryData = RepositoryUrlKey repositoryData
+customSingleRepositoryDataToRegistryKey = RepositoryUrlKey
 
---FIXME: PackageUrlKey probably needs to include the kind of package it is for decompression reasons
 singlePackageLocationDataToRegistryKey :: SinglePackageLocationData -> RegistryKey
-singlePackageLocationDataToRegistryKey singlePackageLocationData= PackageUrlKey singlePackageLocationData
+singlePackageLocationDataToRegistryKey = PackageUrlKey
 
 doesRegistryAgreeWithCustomRepositoriesData :: CustomRepositoriesData -> ZokkaRegistries -> Bool
 doesRegistryAgreeWithCustomRepositoriesData (CustomRepositoriesData fullRepositories singlePackages) registry =
@@ -350,17 +392,20 @@ getVersions' name zokkaRegistry =
 
 -- POST
 
-
-post :: Http.Manager -> RepositoryUrl -> String -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
-post manager repositoryUrl path decoder callback =
+postWithHeaders :: Http.Manager -> RepositoryUrl -> String -> [Header] -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
+postWithHeaders manager repositoryUrl path headers decoder callback =
   let
     url = Website.route repositoryUrl path []
   in
-  Http.post manager url [] Exit.RP_Http $
+  Http.post manager url headers Exit.RP_Http $
     \body ->
       case D.fromByteString decoder body of
         Right a -> Right <$> callback a
         Left _ -> return $ Left $ Exit.RP_Data url body
+
+post :: Http.Manager -> RepositoryUrl -> String -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
+post manager repositoryUrl path decoder callback =
+  postWithHeaders manager repositoryUrl path [] decoder callback
 
 
 
@@ -376,7 +421,7 @@ instance Binary RegistryKey where
       1 -> do
         singlePackageLocationData <- get :: Get SinglePackageLocationData
         pure $ PackageUrlKey singlePackageLocationData
-      _ -> 
+      _ ->
         -- FIXME: Better error message
         error "Corrupt registry key! We should only have a 0 or 1 here."
 

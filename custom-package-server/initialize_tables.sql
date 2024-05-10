@@ -35,7 +35,10 @@ CREATE INDEX idx_users_username ON users(username);
 
 CREATE TABLE auth_tokens (
     id INTEGER PRIMARY KEY NOT NULL,
-    token_value TEXT NOT NULL,
+    token_value_hash TEXT NOT NULL,
+    -- No salt because token values are supposed to be random to begin with so
+    -- we're not vulnerable to dictionary attacks
+    token_value_suffix_fragment TEXT NOT NULL,
     user_id INTEGER NOT NULL,
     permission_id INTEGER NOT NULL,
     repository_id INTEGER NOT NULL,
@@ -45,7 +48,7 @@ CREATE TABLE auth_tokens (
 );
 
 CREATE INDEX idx_auth_tokens_user_id ON auth_tokens(user_id);
-CREATE INDEX idx_auth_tokens_token_value ON auth_tokens(token_value);
+CREATE INDEX idx_auth_tokens_token_value_hash ON auth_tokens(token_value_hash);
 CREATE INDEX idx_auth_tokens_permission_id ON auth_tokens(permission_id);
 CREATE INDEX idx_auth_tokens_repository_id ON auth_tokens(repository_id);
 
@@ -72,13 +75,15 @@ CREATE TABLE login_sessions(
     -- transmitted to the user and stored on their end with an expectation that
     -- it will be sent back. Binary data can often run into weird encoding and
     -- decoding descrepancies.
-    session_token_value TEXT NOT NULL,
+    session_token_value_hash TEXT NOT NULL,
+    -- No salt because token values are supposed to be random to begin with so
+    -- we're not vulnerable to dictionary attacks
     user_id INTEGER NOT NULL,
     created_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE INDEX idx_login_sessions_session_token_value ON login_sessions(session_token_value);
+CREATE INDEX idx_login_sessions_session_token_value ON login_sessions(session_token_value_hash);
 
 INSERT INTO permissions (id, level) VALUES (0, 'read');
 INSERT INTO permissions (id, level) VALUES (1, 'write');

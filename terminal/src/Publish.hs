@@ -133,7 +133,6 @@ publish env@(Env root _ manager registry outline) repositoryUrl =
               Task.io $ putStrLn "Success!"
 
 
-
 -- VERIFY SUMMARY
 
 

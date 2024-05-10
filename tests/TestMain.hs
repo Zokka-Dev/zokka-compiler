@@ -19,7 +19,7 @@ import qualified Data.Utf8 as Utf8
 import qualified Data.Map.Strict as Map
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
-import Elm.CustomRepositoryData (SinglePackageFileType, SinglePackageLocationData(..), CustomSingleRepositoryData (CustomSingleRepositoryData, _repositoryType, _repositoryUrl), HumanReadableShaDigest(..), shaToHumanReadableShaDigest, RepositoryType)
+import Elm.CustomRepositoryData (SinglePackageFileType, SinglePackageLocationData(..), CustomSingleRepositoryData (..), DefaultPackageServerRepo(..), PZRPackageServerRepo(..), HumanReadableShaDigest(..), shaToHumanReadableShaDigest, RepositoryType)
 import File (Time(..))
 import Data.Fixed (Fixed(..))
 import qualified Data.Digest.Pure.SHA as SHA
@@ -56,11 +56,17 @@ singlePackageocationDataGen = do
 repositoryTypeGen :: Hedgehog.Gen RepositoryType
 repositoryTypeGen = Gen.element [minBound..]
 
+defaultPackageRepoGen :: Hedgehog.Gen DefaultPackageServerRepo
+defaultPackageRepoGen = undefined
+
+pzrPackageServerRepoGen :: Hedgehog.Gen PZRPackageServerRepo
+pzrPackageServerRepoGen = undefined
+
 customSingleRepositoryDataGen :: Hedgehog.Gen CustomSingleRepositoryData
 customSingleRepositoryDataGen = do
   repositoryType <- repositoryTypeGen
   repositoryUrl <- utf8String
-  pure $ CustomSingleRepositoryData {_repositoryUrl=repositoryUrl, _repositoryType=repositoryType}
+  Gen.choice [fmap DefaultPackageServerRepoData defaultPackageRepoGen, fmap PZRPackageServerRepoData pzrPackageServerRepoGen]
 
 registryKeyGen :: Hedgehog.Gen RegistryKey
 registryKeyGen = Gen.choice [ fmap PackageUrlKey singlePackageocationDataGen, fmap RepositoryUrlKey customSingleRepositoryDataGen ]
