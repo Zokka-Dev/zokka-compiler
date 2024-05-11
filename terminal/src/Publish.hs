@@ -10,6 +10,8 @@ import Control.Exception (bracket_)
 import Control.Monad (void)
 import qualified Data.ByteString as BS
 import qualified Data.List as List
+import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 import qualified Data.NonEmptyList as NE
 import qualified Data.Utf8 as Utf8
 import qualified System.Directory as Dir
@@ -69,8 +71,10 @@ run args () =
       NoArgs ->
         pure $ Left PublishWithNoRepositoryLocalName
       PublishToRepository repositoryUrl ->
-        Reporting.attempt Exit.publishToReport $
-          Task.run $ (\env -> fmap Right $ publish env repositoryUrl) =<< getEnv
+        Task.run $
+          do
+            env <- getEnv
+            publish env repositoryUrl
 
 
 
@@ -103,23 +107,75 @@ getEnv =
 
 -- PUBLISH
 
+convertRegistryKeyToCustomSingleRepositoryData :: Registry.RegistryKey -> Maybe CustomSingleRepositoryData
+convertRegistryKeyToCustomSingleRepositoryData registryKey =
+  case registryKey of
+    Registry.RepositoryUrlKey customSingleRepositoryData -> Just customSingleRepositoryData
+    Registry.PackageUrlKey _ -> Nothing
 
+
+allCustomSingleRepositoryDataFromRegistries :: Registry.ZokkaRegistries -> [CustomSingleRepositoryData]
+allCustomSingleRepositoryDataFromRegistries Registry.ZokkaRegistries{Registry._registries=registriesMap} = 
+  Maybe.mapMaybe convertRegistryKeyToCustomSingleRepositoryData (Map.keys registriesMap)
+
+
+localNameOfCustomSingleRepositoryData :: CustomSingleRepositoryData -> RepositoryLocalName
+localNameOfCustomSingleRepositoryData customSingleRepositoryData =
+  case customSingleRepositoryData of
+    DefaultPackageServerRepoData defaultPackageServerRepo -> _defaultPackageServerRepoLocalName defaultPackageServerRepo
+    PZRPackageServerRepoData pzrPackageServerRepo -> _pzrPackageServerRepoLocalName pzrPackageServerRepo
+
+
+findKeyByLocalName :: RepositoryLocalName -> [CustomSingleRepositoryData] -> Maybe CustomSingleRepositoryData
+findKeyByLocalName localName [] = Nothing
+findKeyByLocalName localName (customSingleRepositoryData : restOfRepos) = 
+  if localNameOfCustomSingleRepositoryData customSingleRepositoryData == localName
+    then Just customSingleRepositoryData
+    else findKeyByLocalName localName restOfRepos
+
+
+-- Consider whether a linear scan in a list of repositories is okay perf-wise
 lookupRepositoryByLocalName :: RepositoryLocalName -> Registry.ZokkaRegistries -> Maybe CustomSingleRepositoryData
-lookupRepositoryByLocalName repositoryLocalName registries = undefined
+lookupRepositoryByLocalName repositoryLocalName zokkaRegistries = 
+  findKeyByLocalName repositoryLocalName (allCustomSingleRepositoryDataFromRegistries zokkaRegistries)
 
 
 getAllLocalNamesInRegistries :: Registry.ZokkaRegistries -> [RepositoryLocalName]
-getAllLocalNamesInRegistries = undefined
+getAllLocalNamesInRegistries registries = map localNameOfCustomSingleRepositoryData (allCustomSingleRepositoryDataFromRegistries registries)
 
 
 -- The only relevant things we need to zip up are the elm.json file and all Elm
 -- files in `src`. Note that even though elm.json for applications can specify
 -- non-standard locations for source code, for packages, they must always be
 -- under src.
-createZipArchiveOfSourceCode :: FilePath -> IO Zip.Archive
-createZipArchiveOfSourceCode root = do
-  elmFiles <- File.listAllElmFilesRecursively (root </> "src")
-  Zip.addFilesToArchive [] Zip.emptyArchive ((root </> "elm.json") : elmFiles)
+--
+-- We specifically do NOT pass a root argument and use purely relative paths
+-- because absolute paths are actually quite annoying to deal with. In
+-- particular, they potentially expose sensitive data about a user's filesystem.
+--
+-- So we instead expect always that we are in the correct location when this is
+-- run (which is okay to do because the Elm compiler can only be run from the
+-- top-level of a project when building).
+--
+-- If we ever want to make the location of the compiler configurable, we'll have
+-- to revisit this.
+createZipArchiveOfSourceCode :: IO Zip.Archive
+createZipArchiveOfSourceCode = do
+  elmFiles <- File.listAllElmFilesRecursively "src"
+  print "Here are all the elm files!"
+  print elmFiles
+  -- Note that we must start with a "." entry. This is because the Elm compiler
+  -- expects the very first entry of a ZIP archive to be the parent directory
+  -- and then subtracts that prefix from every other file that is decompressed.
+  -- If we use ".", this creates an entry with a zero-length file name (the
+  -- period is effectively erased), which is what we want.
+  --
+  -- On the other hand if we used "", our underlying Zip library would blow up
+  -- with an exception.
+  let filesToZip = "." : "elm.json" : elmFiles
+  print "Files to zip!"
+  print filesToZip
+  Zip.addFilesToArchive [] Zip.emptyArchive filesToZip
 
 
 publish ::  Env -> RepositoryLocalName -> Task.Task Exit.Publish ()
@@ -164,8 +220,9 @@ publish env@(Env root _ manager registry outline) repositoryLocalName =
                 PZRPackageServerRepoData pzrPackageServerRepo ->
                   do
                     Task.io $ putStrLn "Beginning to create in-memory ZIP archive of source code..."
-                    zipArchive <- Task.io $ createZipArchiveOfSourceCode root
+                    zipArchive <- Task.io createZipArchiveOfSourceCode
                     Task.io $ putStrLn "Finished creating in-memory ZIP archive of source code!"
+                    Task.io $ print (Zip.filesInArchive zipArchive)
                     registerToPZRRepo 
                       manager 
                       (_pzrPackageServerRepoTypeUrl pzrPackageServerRepo) (_pzrPackageServerRepoAuthToken pzrPackageServerRepo) 
@@ -464,7 +521,7 @@ registerToPZRRepo :: Http.Manager -> RepositoryUrl -> RepositoryAuthToken -> Pkg
 registerToPZRRepo manager repositoryUrl repositoryAuthToken pkg vsn docs zipArchive =
   let
     url =
-      Website.route repositoryUrl "/register"
+      Website.route repositoryUrl "/upload-package"
         [ ("name", Pkg.toChars pkg)
         , ("version", V.toChars vsn)
         ]

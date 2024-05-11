@@ -6,6 +6,7 @@ import Network.HTTP.Types.Status (status400, status401, Status, status403)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..), encode, decode)
+import qualified Data.Aeson.Key as DAK
 import qualified Data.Aeson.Types as DAT
 import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam, Parsable)
 import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection, field, withConnection, Only (..), withTransaction)
@@ -35,6 +36,7 @@ import System.Entropy (getEntropy)
 import qualified Crypto.Argon2 as CA
 import qualified Data.ByteString.Base64 as Base64
 import Data.Function ((&))
+import qualified Debug.Trace as Debug
 
 safeHead :: [a] -> Maybe a
 safeHead (x : _) = Just x
@@ -44,10 +46,10 @@ unOnly :: Only a  -> a
 unOnly (Only x) = x
 
 newtype RepositoryId = RepositoryId { unRepositoryId :: Int }
-  deriving (ToField, FromField, ToJSON, Parsable, Eq)
+  deriving (ToField, FromField, ToJSON, Parsable, Eq, Show)
 
 newtype UserId = UserId { unUserId :: Int }
-  deriving (ToField, FromField, ToJSON, Parsable, Eq)
+  deriving (ToField, FromField, ToJSON, Parsable, Eq, Show)
 
 data Package = Package
   { pkgId :: Int
@@ -69,6 +71,7 @@ data Package = Package
   , repositoryId :: RepositoryId
   , elmJson :: Value
   }
+  deriving Show
 
 instance FromRow Package where
   fromRow = Package <$> field <*> field <*> field <*> field <*> field <*> field <*> field
@@ -84,6 +87,33 @@ instance ToJSON Package where
     , "repositoryId" .= repositoryId
     , "elmJson" .= elmJson
     ]
+
+
+serializePackageAsSingleString Package{author=author, project=project, version=version} = T.concat [author, "/", project, "@", version]
+
+
+data AbbreviatedPackageInfo = AbbreviatedPackageInfo
+  { _abbreviatedPackageInfoPkgKey :: Text
+  , _abbreviatedPackageInfoVersions :: [Text]
+  }
+  deriving Show
+
+abbreviatedPackageInfoToJsonFragment AbbreviatedPackageInfo{_abbreviatedPackageInfoPkgKey=pkgKey, _abbreviatedPackageInfoVersions=versions}= (DAK.fromText pkgKey) .= toJSON versions
+
+packagesToOutgoingPackageData packages = 
+  Debug.traceShowId $ (Debug.traceShowId packages)
+    & fmap (\p -> (T.concat [author p, "/", project p], [version p]))
+    & (Map.fromListWith (++))
+    & Map.toList
+    & fmap (\(authorprojectkey, allversions) -> AbbreviatedPackageInfo{_abbreviatedPackageInfoPkgKey=authorprojectkey, _abbreviatedPackageInfoVersions=allversions})
+    & OutgoingPackageData
+
+data OutgoingPackageData = OutgoingPackageData [AbbreviatedPackageInfo] 
+  deriving Show
+
+instance ToJSON OutgoingPackageData where
+  toJSON (OutgoingPackageData abbreviatedPackageInfos) = 
+    object (fmap abbreviatedPackageInfoToJsonFragment abbreviatedPackageInfos)
 
 instance FromField Value where
   fromField :: SSF.FieldParser Value
@@ -180,11 +210,11 @@ withCustomConnection dbName action = withConnection dbName actionWithFKConstrain
 -- Maybe add? Be able to tell when a repository doesn't exist?
 getPackages :: RepositoryId -> IO [Package]
 getPackages repositoryId = withCustomConnection dbConfig
-  (\conn -> query conn "SELECT * FROM packages p WHERE repository_id = ?" (Only repositoryId) :: IO [Package])
+  (\conn -> query conn "SELECT id, author, project, version, hash, repository_id, elm_json FROM packages p WHERE repository_id = ?" (Only repositoryId) :: IO [Package])
 
 getRecentPackages :: Int -> RepositoryId -> IO [Package]
 getRecentPackages n repositoryId = withCustomConnection dbConfig
-  (\conn -> query conn "SELECT * FROM packages WHERE id > ? AND repository_id = ?" (n, repositoryId))
+  (\conn -> query conn "SELECT id, author, project, version, hash, repository_id, elm_json FROM packages WHERE id > ? AND repository_id = ?" (n, repositoryId))
 
 --FIXME: Deal with all the unsafe head calls
 getPackageDataBlob :: RepositoryId -> Text -> Text -> Text -> Text -> IO (Only ByteString)
@@ -199,7 +229,7 @@ generateEndpointJson :: Text -> RepositoryId -> Text -> Text -> Text -> IO Value
 generateEndpointJson websitePrefix repositoryId author project version =
   do
     (Only hash) <- withCustomConnection dbConfig queryForHash
-    pure $ object [ "hash" .= hash, "url" .= T.concat [websitePrefix, "/", intToText (unRepositoryId repositoryId), "/", author, "/", project, "/", version, "/package.zip"] ]
+    pure $ object [ "hash" .= hash, "url" .= T.concat [websitePrefix, "/", intToText (unRepositoryId repositoryId), "/packages/", author, "/", project, "/", version, "/package.zip"] ]
   where
     queryForHash :: Connection -> IO (Only Text)
     queryForHash conn = head <$> query conn "SELECT hash FROM packages WHERE repository_id = ? AND author = ? AND project = ? AND version = ?" (repositoryId, author, project, version)
@@ -288,10 +318,10 @@ mimeTypeFromFileName fileName =
 customAuthSchemeName :: Text
 customAuthSchemeName = "CustomZokkaRepoAuthToken"
 
-authTokenToRepositoryId :: Text -> IO (Only RepositoryId)
+authTokenToRepositoryId :: Text -> IO (Maybe RepositoryId)
 authTokenToRepositoryId authToken = withCustomConnection dbConfig
   -- FIXME: Deal with the broken head here
-  (\conn -> head <$> query conn "SELECT repository_id FROM auth_tokens WHERE token_value = ?" (Only authToken))
+  (\conn -> (fmap unOnly . safeHead) <$> query conn "SELECT repository_id FROM auth_tokens WHERE token_value = ?" (Only authToken))
 
 -- We use a Text instead of a ByteString as the underlying datatype because
 -- ultimately we are using Base64 encoding when we have strings, which are not
@@ -363,9 +393,15 @@ retrieveRepositoryIdForAuthToken =
           -- space, should split more generally on whitespace
           -- FIXME: Deal with error cases here
           let authScheme : authToken : _ = splitOn " " (TL.toStrict authHeaderValue)
-          when (authScheme /= customAuthSchemeName) (do {status status403; text "Token not authorized for this repository!"; finish})
-          (Only repositoryId) <- liftIO $ authTokenToRepositoryId authToken
-          pure repositoryId
+          when (authScheme /= customAuthSchemeName) (do {status status400; text "Incorrect authentication scheme used!"; finish})
+          repositoryIdMaybe <- liftIO $ authTokenToRepositoryId authToken
+          case repositoryIdMaybe of
+            Just repositoryId -> pure repositoryId
+            Nothing ->
+              do
+                status status403
+                text "Token not authorized for this repository"
+                finish
 
 retrieveUserIdForLoginSessionToken :: ActionM UserId
 retrieveUserIdForLoginSessionToken =
@@ -622,14 +658,14 @@ main = scotty 3000 $ do
     repositoryId <- pathParam "repository-id"
     authAgainstRepositoryId repositoryId
     packages <- liftIO $ getPackages repositoryId
-    json packages
+    json (packagesToOutgoingPackageData packages)
 
   get "/:repository-id/all-packages/since/:n" $ do
     n <- pathParam "n"
     repositoryId <- pathParam "repository-id"
     authAgainstRepositoryId repositoryId
     packages <- liftIO $ getRecentPackages n repositoryId
-    json packages
+    json (fmap serializePackageAsSingleString packages)
 
   -- Special case elm.json because it doesn't live in sqlar
   get "/:repository-id/packages/:author/:project/:version/elm.json" $ do

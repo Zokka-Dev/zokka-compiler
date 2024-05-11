@@ -1058,7 +1058,7 @@ downloadPackageToFilePath filePath zokkaRegistries manager pkg vsn =
     Just (Registry.PackageUrlKey packageData) ->
       do
         exists <- Dir.doesDirectoryExist filePath
-        printLog (show exists ++ "B (toFilePath)" ++ filePath)
+        printLog ("Checking whether " ++ filePath ++ "exists as a directory. Result: " ++ show exists)
         downloadPackageDirectlyToFilePath filePath (CustomRepositoriesData._url packageData) (CustomRepositoriesData._shaHash packageData) manager
     Nothing ->
       let
@@ -1074,10 +1074,8 @@ downloadPackageDirectly cache packageUrl manager pkg vsn =
     urlString = Utf8.toChars packageUrl
   in
     Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
-    -- FIXME: Deal with the SHA hash instead of ignoring it
       \(_, archive) ->
         Right <$> do
-          printLog "hello world 2! FIXME"
           File.writePackage (Stuff.package cache pkg vsn) archive
 
 downloadPackageDirectlyToFilePath :: FilePath -> PackageUrl -> HumanReadableShaDigest -> Http.Manager -> IO (Either Exit.PackageProblem ())
@@ -1086,12 +1084,10 @@ downloadPackageDirectlyToFilePath filePath packageUrl expectedShaDigest manager 
     urlString = Utf8.toChars packageUrl
   in
     Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
-    -- FIXME: Deal with the SHA hash instead of ignoring it
       \(receivedShaHash, archive) ->
         if humanReadableShaDigestIsEqualToSha expectedShaDigest receivedShaHash
           then
             Right <$> do
-              printLog "hello world 2! FIXME (toFilePath)"
               File.writePackage filePath archive
           else
             -- FIXME Maybe use a custom error type instead of PP_BadArchiveHash that points to where the hash is defined in the custom-repo config
@@ -1118,7 +1114,7 @@ downloadPackageFromElmPackageRepo cache repositoryUrl headers manager pkg vsn =
               return $ Left $ Exit.PP_BadEndpointContent url
 
             Right (endpoint, expectedHash) ->
-              Http.getArchive manager endpoint Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
+              Http.getArchiveWithHeaders manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                 \(sha, archive) ->
                   if expectedHash == Http.shaToChars sha
                   then Right <$> do
@@ -1149,7 +1145,7 @@ downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl headers manag
               return $ Left $ Exit.PP_BadEndpointContent url
 
             Right (endpoint, expectedHash) ->
-              Http.getArchive manager endpoint Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
+              Http.getArchiveWithHeaders manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                 \(sha, archive) ->
                   if expectedHash == Http.shaToChars sha
                   then Right <$> do

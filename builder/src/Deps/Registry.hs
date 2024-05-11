@@ -407,7 +407,6 @@ postWithHeaders manager repositoryUrl path headers decoder callback =
     url = Website.route repositoryUrl path []
   in
   do
-    print "Hello there!"
     Http.post manager url headers Exit.RP_Http $
       \body ->
         case D.fromByteString decoder body of

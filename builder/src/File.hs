@@ -190,11 +190,11 @@ writePackage destination archive =
       return ()
 
     entry:entries ->
-      do  printLog ("writePackage to "  ++ destination)
+      do  print ("writePackage to "  ++ destination)
           destinationExists <- Dir.doesDirectoryExist destination
-          printLog ("destination: " ++ destination ++ " exists: " ++ (show destinationExists))
+          print ("destination: " ++ destination ++ " exists: " ++ (show destinationExists))
           let root = length (Zip.eRelativePath entry)
-          printLog ("this is our entry: " ++ (Zip.eRelativePath entry))
+          print ("this is our entry: " ++ (Zip.eRelativePath entry))
           mapM_ (writeEntry destination root) entries
 
 
@@ -298,7 +298,13 @@ listAllElmFilesRecursively startPath = do
       let path = startPath </> name
       isDirectory <- Dir.doesDirectoryExist path
       if isDirectory
-          then listAllElmFilesRecursively path
+          then 
+            do
+              remainingFiles <- listAllElmFilesRecursively path
+              -- We want to actually append directories as well because the way
+              -- the Elm compiler decompresses ZIP files requires us to have
+              -- directories as well
+              pure (path : remainingFiles)
           else 
             let 
               (_, ext) = FP.splitExtension path
@@ -306,4 +312,4 @@ listAllElmFilesRecursively startPath = do
             if ext == ".elm"
               then pure [path]
               else pure []
-    return (concat paths)
+    return (startPath : concat paths)

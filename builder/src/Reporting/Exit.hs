@@ -719,7 +719,7 @@ publishToReport publish =
     PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig localNameProvided availableLocalNames ->
       Help.report "PUBLISH WITH UNRECOGNIZED LOCAL REPOSITORY NAME" Nothing
       -- FIXME: Add actual path of the custom-repository-config.json
-        ("You provided the local repository name" ++ Utf8.toChars localNameProvided ++ " which does not seem to exist in the custom-package-repository-config.json being used in ELM_HOME. The following local names were found:")
+        ("You provided the local repository name " ++ Utf8.toChars localNameProvided ++ " which does not seem to exist in the custom-package-repository-config.json being used in ELM_HOME. The following local names were found:")
         [ D.vcat
           (map (\name -> D.indent 4 $ D.yellow (D.fromChars (Utf8.toChars name))) availableLocalNames)
         , D.reflow $

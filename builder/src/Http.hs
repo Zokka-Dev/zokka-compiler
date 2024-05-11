@@ -13,6 +13,7 @@ module Http
   , Sha
   , shaToChars
   , getArchive
+  , getArchiveWithHeaders
   -- upload
   , upload
   , uploadWithHeaders
@@ -153,6 +154,30 @@ shaToChars =
 -- FETCH ARCHIVE
 
 
+getArchiveWithHeaders
+  :: Manager
+  -> String
+  -> [Header]
+  -> (Error -> e)
+  -> e
+  -> ((Sha, Zip.Archive) -> IO (Either e a))
+  -> IO (Either e a)
+getArchiveWithHeaders manager url headers onError err onSuccess =
+  handle (handleSomeException url onError) $
+  handle (handleHttpException url onError) $
+  do  req0 <- parseUrlThrow url
+      let req1 =
+            req0
+              { method = methodGet
+              , requestHeaders = addDefaultHeaders headers
+              }
+      withResponse req1 manager $ \response ->
+        do  result <- readArchive (responseBody response)
+            case result of
+              Nothing -> return (Left err)
+              Just shaAndArchive -> onSuccess shaAndArchive
+
+
 getArchive
   :: Manager
   -> String
@@ -161,19 +186,7 @@ getArchive
   -> ((Sha, Zip.Archive) -> IO (Either e a))
   -> IO (Either e a)
 getArchive manager url onError err onSuccess =
-  handle (handleSomeException url onError) $
-  handle (handleHttpException url onError) $
-  do  req0 <- parseUrlThrow url
-      let req1 =
-            req0
-              { method = methodGet
-              , requestHeaders = addDefaultHeaders []
-              }
-      withResponse req1 manager $ \response ->
-        do  result <- readArchive (responseBody response)
-            case result of
-              Nothing -> return (Left err)
-              Just shaAndArchive -> onSuccess shaAndArchive
+  getArchiveWithHeaders manager url [] onError err onSuccess
 
 
 readArchive :: BodyReader -> IO (Maybe (Sha, Zip.Archive))
