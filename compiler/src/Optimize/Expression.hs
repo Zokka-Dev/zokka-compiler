@@ -364,10 +364,6 @@ optimizeTail :: Cycle -> Name.Name -> [Name.Name] -> Can.Expr -> Names.Tracker O
 optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
   case expression of
     Can.Call func args ->
-      -- optimize cycle :: Expr -> Tracker Expr
-      -- args :: [Expr]
-      -- map (optimize cycle) args :: [Tracker Expr]
-      -- traverse (optimize cycle) args :: Tracker [Expr]
       do  oargs <- traverse (optimize cycle) args
 
           let isMatchingName =
@@ -447,33 +443,11 @@ optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
 
 
 toTailDef :: Name.Name -> [Name.Name] -> [Opt.Destructor] -> Opt.Expr -> Opt.Def
-toTailDef name argNames destructors body
-  | _hasTailCall tailCallCheckResult && _hasClosures tailCallCheckResult =
-    undefined
-    -- Opt.TailDefWithClosures name argNames (foldr Opt.Destruct body destructors)
-  | _hasTailCall tailCallCheckResult && not (_hasClosures tailCallCheckResult) =
+toTailDef name argNames destructors body =
+  if hasTailCall body then
     Opt.TailDef name argNames (foldr Opt.Destruct body destructors)
-  | otherwise =
+  else
     Opt.Def name (Opt.Function argNames (foldr Opt.Destruct body destructors))
-  where
-    tailCallCheckResult = tailCallCheck body
-
-
-
-data TailCallCheckResult = TailCallCheckResult
-  { _hasTailCall :: Bool
-  , _hasClosures :: Bool
-  }
-
-
--- In theory this seems like something that could be done at the same time
--- instead of in two passes to save time?
--- Potential optimization area
-tailCallCheck :: Opt.Expr -> TailCallCheckResult
-tailCallCheck expr = TailCallCheckResult
-  { _hasClosures = possiblyHasClosure expr
-  , _hasTailCall = hasTailCall expr
-  }
 
 
 hasTailCall :: Opt.Expr -> Bool
@@ -514,39 +488,3 @@ decidecHasTailCall decider =
 
     Opt.FanOut _ tests fallback ->
       decidecHasTailCall fallback || any (decidecHasTailCall . snd) tests
-
-
-possiblyHasClosure :: Opt.Expr -> Bool
-possiblyHasClosure expression =
-  case expression of
-    Opt.Bool _ -> False
-    Opt.Chr _ -> False
-    Opt.Str _ -> False
-    Opt.Int _ -> False
-    Opt.Float _ -> False
-    Opt.VarLocal _ -> False
-    Opt.VarGlobal _ -> False
-    Opt.VarEnum _ _ -> False
-    Opt.VarBox _ -> False
-    Opt.VarCycle _ _ -> False
-    Opt.VarDebug {} -> False
-    Opt.VarKernel _ _ -> False
-    Opt.List exprs -> any possiblyHasClosure exprs
-    Opt.Function _ _ -> True
-    -- FIXME: Do we need to check the caller for closures? Or do we only need to check what's passed in?
-    -- This mainly depends on whether exprs could ever be empty
-    Opt.Call expr exprs -> possiblyHasClosure expr || any possiblyHasClosure exprs
-    Opt.TailCall _ namedExprs -> any (possiblyHasClosure . snd) namedExprs
-    Opt.If elseifsExprs elseExpr -> any (possiblyHasClosure . snd) elseifsExprs || possiblyHasClosure elseExpr
-    Opt.Let _ expr -> possiblyHasClosure expr
-    Opt.Destruct _ expr -> possiblyHasClosure expr
-    Opt.Case _ _ _ branchExprs -> any (possiblyHasClosure . snd) branchExprs
-    Opt.Accessor _ -> False
-    -- Have to check what's being accessed because maybe you're smuggling in a closure in a record literal
-    Opt.Access expr _ -> possiblyHasClosure expr
-    -- Again maybe in your update you're smuggling in a closure!
-    Opt.Update expr exprs -> possiblyHasClosure expr || any (possiblyHasClosure . snd) (Map.toList exprs)
-    Opt.Record fieldExprs -> any (possiblyHasClosure . snd) (Map.toList fieldExprs)
-    Opt.Unit -> False
-    Opt.Tuple expr0 expr1 maybeExpr -> possiblyHasClosure expr0 || possiblyHasClosure expr1 || any possiblyHasClosure maybeExpr
-    Opt.Shader {} -> False
