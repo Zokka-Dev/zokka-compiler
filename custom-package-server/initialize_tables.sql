@@ -38,7 +38,10 @@ CREATE TABLE auth_tokens (
     token_value_hash TEXT NOT NULL,
     -- No salt because token values are supposed to be random to begin with so
     -- we're not vulnerable to dictionary attacks
-    token_value_suffix_fragment TEXT NOT NULL,
+    --
+    -- We also include a fragment of the token value for UI purposes to help
+    -- users identify which token is which
+    token_value_fragment TEXT NOT NULL,
     user_id INTEGER NOT NULL,
     permission_id INTEGER NOT NULL,
     repository_id INTEGER NOT NULL,
@@ -85,10 +88,7 @@ CREATE TABLE login_sessions(
 
 CREATE INDEX idx_login_sessions_session_token_value ON login_sessions(session_token_value_hash);
 
+PRAGMA journal_mode=WAL;
+
 INSERT INTO permissions (id, level) VALUES (0, 'read');
 INSERT INTO permissions (id, level) VALUES (1, 'write');
-
-INSERT INTO users (id, username, password_hash, password_salt) VALUES (0, 'testuser0', 'somepasswordhash', 'somepasswordsalt');
-INSERT INTO repositories (id, human_readable_name, url_safe_name, owner_user_id) VALUES (0, 'Fun Repository', 'fun-repository', 0);
-INSERT INTO auth_tokens (id, token_value, user_id, permission_id, repository_id) VALUES (0, 'test-token', 0, 1, 0);
-INSERT INTO login_sessions (session_token_value, user_id) VALUES ('somelogintoken', 0);

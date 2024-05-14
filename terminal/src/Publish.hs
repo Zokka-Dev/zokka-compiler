@@ -51,6 +51,7 @@ import Reporting.Exit (Publish(PublishWithNoRepositoryLocalName, PublishCustomRe
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import Deps.Registry (createAuthHeader)
 import qualified Codec.Archive.Zip as Zip
+import Logging.Logger (printLog)
 
 
 
@@ -115,7 +116,7 @@ convertRegistryKeyToCustomSingleRepositoryData registryKey =
 
 
 allCustomSingleRepositoryDataFromRegistries :: Registry.ZokkaRegistries -> [CustomSingleRepositoryData]
-allCustomSingleRepositoryDataFromRegistries Registry.ZokkaRegistries{Registry._registries=registriesMap} = 
+allCustomSingleRepositoryDataFromRegistries Registry.ZokkaRegistries{Registry._registries=registriesMap} =
   Maybe.mapMaybe convertRegistryKeyToCustomSingleRepositoryData (Map.keys registriesMap)
 
 
@@ -128,7 +129,7 @@ localNameOfCustomSingleRepositoryData customSingleRepositoryData =
 
 findKeyByLocalName :: RepositoryLocalName -> [CustomSingleRepositoryData] -> Maybe CustomSingleRepositoryData
 findKeyByLocalName localName [] = Nothing
-findKeyByLocalName localName (customSingleRepositoryData : restOfRepos) = 
+findKeyByLocalName localName (customSingleRepositoryData : restOfRepos) =
   if localNameOfCustomSingleRepositoryData customSingleRepositoryData == localName
     then Just customSingleRepositoryData
     else findKeyByLocalName localName restOfRepos
@@ -136,7 +137,7 @@ findKeyByLocalName localName (customSingleRepositoryData : restOfRepos) =
 
 -- Consider whether a linear scan in a list of repositories is okay perf-wise
 lookupRepositoryByLocalName :: RepositoryLocalName -> Registry.ZokkaRegistries -> Maybe CustomSingleRepositoryData
-lookupRepositoryByLocalName repositoryLocalName zokkaRegistries = 
+lookupRepositoryByLocalName repositoryLocalName zokkaRegistries =
   findKeyByLocalName repositoryLocalName (allCustomSingleRepositoryDataFromRegistries zokkaRegistries)
 
 
@@ -162,8 +163,6 @@ getAllLocalNamesInRegistries registries = map localNameOfCustomSingleRepositoryD
 createZipArchiveOfSourceCode :: IO Zip.Archive
 createZipArchiveOfSourceCode = do
   elmFiles <- File.listAllElmFilesRecursively "src"
-  print "Here are all the elm files!"
-  print elmFiles
   -- Note that we must start with a "." entry. This is because the Elm compiler
   -- expects the very first entry of a ZIP archive to be the parent directory
   -- and then subtracts that prefix from every other file that is decompressed.
@@ -173,8 +172,7 @@ createZipArchiveOfSourceCode = do
   -- On the other hand if we used "", our underlying Zip library would blow up
   -- with an exception.
   let filesToZip = "." : "elm.json" : elmFiles
-  print "Files to zip!"
-  print filesToZip
+  printLog ("All the files we are zipping: " ++ show filesToZip)
   Zip.addFilesToArchive [] Zip.emptyArchive filesToZip
 
 
@@ -203,7 +201,7 @@ publish env@(Env root _ manager registry outline) repositoryLocalName =
 
               Task.io $ putStrLn ""
               case customRepositoriesData of
-                DefaultPackageServerRepoData defaultPackageServerRepo -> 
+                DefaultPackageServerRepoData defaultPackageServerRepo ->
                   let
                     repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
                   in
@@ -222,11 +220,11 @@ publish env@(Env root _ manager registry outline) repositoryLocalName =
                     Task.io $ putStrLn "Beginning to create in-memory ZIP archive of source code..."
                     zipArchive <- Task.io createZipArchiveOfSourceCode
                     Task.io $ putStrLn "Finished creating in-memory ZIP archive of source code!"
-                    Task.io $ print (Zip.filesInArchive zipArchive)
-                    registerToPZRRepo 
-                      manager 
-                      (_pzrPackageServerRepoTypeUrl pzrPackageServerRepo) (_pzrPackageServerRepoAuthToken pzrPackageServerRepo) 
-                      pkg 
+                    Task.io $ printLog ("All files in ZIP archive: " ++ show (Zip.filesInArchive zipArchive))
+                    registerToPZRRepo
+                      manager
+                      (_pzrPackageServerRepoTypeUrl pzrPackageServerRepo) (_pzrPackageServerRepoAuthToken pzrPackageServerRepo)
+                      pkg
                       vsn
                       docs
                       zipArchive

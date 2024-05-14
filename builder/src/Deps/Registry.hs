@@ -174,7 +174,7 @@ createRegistryFromSinglePackageLocation SinglePackageLocationData{_packageName=p
 fetchSingleCustomRepository :: Http.Manager -> CustomSingleRepositoryData -> IO (Either Exit.RegistryProblem Registry)
 fetchSingleCustomRepository manager customRepositoryData =
   case customRepositoryData of
-    DefaultPackageServerRepoData defaultPackageServerRepo -> 
+    DefaultPackageServerRepoData defaultPackageServerRepo ->
       let
         repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
       in
@@ -250,7 +250,7 @@ updateSingleRegistry manager registryKey registry =
   case registryKey of
     -- FIXME: need to deal with bare repos
     RepositoryUrlKey repositoryData -> case repositoryData of
-      DefaultPackageServerRepoData defaultPackageServerRepo -> 
+      DefaultPackageServerRepoData defaultPackageServerRepo ->
         updateSingleRegistryFromStandardElmRepo manager (_defaultPackageServerRepoTypeUrl defaultPackageServerRepo) registry
       -- FIXME: This is inefficient, in that we just download the entire custom repo every time, but we hope that custom repos are still quite small
       PZRPackageServerRepoData pzrPackageServerRepo -> updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo registry
@@ -284,24 +284,18 @@ createAuthHeader authTokenValue = ("Authorization", ByteString.concat [authSchem
 
 
 updateSingleRegistryFromPZRRepo :: Http.Manager -> PZRPackageServerRepo -> Registry -> IO (Either Exit.RegistryProblem Registry)
-updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo oldRegistry@(Registry size packages) =
+updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo _ =
+  -- FIXME: Note that unlike for updateSingleRegistryFromStandardElmRepo we
+  -- completely redownload the entire repository each time. This is quite
+  -- inefficient and there may be a better way of doing this. We're keeping this
+  -- for now because we assume that custom repos will be generally small-ish.
+  --
+  -- This is why we don't use the registry argument at all for now.
   let
     serverUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
     repoAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
   in
-  getWithHeaders manager serverUrl ("/all-packages/since/" ++ show size) [createAuthHeader repoAuthToken] (D.list newPkgDecoder) $
-    \news ->
-      case news of
-        [] ->
-          pure oldRegistry
-
-        _:_ ->
-          let
-            newSize = size + length news
-            newPkgs = foldr addNew packages news
-            newRegistry = Registry newSize newPkgs
-          in
-            pure newRegistry
+  fetchFromRepositoryUrlWithRepoAuthToken manager serverUrl repoAuthToken
 
 
 addNew :: (Pkg.Name, V.Version) -> Map.Map Pkg.Name KnownVersions -> Map.Map Pkg.Name KnownVersions

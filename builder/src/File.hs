@@ -190,11 +190,8 @@ writePackage destination archive =
       return ()
 
     entry:entries ->
-      do  print ("writePackage to "  ++ destination)
-          destinationExists <- Dir.doesDirectoryExist destination
-          print ("destination: " ++ destination ++ " exists: " ++ (show destinationExists))
+      do  destinationExists <- Dir.doesDirectoryExist destination
           let root = length (Zip.eRelativePath entry)
-          print ("this is our entry: " ++ (Zip.eRelativePath entry))
           mapM_ (writeEntry destination root) entries
 
 
