@@ -1,15 +1,20 @@
 import subprocess
+import threading
+import time
 
 def run_command(command):
     print("Executing command:", " ".join(command))
     result = subprocess.run(command, capture_output=True, text=True)
     output = result.stdout
+    if result.returncode != 0:
+        raise Exception(f"Command '{command}' did not complete successfully!")
     print(output)
     return output
 
 def create_user():
     command = [
         "curl",
+        "--fail-with-body",
         "-F", "username=test-user",
         "-F", "password=test-password",
         "http://localhost:3000/dashboard/user",
@@ -20,6 +25,7 @@ def create_user():
 def login_as_user():
     command = [
         "curl",
+        "--fail-with-body",
         "-F", "username=test-user",
         "-F", "password=test-password",
         "http://localhost:3000/dashboard/login",
@@ -30,6 +36,7 @@ def login_as_user():
 def create_repository(login_token):
     command = [
         "curl",
+        "--fail-with-body",
         "-H", f"Authorization: Basic {login_token}",
         "-XPOST",
         f"http://localhost:3000/dashboard/repository?repository-name=test-repo&repository-url-safe-name=test-repo-url-name",
@@ -40,6 +47,7 @@ def create_repository(login_token):
 def create_token(repository_id, login_token):
     command = [
         "curl",
+        "--fail-with-body",
         "-H", f"Authorization: Basic {login_token}",
         "-XPOST",
         f"http://localhost:3000/dashboard/repository/{repository_id}/token?permission=readwrite",
@@ -50,6 +58,7 @@ def create_token(repository_id, login_token):
 def upload_package(repository_id, repo_auth_token):
     command = [
         "curl",
+        "--fail-with-body",
         "-H", f"Authorization: CustomZokkaRepoAuthToken {repo_auth_token}",
         "-F", "elm.json=@test-data/example-elm.json",
         "-F", "docs.json=@test-data/example-docs.json",
@@ -63,6 +72,7 @@ def upload_package(repository_id, repo_auth_token):
 def get_all_packages(repository_id, repo_auth_token):
     command = [
         "curl",
+        "--fail-with-body",
         "-H", f"Authorization: CustomZokkaRepoAuthToken {repo_auth_token}",
         f"http://localhost:3000/{repository_id}/all-packages"
     ]
@@ -72,17 +82,63 @@ def get_all_packages(repository_id, repo_auth_token):
 def get_dashboard(login_token):
     command = [
         "curl",
+        "--fail-with-body",
         "-H", f"Authorization: Basic {login_token}",
         "http://localhost:3000/dashboard"
     ]
     output = run_command(command)
     return output
 
+SHOULD_SHUTDOWN_SERVER = False
+SQLITE_DATABASE_FILENAME = "temp_testing_package_db.db"
+
+def run_server_in_background():
+    command = [
+        f"cabal run myPackage -- --port=3000 --database-file={SQLITE_DATABASE_FILENAME} --initialization-script=initialize_tables.sql --external-website-url=https://localhost:3000",
+    ]
+    # hack until we figure out what's causing things to hang
+    # this ensures that we don't have to wait for things to compile and
+    # therefore that our sleep of 3 seconds is sufficient
+    run_command(["cabal", "build"])
+    def target(setup_event, shutdown_event):
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
+        print(f"Executing {command}")
+        time.sleep(3)
+        setup_event.set()
+        # For some reason the following just hangs forever. Don't know why.
+        #for stdout_line in iter(process.stdout.readline, ''):
+            #print(stdout_line, end='')
+            #if "Setting phasers to stun" in stdout_line:
+                #setup_event.set()
+                #break
+        shutdown_event.wait()
+        process.terminate()
+
+    server_has_setup_event = threading.Event()
+    should_shutdown_server_event = threading.Event()
+    thread = threading.Thread(target=target, args=(server_has_setup_event,should_shutdown_server_event))
+    thread.start()
+    return (thread, server_has_setup_event, should_shutdown_server_event)
+
+def delete_database_file():
+    command = ["rm", "-f", SQLITE_DATABASE_FILENAME]
+    output = run_command(command)
+    return output
+
 if __name__ == "__main__":
-    create_user()
-    user_login_token = login_as_user()
-    repository_id = create_repository(user_login_token)
-    repository_auth_token = create_token(repository_id, user_login_token)
-    upload_output = upload_package(repository_id, repository_auth_token)
-    all_packages_output = get_all_packages(repository_id, repository_auth_token)
-    dashboard_output = get_dashboard(user_login_token)
+    try:
+        (server_thread, server_has_setup_event, should_shutdown_server_event) = run_server_in_background()
+        server_has_setup_event.wait()
+        create_user()
+        user_login_token = login_as_user()
+        repository_id = create_repository(user_login_token)
+        repository_auth_token = create_token(repository_id, user_login_token)
+        upload_output = upload_package(repository_id, repository_auth_token)
+        all_packages_output = get_all_packages(repository_id, repository_auth_token)
+        dashboard_output = get_dashboard(user_login_token)
+        should_shutdown_server_event.set()
+        server_thread.join()
+    finally:
+        if "should_shutdown_server_event" in locals():
+            should_shutdown_server_event.set()
+        delete_database_file()
