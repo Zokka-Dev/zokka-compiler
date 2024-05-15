@@ -9,7 +9,8 @@ import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..), encode, decode)
 import qualified Data.Aeson.Key as DAK
 import qualified Data.Aeson.Types as DAT
 import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam, Parsable, ScottyM)
-import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection, field, withConnection, Only (..), withTransaction)
+import Web.Scotty.Cookie (getCookie, setCookie, defaultSetCookie, setCookieName, setCookieValue)
+import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection(..), field, Only (..), withTransaction, withConnection)
 import Data.Text (Text, splitOn)
 import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
 import Data.Text.Read (decimal)
@@ -42,6 +43,8 @@ import qualified Options.Applicative as OA
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import System.IO.Unsafe (unsafePerformIO)
 import System.IO (readFile)
+import Control.Exception (bracket)
+import qualified Network.Wai.Middleware.Static as Static
 
 safeHead :: [a] -> Maybe a
 safeHead (x : _) = Just x
@@ -232,9 +235,6 @@ dbFileName = unsafePerformIO (newIORef "package_server_db.db")
 
 onDiskDbFileName :: String
 onDiskDbFileName = "package_server_db.db"
-
-inMemoryDbName :: String
-inMemoryDbName = "file::memory:?cache=shared"
 
 withCustomConnection :: (Connection -> IO a) -> IO a
 withCustomConnection action =
@@ -519,39 +519,44 @@ retrieveRepositoryIdForAuthToken =
 retrieveUserIdForLoginSessionToken :: ActionM UserId
 retrieveUserIdForLoginSessionToken =
   do
-    authTokenValue <- header "Authorization"
-    case authTokenValue of
-      Nothing ->
+    authTokenValueMaybe <- header "Authorization"
+    loginTokenFromCookieMaybe <- getCookie "login-token"
+
+    authHeaderValue <- case (authTokenValueMaybe, loginTokenFromCookieMaybe) of
+      (Just authToken, _) ->
+        pure authToken
+      (_, Just loginTokenFromCookie) ->
+        pure (TL.fromStrict loginTokenFromCookie)
+      (Nothing, Nothing) ->
         do
           status status401
           text (T.concat ["WWW-Authenticate: Basic realm=\"Access to the dashboard\""])
           finish
-      Just authHeaderValue ->
+
+    -- FIXME: Have a more robust thing than just splitting on single
+    -- space, should split more generally on whitespace
+    -- FIXME: Deal with error cases here
+    let authScheme : loginSessionToken : _ = splitOn " " (TL.toStrict authHeaderValue)
+    -- FIXME: Deal with authScheme
+    let sessionTokenMaybe = validateTextIsBase64 loginSessionToken
+    sessionToken <- case sessionTokenMaybe of
+      Nothing ->
         do
-          -- FIXME: Have a more robust thing than just splitting on single
-          -- space, should split more generally on whitespace
-          -- FIXME: Deal with error cases here
-          let authScheme : loginSessionToken : _ = splitOn " " (TL.toStrict authHeaderValue)
-          -- FIXME: Deal with authScheme
-          let sessionTokenMaybe = validateTextIsBase64 loginSessionToken
-          sessionToken <- case sessionTokenMaybe of
-            Nothing ->
-              do
-                status status400
-                text "Login session token was not valid base64!"
-                finish
-            Just sessionTokenAsBase64 ->
-              pure (SessionToken sessionTokenAsBase64)
-          let sessionTokenHash = hashSessionToken sessionToken
-          maybeUserId <- liftIO $ validateLoginSessionToken sessionTokenHash
-          case maybeUserId of
-            Nothing ->
-              do
-                status status403
-                text "Invalid login session token!"
-                finish
-            Just userId ->
-              pure userId
+          status status400
+          text "Login session token was not valid base64!"
+          finish
+      Just sessionTokenAsBase64 ->
+        pure (SessionToken sessionTokenAsBase64)
+    let sessionTokenHash = hashSessionToken sessionToken
+    maybeUserId <- liftIO $ validateLoginSessionToken sessionTokenHash
+    case maybeUserId of
+      Nothing ->
+        do
+          status status403
+          text "Invalid login session token!"
+          finish
+      Just userId ->
+        pure userId
 
 failOnCondition :: Text -> Status -> Bool -> ActionM ()
 failOnCondition msg statusCode condition = when condition failureAction
@@ -873,7 +878,18 @@ scottyServer externalWebsiteUrl =
       username <- formParam "username"
       password <- formParam "password"
       loginToken <- loginUserActionM username password
-      text (sessionTokenToText loginToken)
+      let loginTokenAsText = sessionTokenToText loginToken
+      -- Note that we don't want to use the underlying bytes of login, we want
+      -- the utf8 representation of the base64 encoding. This is because
+      -- annoyingly setCookie requires everything to be ByteStrings that are
+      -- sent into it. But we want to send the utf-8 representation of the
+      -- base64 string!
+      --
+      -- We can revisit this to see if this means we don't need to worry about
+      -- base64 encoding things.
+      let loginTokenAsByteString = encodeUtf8 loginTokenAsText
+      setCookie (defaultSetCookie { setCookieName = "login-token", setCookieValue = encodeUtf8 loginTokenAsText })
+      text loginTokenAsText 
 
     post "/dashboard/repository" $ do
       userId <- retrieveUserIdForLoginSessionToken
@@ -905,7 +921,7 @@ scottyServer externalWebsiteUrl =
       let tokenStrings = fmap (\(Only x) -> x) tokens
       json tokenStrings
 
-    get "/dashboard" $ do
+    get "/dashboard/all-data" $ do
       userId <- retrieveUserIdForLoginSessionToken
       dashboardData <- liftIO $ getTopLevelDashboard userId
       json dashboardData
@@ -913,11 +929,16 @@ scottyServer externalWebsiteUrl =
     get "/" $ do
       text "Welcome to the custom package site!"
 
+    let staticFiles = Static.only [("dashboard/index.html", "generated-static-files/dashboard/index.html")]
+
+    middleware (Static.staticPolicy staticFiles)
+
+
 data CommandLineOptions = CommandLineOptions
   { _commandLineOptionsPortNumber :: Int
   -- FIXME: Use a Maybe instead of privileging the empty string
   , _commandLineOptionsSQLInitializationScriptLocation :: FilePath
-  , _commandLineOptionsUseInMemoryDatabase :: Bool
+  , _commandLineOptionsDatabaseFilename ::  FilePath
   , _commandLineOptionsTurnOnTestMode :: Bool
   , _commandLineOptionsExternalWebsiteUrl :: Text
   }
@@ -927,13 +948,13 @@ commandLineArgParser =
   CommandLineOptions
     <$> portNumber
     <*> initializationScriptLocation
-    <*> useInMemoryDatabase
+    <*> databaseFilename
     <*> turnOnTestMode
     <*> externalWebsiteUrl
     where
       portNumber = OA.option OA.auto (OA.value 3000 <> OA.long "port" <> OA.short 'p' <> OA.metavar "PORT" <> OA.help "The port which the web server will bind to")
       initializationScriptLocation = OA.option OA.str (OA.value "" <> OA.long "initialization-script" <> OA.short 'i' <> OA.help "The location of the SQL initialization script")
-      useInMemoryDatabase = OA.switch (OA.long "use-in-memory-database" <> OA.short 'u' <> OA.help "Use an in-memory SQLite database instead of storing to disk")
+      databaseFilename = OA.option OA.str (OA.long "database-file" <> OA.short 'd' <> OA.help "Path to sqlite DB file.")
       turnOnTestMode = OA.switch (OA.long "test-mode" <> OA.short 't' <> OA.help "Run a short test script and then exit")
       externalWebsiteUrl = OA.option OA.str (OA.long "external-website-url" <> OA.short 'e' <> OA.help "The external website URL (necessary for packages to be read by the Zokka compiler). Make sure to leave the final slash off!")
 
@@ -993,15 +1014,9 @@ main :: IO ()
 main =
   do
     commandLineArgs <- OA.execParser commandLineArgParserInfo
-    if _commandLineOptionsUseInMemoryDatabase commandLineArgs
-      then
-        do
-          putStrLn "Using in-memory DB..."
-          writeIORef dbFileName inMemoryDbName
-      else
-        do
-          putStrLn "Using on-disk DB..."
-          writeIORef dbFileName onDiskDbFileName
+    let dbFilePath = _commandLineOptionsDatabaseFilename commandLineArgs
+    putStrLn ("USing (or creating) SQLite database at " ++ dbFilePath)
+    writeIORef dbFileName dbFilePath
     let scriptLocation = _commandLineOptionsSQLInitializationScriptLocation commandLineArgs
     if scriptLocation == ""
       then pure ()

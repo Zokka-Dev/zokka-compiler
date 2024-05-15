@@ -8,7 +8,6 @@ category:            Web
 build-type:          Simple
 
 Common myPackage-common
-  exposed-modules:     Main
   other-modules:      
   build-depends:       base >= 4.7 && < 5,
                        aeson,
@@ -27,7 +26,8 @@ Common myPackage-common
                        entropy,
                        base64-bytestring,
                        SHA,
-                       optparse-applicative
+                       optparse-applicative,
+                       wai-middleware-static
   hs-source-dirs:      src
   default-language:    Haskell2010
 

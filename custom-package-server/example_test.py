@@ -84,7 +84,7 @@ def get_dashboard(login_token):
         "curl",
         "--fail-with-body",
         "-H", f"Authorization: Basic {login_token}",
-        "http://localhost:3000/dashboard"
+        "http://localhost:3000/dashboard/all-data"
     ]
     output = run_command(command)
     return output
