@@ -29,6 +29,7 @@ import Session
 import Skeleton
 import Task
 import Url.Builder as Url
+import Utils.LoginUpdate exposing (LoginUpdate(..), httpErrorToLoginUpdate)
 import Utils.Markdown as Markdown
 import Utils.OneOrMore exposing (OneOrMore)
 import Time
@@ -81,7 +82,7 @@ type DocsError
 -- INIT
 
 
-init : Session.Data -> String -> String -> Maybe V.Version -> Focus -> Maybe String -> ( Model, Cmd Msg )
+init : Session.Data -> String -> String -> Maybe V.Version -> Focus -> Maybe String -> ( Model, Cmd Msg, LoginUpdate )
 init session author project version focus query =
   let
     model =
@@ -106,12 +107,14 @@ init session author project version focus query =
           Release.getTime (Maybe.withDefault latest version) releases
             |> Maybe.map Success
             |> Maybe.withDefault Failure
+        (newModel, cmd) = getInfo latest { model | latest = Success latest, time = time }
       in
-      getInfo latest { model | latest = Success latest, time = time }
+      (newModel, cmd, NoUpdateAboutLoginStatus)
 
     Nothing ->
       ( model
       , Http.send GotReleases (Session.fetchReleases author project)
+      , NoUpdateAboutLoginStatus
       )
 
 
@@ -196,7 +199,7 @@ type Msg
   | GotManifest V.Version (Result Http.Error Project.PackageInfo)
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> ( Model, Cmd Msg, LoginUpdate )
 update msg model =
   case msg of
     QueryChanged query ->
@@ -204,16 +207,18 @@ update msg model =
       , case model.focus of
           Module name _ -> scrollViewportTo "pkg-nav-modules" ("nav-" ++ name)
           _ -> Cmd.none
+      , NoUpdateAboutLoginStatus
       )
 
     ScrollAttempted _ ->
       ( model
       , Cmd.none
+      , NoUpdateAboutLoginStatus
       )
 
     GotReleases result ->
       case result of
-        Err _ ->
+        Err httpError ->
           ( { model
                 | latest = Failure
                 , readme = Failure
@@ -221,6 +226,7 @@ update msg model =
                 , manifest = Failure
             }
           , Cmd.none
+          , httpErrorToLoginUpdate httpError
           )
 
         Ok releases ->
@@ -230,19 +236,22 @@ update msg model =
               Release.getTime (Maybe.withDefault latest model.version) releases
                 |> Maybe.map Success
                 |> Maybe.withDefault Failure
+            (newModel, cmd) =
+              getInfo latest
+                { model
+                    | latest = Success latest
+                    , time = time
+                    , session = Session.addReleases model.author model.project releases model.session
+                }
           in
-          getInfo latest
-            { model
-                | latest = Success latest
-                , time = time
-                , session = Session.addReleases model.author model.project releases model.session
-            }
+          ( newModel, cmd, NoUpdateAboutLoginStatus )
 
     GotReadme version result ->
       case result of
-        Err _ ->
+        Err httpError ->
           ( { model | readme = Failure }
           , Cmd.none
+          , httpErrorToLoginUpdate httpError
           )
 
         Ok readme ->
@@ -251,13 +260,15 @@ update msg model =
                 , session = Session.addReadme model.author model.project version readme model.session
             }
           , scrollIfNeeded model.focus
+          , ConfirmedUserIsLoggedIn
           )
 
     GotDocs version result ->
       case result of
-        Err _ ->
+        Err httpError ->
           ( { model | docs = Failure }
           , Cmd.none
+          , httpErrorToLoginUpdate httpError
           )
 
         Ok docs ->
@@ -266,13 +277,15 @@ update msg model =
                 , session = Session.addDocs model.author model.project version docs model.session
             }
           , scrollIfNeeded model.focus
+          , ConfirmedUserIsLoggedIn
           )
 
     GotManifest version result ->
       case result of
-        Err _ ->
+        Err httpError ->
           ( { model | manifest = Failure }
           , Cmd.none
+          , httpErrorToLoginUpdate httpError
           )
 
         Ok manifest ->
@@ -281,6 +294,7 @@ update msg model =
                 , session = Session.addManifest model.author model.project version manifest model.session
             }
           , Cmd.none
+          , ConfirmedUserIsLoggedIn
           )
 
 

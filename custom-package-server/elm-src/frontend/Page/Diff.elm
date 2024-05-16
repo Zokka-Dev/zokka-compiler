@@ -19,6 +19,7 @@ import Release
 import Session
 import Skeleton
 import Url.Builder as Url
+import Utils.LoginUpdate exposing (LoginUpdate(..), httpErrorToLoginUpdate)
 import Utils.Markdown as Markdown
 import Utils.OneOrMore as OneOrMore exposing (OneOrMore(..))
 import Time
@@ -42,17 +43,19 @@ type Releases
   | Success (OneOrMore Release.Release)
 
 
-init : Session.Data -> String -> String -> ( Model, Cmd Msg )
+init : Session.Data -> String -> String -> ( Model, Cmd Msg, LoginUpdate )
 init session author project =
   case Session.getReleases session author project of
     Just releases ->
       ( Model session author project (Success releases)
       , Cmd.none
+      , NoUpdateAboutLoginStatus
       )
 
     Nothing ->
       ( Model session author project Loading
       , Http.send GotReleases (Session.fetchReleases author project)
+      , NoUpdateAboutLoginStatus
       )
 
 
@@ -63,14 +66,15 @@ type Msg
   = GotReleases (Result Http.Error (OneOrMore Release.Release))
 
 
-update : Msg -> Model -> ( Model, Cmd msg )
+update : Msg -> Model -> ( Model, Cmd msg, LoginUpdate )
 update msg model =
   case msg of
     GotReleases result ->
       case result of
-        Err _ ->
+        Err httpError ->
           ( { model | releases = Failure }
           , Cmd.none
+          , httpErrorToLoginUpdate httpError
           )
 
         Ok releases ->
@@ -79,6 +83,7 @@ update msg model =
                 , session = Session.addReleases model.author model.project releases model.session
             }
           , Cmd.none
+          , ConfirmedUserIsLoggedIn
           )
 
 

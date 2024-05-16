@@ -1,0 +1,113 @@
+html,
+head,
+body {
+  background-color: #121212;
+}
+
+body {
+  color: #e5e5e5;
+}
+
+.logo-text {
+  color: #e5e5e5;
+}
+
+.header {
+  background-color: black;
+  color: #e5e5e5;
+}
+
+.header-bar {
+  background-color: black;
+}
+
+.header-bar .center {
+  background-color: black;
+}
+
+.page::before {
+  background-color: black;
+}
+
+.page-margin {
+  background-color: black;
+}
+
+.header-bar svg {
+  fill: #5fabdc;
+}
+
+.header {
+  color: #e5e5e5;
+}
+
+.header > a {
+  color: #e5e5e5;
+}
+
+pre {
+  background-color: black;
+  border: 0;
+}
+
+input {
+  background-color: #424242;
+  border: 0 !important;
+  color: #e5e5e5;
+}
+
+input::placeholder {
+  color: #e5e5e5;
+}
+
+a {
+  color: #81d4fa;
+}
+
+a .pkg-summary-author {
+  color: #5fabdc;
+}
+
+.pkg-summary {
+  border-color: #424242;
+}
+
+.pkg-hint {
+  background-color: black;
+}
+
+.catalog-sidebar {
+  border-color: #424242;
+}
+
+.version-warning {
+  color: white;
+}
+
+.version-warning a {
+  color: white;
+}
+
+.pkg-nav {
+  border-color: #424242;
+}
+
+#pkg-nav-modules {
+  border-color: #424242;
+}
+
+.docs-block {
+  border-color: #424242;
+}
+
+:not(pre)>code {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.block-list img {
+  background-color: white;
+}
+
+.grey-link {
+  color: #424242;
+}

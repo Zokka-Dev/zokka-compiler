@@ -7,6 +7,7 @@ import Browser.Events
 import Dict
 import Elm.Version as V
 import Html
+import Html.Attributes
 import Http
 import Page.Docs as Docs
 import Page.Diff as Diff
@@ -20,6 +21,7 @@ import Url
 import Url.Builder
 import Url.Parser as Parser exposing (Parser, (</>), (<?>), custom, fragment, map, oneOf, s, top)
 import Url.Parser.Query as Query
+import Utils.LoginUpdate exposing (LoginUpdate(..))
 import Utils.Source as Source
 
 
@@ -41,11 +43,13 @@ main =
 
 -- MODEL
 
+type LoginStatus = LoggedIn | NotLoggedIn | UnknownLoginStatus | LoggedInButUnauthorized
 
 type alias Model =
   { key : Nav.Key
   , page : Page
   , width : Int
+  , loginStatus : LoginStatus
   }
 
 
@@ -72,28 +76,59 @@ subscriptions model =
 
 view : Model -> Browser.Document Msg
 view model =
-  case model.page of
-    NotFound _ ->
-      Skeleton.view never
-        { title = "Not Found"
-        , header = []
-        , warning = Skeleton.NoProblems
-        , attrs = Problem.styles
-        , kids = Problem.notFound
-        }
+  let
+    pageView =
+      case model.page of
+        NotFound _ ->
+          Skeleton.view never
+            { title = "Not Found"
+            , header = []
+            , warning = Skeleton.NoProblems
+            , attrs = Problem.styles
+            , kids = Problem.notFound
+            }
 
-    Search search ->
-      Skeleton.view SearchMsg (Search.view search)
+        Search search ->
+          Skeleton.view SearchMsg (Search.view search)
 
-    Docs docs ->
-      Skeleton.view DocsMsg (Docs.view docs model.width)
+        Docs docs ->
+          Skeleton.view DocsMsg (Docs.view docs model.width)
 
-    Diff diff ->
-      Skeleton.view never (Diff.view diff)
+        Diff diff ->
+          Skeleton.view never (Diff.view diff)
 
-    Help help ->
-      Skeleton.view never (Help.view help)
+        Help help ->
+          Skeleton.view never (Help.view help)
+  in
+  case Debug.log "top-level view" model.loginStatus of
+      LoggedInButUnauthorized -> { title = "Unauthorized", body = [ Html.text "You are not authorized to see this page!" ] }
+      NotLoggedIn -> { title = "Login Page", body = [ viewLoginPage ] }
+      LoggedIn -> pageView
+      UnknownLoginStatus -> pageView
 
+
+viewLoginPage : Html.Html msg
+viewLoginPage =
+  Html.div []
+    [ Html.text "You must login!"
+    , Html.form
+      [ Html.Attributes.method "post", Html.Attributes.action "http://localhost:3000/dashboard/login" ]
+      [ Html.div
+        []
+        [ Html.label [ Html.Attributes.for "username" ] [ Html.text "Username:" ]
+        , Html.input [ Html.Attributes.type_ "text", Html.Attributes.name "username", Html.Attributes.id "username" ] []
+        ]
+      , Html.div
+        []
+        [ Html.label [ Html.Attributes.for "password" ] [ Html.text "Password:" ]
+        , Html.input [ Html.Attributes.type_ "text", Html.Attributes.name "password", Html.Attributes.id "password" ] []
+        ]
+      , Html.div
+        []
+        [ Html.input [ Html.Attributes.type_ "submit", Html.Attributes.value "Submit" ] []
+        ]
+      ]
+    ]
 
 
 -- INIT
@@ -105,6 +140,7 @@ init width url key =
     { key = key
     , page = NotFound Session.empty
     , width = width
+    , loginStatus = UnknownLoginStatus
     }
 
 
@@ -185,30 +221,43 @@ update message model =
           )
 
 
-stepSearch : Model -> ( Search.Model, Cmd Search.Msg ) -> ( Model, Cmd Msg )
-stepSearch model (search, cmds) =
+updateModelBasedOnLoginUpdate : LoginUpdate -> Model -> Model
+updateModelBasedOnLoginUpdate loginUpdate model =
+    case loginUpdate of
+        ConfirmedUserIsLoggedIn -> { model | loginStatus = LoggedIn }
+        ConfirmedUserIsNotLoggedIn -> { model | loginStatus = NotLoggedIn }
+        ConfirmedUserIsLoggedInButWithWrongCreds -> { model | loginStatus = LoggedInButUnauthorized }
+        NoUpdateAboutLoginStatus -> model
+
+
+stepSearch : Model -> ( Search.Model, Cmd Search.Msg, LoginUpdate ) -> ( Model, Cmd Msg )
+stepSearch model (search, cmds, loginUpdate) =
   ( { model | page = Search search }
+    |> updateModelBasedOnLoginUpdate loginUpdate
   , Cmd.map SearchMsg cmds
   )
 
 
-stepDocs : Model -> ( Docs.Model, Cmd Docs.Msg ) -> ( Model, Cmd Msg )
-stepDocs model (docs, cmds) =
+stepDocs : Model -> ( Docs.Model, Cmd Docs.Msg, LoginUpdate ) -> ( Model, Cmd Msg )
+stepDocs model (docs, cmds, loginUpdate) =
   ( { model | page = Docs docs }
+    |> updateModelBasedOnLoginUpdate loginUpdate
   , Cmd.map DocsMsg cmds
   )
 
 
-stepDiff : Model -> ( Diff.Model, Cmd Diff.Msg ) -> ( Model, Cmd Msg )
-stepDiff model (diff, cmds) =
+stepDiff : Model -> ( Diff.Model, Cmd Diff.Msg, LoginUpdate ) -> ( Model, Cmd Msg )
+stepDiff model (diff, cmds, loginUpdate) =
   ( { model | page = Diff diff }
+    |> updateModelBasedOnLoginUpdate loginUpdate
   , Cmd.map DiffMsg cmds
   )
 
 
-stepHelp : Model -> ( Help.Model, Cmd Help.Msg ) -> ( Model, Cmd Msg )
-stepHelp model (help, cmds) =
+stepHelp : Model -> ( Help.Model, Cmd Help.Msg, LoginUpdate ) -> ( Model, Cmd Msg )
+stepHelp model (help, cmds, loginUpdate) =
   ( { model | page = Help help }
+    |> updateModelBasedOnLoginUpdate loginUpdate
   , Cmd.map HelpMsg cmds
   )
 
@@ -324,7 +373,7 @@ stepUrl url model =
             (stepHelp model (Help.init session "Documentation Format" "/assets/help/documentation-format.md"))
         ]
   in
-  case Parser.parse parser url of
+  case Parser.parse parser (Debug.log "url" url) of
     Just answer ->
       answer
 

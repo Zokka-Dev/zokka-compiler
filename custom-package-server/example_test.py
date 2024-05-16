@@ -6,8 +6,9 @@ def run_command(command):
     print("Executing command:", " ".join(command))
     result = subprocess.run(command, capture_output=True, text=True)
     output = result.stdout
+    stderroutput = result.stderr
     if result.returncode != 0:
-        raise Exception(f"Command '{command}' did not complete successfully!")
+        raise Exception(f"Command '{command}' did not complete successfully!  Stdout: {output} Stderr: {stderroutput}")
     print(output)
     return output
 
@@ -64,7 +65,7 @@ def upload_package(repository_id, repo_auth_token):
         "-F", "docs.json=@test-data/example-docs.json",
         "-F", "README.md=@test-data/example-readme.md",
         "-F", "package.zip=@test-data/example-package.txt",
-        f"http://localhost:3000/{repository_id}/upload-package?name=some-author/some-project&version=1.0.0"
+        f"http://localhost:3000/api/{repository_id}/upload-package?name=some-author/some-project&version=1.0.0"
     ]
     output = run_command(command)
     return output
@@ -74,7 +75,7 @@ def get_all_packages(repository_id, repo_auth_token):
         "curl",
         "--fail-with-body",
         "-H", f"Authorization: CustomZokkaRepoAuthToken {repo_auth_token}",
-        f"http://localhost:3000/{repository_id}/all-packages"
+        f"http://localhost:3000/api/{repository_id}/all-packages"
     ]
     output = run_command(command)
     return output

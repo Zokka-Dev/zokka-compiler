@@ -13,6 +13,7 @@ import Http
 import Markdown
 import Session
 import Skeleton
+import Utils.LoginUpdate exposing (LoginUpdate(..), httpErrorToLoginUpdate)
 
 
 
@@ -32,10 +33,11 @@ type Content
   | Success String
 
 
-init : Session.Data -> String -> String -> ( Model, Cmd Msg )
+init : Session.Data -> String -> String -> ( Model, Cmd Msg, LoginUpdate )
 init session title url =
   ( Model session title Loading
   , Http.send GotContent (Http.getString url)
+  , NoUpdateAboutLoginStatus
   )
 
 
@@ -47,16 +49,16 @@ type Msg
   = GotContent (Result Http.Error String)
 
 
-update : Msg -> Model -> ( Model, Cmd msg )
+update : Msg -> Model -> ( Model, Cmd msg, LoginUpdate )
 update msg model =
   case msg of
     GotContent result ->
       case result of
-        Err _ ->
-          ( { model | content = Failure }, Cmd.none )
+        Err httpError ->
+          ( { model | content = Failure }, Cmd.none, httpErrorToLoginUpdate httpError )
 
         Ok content ->
-          ( { model | content = Success content }, Cmd.none )
+          ( { model | content = Success content }, Cmd.none, ConfirmedUserIsLoggedIn )
 
 
 

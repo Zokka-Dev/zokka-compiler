@@ -8,7 +8,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..), encode, decode)
 import qualified Data.Aeson.Key as DAK
 import qualified Data.Aeson.Types as DAT
-import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam, Parsable, ScottyM)
+import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam, Parsable, ScottyM, redirect)
 import Web.Scotty.Cookie (getCookie, setCookie, defaultSetCookie, setCookieName, setCookieValue)
 import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection(..), field, Only (..), withTransaction, withConnection)
 import Data.Text (Text, splitOn)
@@ -38,6 +38,7 @@ import System.Entropy (getEntropy)
 import qualified Crypto.Argon2 as CA
 import qualified Data.ByteString.Base64 as Base64
 import Data.Function ((&))
+import Data.List (isPrefixOf)
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Options.Applicative as OA
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
@@ -45,6 +46,9 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.IO (readFile)
 import Control.Exception (bracket)
 import qualified Network.Wai.Middleware.Static as Static
+import qualified Network.Wai.Middleware.Cors as Cors
+import qualified Debug.Trace as Debug
+import qualified System.FilePath as FP
 
 safeHead :: [a] -> Maybe a
 safeHead (x : _) = Just x
@@ -522,23 +526,28 @@ retrieveUserIdForLoginSessionToken =
     authTokenValueMaybe <- header "Authorization"
     loginTokenFromCookieMaybe <- getCookie "login-token"
 
-    authHeaderValue <- case (authTokenValueMaybe, loginTokenFromCookieMaybe) of
-      (Just authToken, _) ->
-        pure authToken
+    loginSessionTokenRawText <- case (authTokenValueMaybe, loginTokenFromCookieMaybe) of
+      (Just authHeaderValue, _) ->
+        -- FIXME: Have a more robust thing than just splitting on single
+        -- space, should split more generally on whitespace
+        case splitOn " " (TL.toStrict authHeaderValue) of
+          -- FIXME: Deal with authScheme
+          authScheme : loginSessionToken : _ -> 
+            pure loginSessionToken
+          somethingelse ->
+            do
+              status status400
+              text (T.concat ["Does not follow expected scheme for authorization. Would've expected something like 'Basic sometokenvaluehere' but got '", T.concat somethingelse, "'"])
+              finish
       (_, Just loginTokenFromCookie) ->
-        pure (TL.fromStrict loginTokenFromCookie)
+        pure loginTokenFromCookie
       (Nothing, Nothing) ->
         do
           status status401
           text (T.concat ["WWW-Authenticate: Basic realm=\"Access to the dashboard\""])
           finish
 
-    -- FIXME: Have a more robust thing than just splitting on single
-    -- space, should split more generally on whitespace
-    -- FIXME: Deal with error cases here
-    let authScheme : loginSessionToken : _ = splitOn " " (TL.toStrict authHeaderValue)
-    -- FIXME: Deal with authScheme
-    let sessionTokenMaybe = validateTextIsBase64 loginSessionToken
+    let sessionTokenMaybe = validateTextIsBase64 loginSessionTokenRawText
     sessionToken <- case sessionTokenMaybe of
       Nothing ->
         do
@@ -552,7 +561,7 @@ retrieveUserIdForLoginSessionToken =
     case maybeUserId of
       Nothing ->
         do
-          status status403
+          status status401
           text "Invalid login session token!"
           finish
       Just userId ->
@@ -810,11 +819,12 @@ getTopLevelDashboard userId =
     authTokens <- allAuthTokensForReposForUserId userId
     pure (DashboardData{_dashboardDataPackages=packages, _dashboardDataAuthTokens=authTokens})
 
-scottyServer :: Text -> ScottyM ()
-scottyServer externalWebsiteUrl =
+scottyServer :: Text -> Bool -> ScottyM ()
+scottyServer externalWebsiteUrl corsAllowAll =
   do
     middleware logStdout
-    post "/:repository-id/upload-package" $ do
+    when corsAllowAll (middleware Cors.simpleCors)
+    post "/api/:repository-id/upload-package" $ do
       -- Because we need the string :repository-id, I call pathParam here instead
       -- of moving pathParam into parsePackageCreationRequest to make sure that
       -- the strings match between pathParam and the string to post
@@ -824,13 +834,13 @@ scottyServer externalWebsiteUrl =
       liftIO $ saveNewPackage packageCreationRequest
       json $ object [ "success" .= String "Package registered successfully." ]
 
-    get "/:repository-id/all-packages" $ do
+    get "/api/:repository-id/all-packages" $ do
       repositoryId <- pathParam "repository-id"
       authAgainstRepositoryId repositoryId ReadOnly
       packages <- liftIO $ getPackages repositoryId
       json (packagesToOutgoingPackageData packages)
 
-    get "/:repository-id/all-packages/since/:n" $ do
+    get "/api/:repository-id/all-packages/since/:n" $ do
       n <- pathParam "n"
       repositoryId <- pathParam "repository-id"
       authAgainstRepositoryId repositoryId ReadOnly
@@ -838,7 +848,7 @@ scottyServer externalWebsiteUrl =
       json (fmap serializePackageAsSingleString packages)
 
     -- Special case elm.json because it doesn't live in sqlar
-    get "/:repository-id/packages/:author/:project/:version/elm.json" $ do
+    get "/api/:repository-id/packages/:author/:project/:version/elm.json" $ do
       repositoryId <- pathParam "repository-id"
       authAgainstRepositoryId repositoryId ReadOnly
       author <- pathParam "author"
@@ -848,7 +858,7 @@ scottyServer externalWebsiteUrl =
       json elmJson
 
     -- Special case endpoint.json because it's dynamically generated
-    get "/:repository-id/packages/:author/:project/:version/endpoint.json" $ do
+    get "/api/:repository-id/packages/:author/:project/:version/endpoint.json" $ do
       repositoryId <- pathParam "repository-id"
       authAgainstRepositoryId repositoryId ReadOnly
       author <- pathParam "author"
@@ -857,7 +867,7 @@ scottyServer externalWebsiteUrl =
       endpointJson <- generateEndpointJsonActionM externalWebsiteUrl repositoryId author project version
       json endpointJson
 
-    get "/:repository-id/packages/:author/:project/:version/:filename" $ do
+    get "/api/:repository-id/packages/:author/:project/:version/:filename" $ do
       repositoryId <- pathParam "repository-id"
       authAgainstRepositoryId repositoryId ReadOnly
       author <- pathParam "author"
@@ -889,7 +899,7 @@ scottyServer externalWebsiteUrl =
       -- base64 encoding things.
       let loginTokenAsByteString = encodeUtf8 loginTokenAsText
       setCookie (defaultSetCookie { setCookieName = "login-token", setCookieValue = encodeUtf8 loginTokenAsText })
-      text loginTokenAsText 
+      text loginTokenAsText
 
     post "/dashboard/repository" $ do
       userId <- retrieveUserIdForLoginSessionToken
@@ -926,12 +936,25 @@ scottyServer externalWebsiteUrl =
       dashboardData <- liftIO $ getTopLevelDashboard userId
       json dashboardData
 
-    get "/" $ do
-      text "Welcome to the custom package site!"
+    get "/" $ redirect "/ui"
 
-    let staticFiles = Static.only [("dashboard/index.html", "generated-static-files/dashboard/index.html")]
+    -- Only allow requests of the type ui/something which get mapped to generated-static-files/ui/something
+    let staticFiles = Static.policy transformStaticRoutes
 
     middleware (Static.staticPolicy staticFiles)
+
+
+transformStaticRoutes :: String -> Maybe String
+transformStaticRoutes incoming
+  | incoming == "elm.js" = Just $ "generated-static-files" FP.</> "ui" FP.</> "elm.js"
+  | incoming == "index.html" = Just $ "generated-static-files" FP.</> "ui" FP.</> "index.html"
+  | "assets" `isPrefixOf` incoming = Just $ "generated-static-files" FP.</> "ui" FP.</> incoming
+  -- Exclude all our api routes
+  | "api" `isPrefixOf` incoming = Nothing
+  | "dashboard" `isPrefixOf` incoming = Nothing
+  -- Since we have SPA routing, any other routes that we mean for the frontend to handle we should just route directly to index.html
+  | "ui" `isPrefixOf` incoming = Just $ "generated-static-files" FP.</> "ui" FP.</> "index.html"
+  | otherwise = Just $ "generated-static-files" FP.</> "ui" FP.</> "index.html"
 
 
 data CommandLineOptions = CommandLineOptions
@@ -939,7 +962,7 @@ data CommandLineOptions = CommandLineOptions
   -- FIXME: Use a Maybe instead of privileging the empty string
   , _commandLineOptionsSQLInitializationScriptLocation :: FilePath
   , _commandLineOptionsDatabaseFilename ::  FilePath
-  , _commandLineOptionsTurnOnTestMode :: Bool
+  , _commandLineOptionsTurnOnCorsAllowAll :: Bool
   , _commandLineOptionsExternalWebsiteUrl :: Text
   }
 
@@ -949,13 +972,13 @@ commandLineArgParser =
     <$> portNumber
     <*> initializationScriptLocation
     <*> databaseFilename
-    <*> turnOnTestMode
+    <*> turnOnCorsAllowAll
     <*> externalWebsiteUrl
     where
       portNumber = OA.option OA.auto (OA.value 3000 <> OA.long "port" <> OA.short 'p' <> OA.metavar "PORT" <> OA.help "The port which the web server will bind to")
       initializationScriptLocation = OA.option OA.str (OA.value "" <> OA.long "initialization-script" <> OA.short 'i' <> OA.help "The location of the SQL initialization script")
       databaseFilename = OA.option OA.str (OA.long "database-file" <> OA.short 'd' <> OA.help "Path to sqlite DB file.")
-      turnOnTestMode = OA.switch (OA.long "test-mode" <> OA.short 't' <> OA.help "Run a short test script and then exit")
+      turnOnCorsAllowAll = OA.switch (OA.long "cors-allow-all" <> OA.short 'c' <> OA.help "Have a wildcard CORS policy. Should only use this during local development!")
       externalWebsiteUrl = OA.option OA.str (OA.long "external-website-url" <> OA.short 'e' <> OA.help "The external website URL (necessary for packages to be read by the Zokka compiler). Make sure to leave the final slash off!")
 
 commandLineArgParserInfo :: OA.ParserInfo CommandLineOptions
@@ -1024,4 +1047,6 @@ main =
         do
           putStrLn ("Initializing DB using " ++ scriptLocation)
           initializeDBFromFile scriptLocation
-    scotty (_commandLineOptionsPortNumber commandLineArgs) (scottyServer (_commandLineOptionsExternalWebsiteUrl commandLineArgs))
+    scotty
+      (_commandLineOptionsPortNumber commandLineArgs)
+      (scottyServer (_commandLineOptionsExternalWebsiteUrl commandLineArgs) (_commandLineOptionsTurnOnCorsAllowAll commandLineArgs))

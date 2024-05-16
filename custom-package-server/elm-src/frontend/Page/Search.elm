@@ -25,6 +25,7 @@ import Skeleton
 import Task
 import Url.Builder as Url
 import Url
+import Utils.LoginUpdate exposing (LoginUpdate(..), httpErrorToLoginUpdate)
 
 
 
@@ -46,18 +47,20 @@ type Entries
 
 
 
-init : Session.Data -> Maybe String -> Maybe String -> ( Model, Cmd Msg )
+init : Session.Data -> Maybe String -> Maybe String -> ( Model, Cmd Msg, LoginUpdate )
 init session query author =
   case Session.getEntries session of
     Just entries ->
       ( Model session (Maybe.withDefault "" query) author (Success entries)
       , Cmd.none
+      , NoUpdateAboutLoginStatus
       )
 
     Nothing ->
       ( Model session (Maybe.withDefault "" query) author Loading
       , Http.send GotPackages <|
-          Http.get "/dashboard/all-data" (Decode.list Entry.decoder)
+          Http.get "http://localhost:3000/dashboard/all-data" (Entry.redecodeBackToEntries)
+      , NoUpdateAboutLoginStatus
       )
 
 
@@ -72,21 +75,20 @@ type Msg
   | DelayedUrlChange String
 
 
-update : Nav.Key -> Msg -> Model -> ( Model, Cmd Msg )
+update : Nav.Key -> Msg -> Model -> ( Model, Cmd Msg, LoginUpdate )
 update key msg model =
   case msg of
     QueryChanged query ->
       ( { model | query = query }
       , Process.sleep 300
           |> Task.perform (\_ -> DelayedUrlChange query)
+      , NoUpdateAboutLoginStatus
       )
 
     GotPackages result ->
-      case result of
-        Err _ ->
-          ( { model | entries = Failure }
-          , Cmd.none
-          )
+      case Debug.log "GotPackages result" result of
+        Err httpError ->
+            ({ model | entries = Failure }, Cmd.none, httpErrorToLoginUpdate httpError)
 
         Ok entries ->
           ( { model
@@ -94,20 +96,21 @@ update key msg model =
                 , session = Session.addEntries entries model.session
             }
           , Cmd.none
+          , ConfirmedUserIsLoggedIn
           )
 
     DelayedUrlChange query ->
       if query == model.query then
-        ( model, addQueryToUrl key model )
+        ( model, addQueryToUrl key model, NoUpdateAboutLoginStatus )
       else
         -- Input changed, do nothing
-        ( model, Cmd.none )
+        ( model, Cmd.none, NoUpdateAboutLoginStatus )
 
     QuerySubmitted ->
       if String.contains "->" model.query then
-        ( model, searchByType model.query )
+        ( model, searchByType model.query, NoUpdateAboutLoginStatus )
       else
-        ( model, Cmd.none )
+        ( model, Cmd.none, NoUpdateAboutLoginStatus )
 
 
 searchByType : String -> Cmd msg
