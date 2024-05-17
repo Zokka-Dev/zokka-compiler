@@ -1,7 +1,6 @@
 module Page.Search.Entry exposing
   ( Entry
   , search
-  , decoder
   , dashboardDataDecoder
   , redecodeBackToEntries
   )
@@ -23,6 +22,7 @@ type alias Entry =
   , summary : String
   , license : String
   , version : V.Version
+  , repositoryId : String
   }
 
 
@@ -88,7 +88,17 @@ redecodeBackToEntries = D.map .packages dashboardDataDecoder
 
 alternativeEntryDecoder : D.Decoder Entry
 alternativeEntryDecoder =
-    D.map5 (\author project version hash repositoryId -> { author = author, project = project, name = String.concat [author, "/", project], summary = "", license = "", version = version })
+    D.map5
+        (\author project version hash repositoryId ->
+            { author = author
+            , project = project
+            , name = String.concat [author, "/", project]
+            , summary = ""
+            , license = ""
+            , version = version
+            , repositoryId = String.fromInt repositoryId
+            }
+        )
         (D.field "author" D.string)
         (D.field "project" D.string)
         (D.field "version" V.decoder)
@@ -108,20 +118,3 @@ authTokenDecoder =
         (D.field "permission" permissionLevelDecoder)
 
 
-decoder : D.Decoder Entry
-decoder =
-  D.map4 (\f a b c -> f a b c)
-    (D.field "name" (D.andThen splitName D.string))
-    (D.field "summary" D.string)
-    (D.field "license" D.string)
-    (D.field "version" V.decoder)
-
-
-splitName : String -> D.Decoder (String -> String -> V.Version -> Entry)
-splitName name =
-  case String.split "/" name of
-    [author, project] ->
-      D.succeed (Entry name author project)
-
-    _ ->
-      D.fail ("Ran into an invalid package name: " ++ name)

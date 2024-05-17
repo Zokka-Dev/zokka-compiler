@@ -31,6 +31,7 @@ import Time
 
 type alias Model =
   { session : Session.Data
+  , repository : String
   , author : String
   , project : String
   , releases : Releases
@@ -43,18 +44,18 @@ type Releases
   | Success (OneOrMore Release.Release)
 
 
-init : Session.Data -> String -> String -> ( Model, Cmd Msg, LoginUpdate )
-init session author project =
+init : Session.Data -> String -> String -> String -> ( Model, Cmd Msg, LoginUpdate )
+init session repository author project =
   case Session.getReleases session author project of
     Just releases ->
-      ( Model session author project (Success releases)
+      ( Model session repository author project (Success releases)
       , Cmd.none
       , NoUpdateAboutLoginStatus
       )
 
     Nothing ->
-      ( Model session author project Loading
-      , Http.send GotReleases (Session.fetchReleases author project)
+      ( Model session repository author project Loading
+      , Http.send GotReleases (Session.fetchReleases repository author project)
       , NoUpdateAboutLoginStatus
       )
 
@@ -95,8 +96,8 @@ view : Model -> Skeleton.Details msg
 view model =
   { title = model.author ++ "/" ++ model.project
   , header =
-      [ Skeleton.authorSegment model.author
-      , Skeleton.projectSegment model.author model.project
+      [ Skeleton.authorSegment model.repository model.author
+      , Skeleton.projectSegment model.repository model.author model.project
       ]
   , warning = Skeleton.NoProblems
   , attrs = [ class "pkg-overview" ]
@@ -113,25 +114,25 @@ view model =
         Success (OneOrMore r rs) ->
           [ h1 [] [ text "Published Versions" ]
           , p [] <|
-              viewReleases model.author model.project <|
+              viewReleases model.repository model.author model.project <|
                 List.map .version (List.sortBy (.time >> Time.posixToMillis) (r::rs))
           ]
   }
 
 
 
-viewReleases : String -> String -> List V.Version -> List (Html msg)
-viewReleases author project versions =
+viewReleases : String -> String -> String -> List V.Version -> List (Html msg)
+viewReleases repository author project versions =
   case versions of
     v1 :: ((v2 :: _) as vs) ->
       let
         attrs =
           if isSameMajor v1 v2 then [] else [ bold ]
       in
-      viewReadmeLink author project v1 attrs :: text ", " :: viewReleases author project vs
+      viewReadmeLink repository author project v1 attrs :: text ", " :: viewReleases repository author project vs
 
     r0 :: [] ->
-      [ viewReadmeLink author project r0 [ bold ] ]
+      [ viewReadmeLink repository author project r0 [ bold ] ]
 
     [] ->
       []
@@ -142,11 +143,11 @@ bold =
   style "font-weight" "bold"
 
 
-viewReadmeLink : String -> String -> V.Version -> List (Attribute msg) -> Html msg
-viewReadmeLink author project version attrs =
+viewReadmeLink : String -> String -> String -> V.Version -> List (Attribute msg) -> Html msg
+viewReadmeLink repository author project version attrs =
   let
     url =
-      Href.toVersion author project (Just version) Nothing
+      Href.toVersion repository author project (Just version) Nothing
   in
   a (href url :: attrs) [ text (V.toString version) ]
 

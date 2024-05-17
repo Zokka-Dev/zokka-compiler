@@ -4,6 +4,7 @@ module Href exposing
   , toVersion
   , toAbout
   , toModule
+  , toModuleInStandardElmPackageRepo
   , toModuleWithSource
   , toModuleWithQuery
   )
@@ -17,36 +18,44 @@ import Url.Builder as Url
 -- HREFS
 
 
-toAuthor : String -> String
-toAuthor author =
-  Url.absolute [ "packages", author, "" ] []
+toAuthor : String -> String -> String
+toAuthor repository author =
+  Url.absolute [ "repository", repository, "packages", author, "" ] []
 
 
-toProject : String -> String -> String
-toProject author project =
-  Url.absolute [ "packages", author, project, "" ] []
+toProject : String -> String -> String -> String
+toProject repository author project =
+  Url.absolute [ "repository", repository, "packages", author, project, "" ] []
 
 
-toVersion : String -> String -> Maybe V.Version -> Maybe String -> String
-toVersion author project version maybeValue =
-  Url.custom Url.Absolute [ "packages", author, project, vsnToString version, ""] [] maybeValue
+toVersion : String -> String -> String -> Maybe V.Version -> Maybe String -> String
+toVersion repository author project version maybeValue =
+  Url.custom Url.Absolute [ "repository", repository, "packages", author, project, vsnToString version, ""] [] maybeValue
 
 
-toAbout : String -> String -> Maybe V.Version -> String
-toAbout author project version =
-  Url.absolute [ "packages", author, project, vsnToString version, "about"] []
+toAbout : String -> String -> String -> Maybe V.Version -> String
+toAbout repository author project version =
+  Url.absolute [ "repository", repository, "packages", author, project, vsnToString version, "about"] []
 
 
-toModule : String -> String -> Maybe V.Version -> String -> Maybe String -> String
-toModule author project version moduleName maybeValue =
+toModule : String -> String -> String -> Maybe V.Version -> String -> Maybe String -> String
+toModule repository author project version moduleName maybeValue =
   Url.custom Url.Absolute
-    [ "packages", author, project, vsnToString version, String.replace "." "-" moduleName ] [] maybeValue
+    [ "repository", repository, "packages", author, project, vsnToString version, String.replace "." "-" moduleName ] [] maybeValue
 
 
-toModuleWithQuery : String -> String -> Maybe V.Version -> String -> Maybe String -> String -> String
-toModuleWithQuery author project version moduleName maybeValue query =
+toModuleInStandardElmPackageRepo : String -> String -> Maybe V.Version -> String -> Maybe String -> String
+toModuleInStandardElmPackageRepo author project version moduleName maybeValue =
   Url.custom Url.Absolute
-    [ "packages"
+    [ "https://package.elm-lang.org", "packages", author, project, vsnToString version, String.replace "." "-" moduleName ] [] maybeValue
+
+
+toModuleWithQuery : String -> String -> String -> Maybe V.Version -> String -> Maybe String -> String -> String
+toModuleWithQuery repository author project version moduleName maybeValue query =
+  Url.custom Url.Absolute
+    [ "repository"
+    , repository
+    , "packages"
     , author
     , project
     , vsnToString version
@@ -56,10 +65,12 @@ toModuleWithQuery author project version moduleName maybeValue query =
     maybeValue
 
 
-toModuleWithSource : String -> String -> Maybe V.Version -> String -> Maybe String -> String
-toModuleWithSource author project version moduleName maybeValue =
+toModuleWithSource : String -> String -> String -> Maybe V.Version -> String -> Maybe String -> String
+toModuleWithSource repository author project version moduleName maybeValue =
   Url.custom Url.Absolute
-    [ "packages"
+    [ "repository"
+    , repository
+    , "packages"
     , author
     , project
     , vsnToString version

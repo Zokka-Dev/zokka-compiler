@@ -54,24 +54,24 @@ helpSegment =
   Text "help"
 
 
-authorSegment : String -> Segment
-authorSegment author =
-  Link (Href.toAuthor author) author
+authorSegment : String -> String -> Segment
+authorSegment repository author =
+  Link (Href.toAuthor repository author) author
 
 
-projectSegment : String -> String -> Segment
-projectSegment author project =
-  Link (Href.toProject author project) project
+projectSegment : String -> String -> String -> Segment
+projectSegment repository author project =
+  Link (Href.toProject repository author project) project
 
 
-versionSegment : String -> String -> Maybe V.Version -> Segment
-versionSegment author project version =
-  Link (Href.toVersion author project version Nothing) (vsnToString version)
+versionSegment : String -> String -> String -> Maybe V.Version -> Segment
+versionSegment repository author project version =
+  Link (Href.toVersion repository author project version Nothing) (vsnToString version)
 
 
-moduleSegment : String -> String -> Maybe V.Version -> String -> Segment
-moduleSegment author project version moduleName =
-  Link (Href.toModule author project version moduleName Nothing) moduleName
+moduleSegment : String -> String -> String -> Maybe V.Version -> String -> Segment
+moduleSegment repository author project version moduleName =
+  Link (Href.toModule repository author project version moduleName Nothing) moduleName
 
 
 vsnToString : Maybe V.Version -> String

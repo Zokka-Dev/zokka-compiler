@@ -49,18 +49,18 @@ offline file =
 -- MISSING MODULE
 
 
-missingModule : String -> String -> Maybe V.Version -> String -> List (Html msg)
-missingModule author project version name =
+missingModule : String -> String -> String -> Maybe V.Version -> String -> List (Html msg)
+missingModule repository author project version name =
   [ div [ style "font-size" "3em" ]
       [ text "Module not found"
       ]
   , p []
       [ text "Maybe it existed in a "
-      , a [ href (Href.toProject author project) ] [ text "previous release" ]
+      , a [ href (Href.toProject repository author project) ] [ text "previous release" ]
       , text "?"
       , br [] []
       , text "Maybe the "
-      , a [ href (Href.toVersion author project version Nothing) ] [ text "README" ]
+      , a [ href (Href.toVersion repository author project version Nothing) ] [ text "README" ]
       , text " will help you figure out what changed?"
       ]
   ]

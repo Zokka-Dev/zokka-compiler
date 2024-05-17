@@ -41,6 +41,7 @@ import Time
 
 type alias Model =
   { session : Session.Data
+  , repository : String
   , author : String
   , project : String
   , version : Maybe V.Version
@@ -82,11 +83,12 @@ type DocsError
 -- INIT
 
 
-init : Session.Data -> String -> String -> Maybe V.Version -> Focus -> Maybe String -> ( Model, Cmd Msg, LoginUpdate )
-init session author project version focus query =
+init : Session.Data -> String -> String -> String -> Maybe V.Version -> Focus -> Maybe String -> ( Model, Cmd Msg, LoginUpdate )
+init session repository author project version focus query =
   let
     model =
       { session = session
+      , repository = repository
       , author = author
       , project = project
       , version = version
@@ -113,7 +115,7 @@ init session author project version focus query =
 
     Nothing ->
       ( model
-      , Http.send GotReleases (Session.fetchReleases author project)
+      , Http.send GotReleases (Session.fetchReleases repository author project)
       , NoUpdateAboutLoginStatus
       )
 
@@ -123,6 +125,7 @@ getInfo latest model =
   let
     author = model.author
     project = model.project
+    repository = model.repository
     version = Maybe.withDefault latest model.version
     maybeInfo =
       Maybe.map3 Info
@@ -134,9 +137,9 @@ getInfo latest model =
     Nothing ->
       ( model
       , Cmd.batch
-          [ Http.send (GotReadme version) (Session.fetchReadme author project version)
-          , Http.send (GotDocs version) (Session.fetchDocs author project version)
-          , Http.send (GotManifest version) (Session.fetchManifest author project version)
+          [ Http.send (GotReadme version) (Session.fetchReadme repository author project version)
+          , Http.send (GotDocs version) (Session.fetchDocs repository author project version)
+          , Http.send (GotManifest version) (Session.fetchManifest repository author project version)
           ]
       )
 
@@ -360,9 +363,9 @@ getVersion model =
 
 toHeader : Model -> List Skeleton.Segment
 toHeader model =
-  [ Skeleton.authorSegment model.author
-  , Skeleton.projectSegment model.author model.project
-  , Skeleton.versionSegment model.author model.project (getVersion model)
+  [ Skeleton.authorSegment model.repository model.author
+  , Skeleton.projectSegment model.repository model.author model.project
+  , Skeleton.versionSegment model.repository model.author model.project (getVersion model)
   ]
 
 
@@ -408,13 +411,13 @@ toNewerUrl : Model -> String
 toNewerUrl model =
   case model.focus of
     Readme tag ->
-      Href.toVersion model.author model.project Nothing tag
+      Href.toVersion model.repository model.author model.project Nothing tag
 
     About ->
-      Href.toAbout model.author model.project Nothing
+      Href.toAbout model.repository model.author model.project Nothing
 
     Module name tag ->
-      Href.toModule model.author model.project Nothing name tag
+      Href.toModule model.repository model.author model.project Nothing name tag
 
 
 
@@ -431,7 +434,7 @@ viewContent model width =
       lazy2 viewAbout model.manifest model.time
 
     Module name tag ->
-      lazy6 viewModule model.author model.project model.version name model.docs width
+      lazy7 viewModule model.repository model.author model.project model.version name model.docs width
 
 
 
@@ -457,8 +460,8 @@ viewReadme status =
 -- VIEW MODULE
 
 
-viewModule : String -> String -> Maybe V.Version -> String -> Status (List Docs.Module) -> Int -> Html msg
-viewModule author project version name status width =
+viewModule : String -> String -> String -> Maybe V.Version -> String -> Status (List Docs.Module) -> Int -> Html msg
+viewModule repository author project version name status width =
   let
     breakableName =
       name
@@ -472,7 +475,7 @@ viewModule author project version name status width =
         Just docs ->
           let
             header = h1 [class "block-list-title"] breakableName
-            info = Block.makeInfo author project version name allDocs width
+            info = Block.makeInfo repository author project version name allDocs width
             blocks = List.map (Block.view info) (Docs.toBlocks docs)
           in
           div [ class "block-list" ] (header :: blocks)
@@ -480,7 +483,7 @@ viewModule author project version name status width =
         Nothing ->
           div
             (class "block-list" :: Problem.styles)
-            (Problem.missingModule author project version name)
+            (Problem.missingModule repository author project version name)
 
     Loading ->
       div [ class "block-list" ]
@@ -516,8 +519,8 @@ viewSidebar model =
     [ class "pkg-nav"
     ]
     [ ul [ class "pkg-nav-links" ]
-        [ li [] [ lazy4 viewReadmeLink model.author model.project model.version model.focus ]
-        , li [] [ lazy4 viewAboutLink model.author model.project model.version model.focus ]
+        [ li [] [ lazy5 viewReadmeLink model.repository model.author model.project model.version model.focus ]
+        , li [] [ lazy5 viewAboutLink model.repository model.author model.project model.version model.focus ]
         , li [] [ lazy4 viewBrowseSourceLink model.author model.project model.version model.latest ]
         ]
     , h2 [] [ text "Modules" ]
@@ -618,9 +621,9 @@ isTagMatch query toResult tipeName (tagName, _) =
 -- VIEW "README" LINK
 
 
-viewReadmeLink : String -> String -> Maybe V.Version -> Focus -> Html msg
-viewReadmeLink author project version focus =
-  navLink "README" (Href.toVersion author project version Nothing) <|
+viewReadmeLink : String -> String -> String -> Maybe V.Version -> Focus -> Html msg
+viewReadmeLink repository author project version focus =
+  navLink "README" (Href.toVersion repository author project version Nothing) <|
     case focus of
       Readme _ -> True
       About -> False
@@ -631,9 +634,9 @@ viewReadmeLink author project version focus =
 -- VIEW "ABOUT" LINK
 
 
-viewAboutLink : String -> String -> Maybe V.Version -> Focus -> Html msg
-viewAboutLink author project version focus =
-  navLink "About" (Href.toAbout author project version) <|
+viewAboutLink : String -> String -> String -> Maybe V.Version -> Focus -> Html msg
+viewAboutLink repository author project version focus =
+  navLink "About" (Href.toAbout repository author project version) <|
     case focus of
       Readme _ -> False
       About -> True
@@ -666,6 +669,7 @@ viewBrowseSourceLinkHelp : String -> String -> V.Version -> Html msg
 viewBrowseSourceLinkHelp author project version =
   let
     url =
+      --FIXME: This needs to move away from GitHub links
       Url.crossOrigin
         "https://github.com"
         [ author, project, "tree", V.toString version ]
@@ -682,7 +686,7 @@ viewModuleLink : Model -> String -> Html msg
 viewModuleLink model name =
   let
     url =
-      Href.toModuleWithQuery model.author model.project model.version name Nothing model.query
+      Href.toModuleWithQuery model.repository model.author model.project model.version name Nothing model.query
   in
   navModuleLink name url <|
     case model.focus of
@@ -697,10 +701,10 @@ viewModuleLink model name =
 
 
 viewValueItem : Model -> String -> String -> String -> Html msg
-viewValueItem { author, project, version, query } moduleName ownerName valueName =
+viewValueItem { repository, author, project, version, query } moduleName ownerName valueName =
   let
     url =
-      Href.toModuleWithQuery author project version moduleName (Just ownerName) query
+      Href.toModuleWithQuery repository author project version moduleName (Just ownerName) query
   in
   li [ class "pkg-nav-value" ] [ navModuleLink valueName url False ]
 

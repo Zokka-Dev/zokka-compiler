@@ -335,37 +335,40 @@ stepUrl url model =
     session =
       exit model
 
+    hello = (s "packages" </> author_ </> project_ </> version_ </> focus_ <?> source_ <?> Query.string "q")
+
     parser =
       oneOf
         [ route (top <?> Query.string "q")
             (\query ->
-              stepSearch model (Search.init session (Maybe.map (String.replace "+" " ") query ) Nothing)
+              stepSearch model (Search.init session (Maybe.map (String.replace "+" " ") query ) Nothing Nothing)
             )
-        , route (s "packages" </> author_ <?> Query.string "q")
-            (\author query ->
-              stepSearch model (Search.init session (Maybe.map (String.replace "+" " ") query ) (Just author))
+        , route (s "repository" </> repository_ </> s "packages" </> author_ <?> Query.string "q")
+            (\repository author query ->
+              stepSearch model (Search.init session (Maybe.map (String.replace "+" " ") query ) (Just repository) (Just author))
             )
-        , route (s "packages" </> author_ </> project_)
-            (\author project ->
-                stepDiff model (Diff.init session author project)
+        , route (s "repository" </> repository_ </> s "packages" </> author_ </> project_)
+            (\repository author project ->
+                stepDiff model (Diff.init session repository author project)
             )
-        , route (s "packages" </> author_ </> project_ </> version_ </> focus_ <?> source_ <?> Query.string "q")
-            (\author project version focus source query ->
+        , route (s "repository" </> repository_ </> s "packages" </> author_ </> project_ </> version_ </> focus_ <?> source_ <?> Query.string "q")
+            (\repository author project version focus source query ->
                 case (focus, source) of
                   (Docs.Module moduleName tag, Just _) ->
                    let
                      (newModel, cmd) =
-                       stepDocs model (Docs.init session author project version focus query)
+                       stepDocs model (Docs.init session repository author project version focus query)
                    in
                      ( newModel
                      , Cmd.batch
                          [ Nav.replaceUrl model.key (Url.toString { url | query = Nothing })
+                         --FIXME: Remove GitHub source link
                          , findGithubSource session author project version moduleName tag
                          ]
                      )
 
                   _ ->
-                    stepDocs model (Docs.init session author project version focus query)
+                    stepDocs model (Docs.init session repository author project version focus query)
             )
         , route (s "help" </> s "design-guidelines")
             (stepHelp model (Help.init session "Design Guidelines" "/assets/help/design-guidelines.md"))
@@ -386,6 +389,11 @@ stepUrl url model =
 route : Parser a b -> a -> Parser (b -> c) c
 route parser handler =
   Parser.map handler parser
+
+
+repository_ : Parser (String -> a) a
+repository_ =
+  custom "REPOSITORY" Just
 
 
 author_ : Parser (String -> a) a

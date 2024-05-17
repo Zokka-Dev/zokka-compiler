@@ -38,7 +38,7 @@ import System.Entropy (getEntropy)
 import qualified Crypto.Argon2 as CA
 import qualified Data.ByteString.Base64 as Base64
 import Data.Function ((&))
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, sort)
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Options.Applicative as OA
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
@@ -71,6 +71,9 @@ newtype Project = Project { unProject :: Text }
 
 newtype Version = Version { unVersion :: Text }
   deriving (ToField, FromField, ToJSON, Parsable, Eq, Show)
+
+instance Ord Version where
+  v0 <= v1 = splitOn (unVersion v0) "." <= splitOn (unVersion v1) "."
 
 newtype PackageHash = PackageHash { unPackageHash :: Text }
   deriving (ToField, FromField, ToJSON, Parsable, Eq, Show)
@@ -320,6 +323,21 @@ generateEndpointJsonActionM websitePrefix repositoryId author project version =
           status status404
           finish
 
+generateReleasesJson :: RepositoryId -> Author -> Project -> IO Value
+generateReleasesJson repositoryId author project =
+  do
+    versions <- withCustomConnection queryForVersions
+    pure $ versionsToJson versions
+  where
+    queryForVersions :: Connection -> IO [Version]
+    queryForVersions conn = fmap unOnly <$> query conn "SELECT version FROM packages WHERE repository_id = ? AND author = ? AND project = ?" (repositoryId, author, project)
+
+    versionsToJson :: [Version] -> Value
+    -- Technically the second part of the pair is meant to be a timestamp, but the frontend only uses it for ordering purposes so we can just stick an index there
+    versionsToJson versions = zip (sort versions) ([0..] :: [Int])
+      & fmap (\(v, i) -> DAK.fromText (unVersion v) .= i)
+      & object
+
 savePartialPackage :: Connection -> PartialPackage -> IO ()
 savePartialPackage conn = execute conn "INSERT INTO packages (author, project, version, hash, repository_id, elm_json) VALUES (?,?,?,?,?,?)"
 
@@ -532,7 +550,7 @@ retrieveUserIdForLoginSessionToken =
         -- space, should split more generally on whitespace
         case splitOn " " (TL.toStrict authHeaderValue) of
           -- FIXME: Deal with authScheme
-          authScheme : loginSessionToken : _ -> 
+          authScheme : loginSessionToken : _ ->
             pure loginSessionToken
           somethingelse ->
             do
@@ -791,9 +809,10 @@ instance ToJSON DashboardData where
     , "auth-tokens" .= toJSON authTokens
     ]
 
+
 allPackagesForReposForUserIdQuery :: Connection -> UserId -> IO [Package]
 allPackagesForReposForUserIdQuery conn userId =
-  query conn "SELECT p.* FROM packages p INNER JOIN repositories r ON p.repository_id = r.id WHERE r.owner_user_id = ?" (Only userId)
+  query conn "SELECT p.id, p.author, p.project, p.version, p.hash, p.repository_id, p.elm_json FROM packages p INNER JOIN repositories r ON p.repository_id = r.id WHERE r.owner_user_id = ?" (Only userId)
 
 allPackagesForReposForUserId :: UserId -> IO [Package]
 allPackagesForReposForUserId userId = withCustomConnection (`allPackagesForReposForUserIdQuery` userId)
@@ -847,7 +866,7 @@ scottyServer externalWebsiteUrl corsAllowAll =
       packages <- liftIO $ getRecentPackages n repositoryId
       json (fmap serializePackageAsSingleString packages)
 
-    -- Special case elm.json because it doesn't live in sqlar
+    -- Special case elm.json instead of relying on path for all files in sqlar because it doesn't live in sqlar
     get "/api/:repository-id/packages/:author/:project/:version/elm.json" $ do
       repositoryId <- pathParam "repository-id"
       authAgainstRepositoryId repositoryId ReadOnly
@@ -857,7 +876,7 @@ scottyServer externalWebsiteUrl corsAllowAll =
       elmJson <- getElmJsonActionM repositoryId author project version
       json elmJson
 
-    -- Special case endpoint.json because it's dynamically generated
+    -- Special case endpoint.json instead of relying on path for all files in sqlar because it's dynamically generated
     get "/api/:repository-id/packages/:author/:project/:version/endpoint.json" $ do
       repositoryId <- pathParam "repository-id"
       authAgainstRepositoryId repositoryId ReadOnly
@@ -867,6 +886,7 @@ scottyServer externalWebsiteUrl corsAllowAll =
       endpointJson <- generateEndpointJsonActionM externalWebsiteUrl repositoryId author project version
       json endpointJson
 
+    -- Path for all files in sqlar
     get "/api/:repository-id/packages/:author/:project/:version/:filename" $ do
       repositoryId <- pathParam "repository-id"
       authAgainstRepositoryId repositoryId ReadOnly
@@ -936,7 +956,44 @@ scottyServer externalWebsiteUrl corsAllowAll =
       dashboardData <- liftIO $ getTopLevelDashboard userId
       json dashboardData
 
-    get "/" $ redirect "/ui"
+    get "/dashboard/repository/:repository-id/packages/:author/:project/releases.json" $ do
+      userId <- retrieveUserIdForLoginSessionToken
+      repositoryId <- pathParam "repository-id"
+      authUserIdAgainstRepository userId repositoryId
+      author <- pathParam "author"
+      project <- pathParam "project"
+      releasesJson <- liftIO $ generateReleasesJson repositoryId author project
+      json releasesJson
+
+    -- FIXME: DRY up the following two paths
+    --
+    -- Repeat another version of this vs the `api` path because we want to auth
+    -- with the user login token rather than the repository auth token
+    -- Special case elm.json instead of relying on path for all files in sqlar because it doesn't live in sqlar
+    get "/dashboard/repository/:repository-id/packages/:author/:project/:version/elm.json" $ do
+      userId <- retrieveUserIdForLoginSessionToken
+      repositoryId <- pathParam "repository-id"
+      authUserIdAgainstRepository userId repositoryId
+      author <- pathParam "author"
+      project <- pathParam "project"
+      version <- pathParam "version"
+      elmJson <- getElmJsonActionM repositoryId author project version
+      json elmJson
+
+    -- Repeat another version of this vs the `api` path because we want to auth
+    -- with the user login token rather than the repository auth token
+    -- Path for all files in sqlar
+    get "/dashboard/repository/:repository-id/packages/:author/:project/:version/:filename" $ do
+      userId <- retrieveUserIdForLoginSessionToken
+      repositoryId <- pathParam "repository-id"
+      authUserIdAgainstRepository userId repositoryId
+      author <- pathParam "author"
+      project <- pathParam "project"
+      version <- pathParam "version"
+      filename <- pathParam "filename"
+      fileBlob <- getPackageDataBlobActionM repositoryId author project version filename
+      setHeader "Content-Type" (mimeTypeFromFileName (TL.fromStrict filename))
+      raw fileBlob
 
     -- Only allow requests of the type ui/something which get mapped to generated-static-files/ui/something
     let staticFiles = Static.policy transformStaticRoutes

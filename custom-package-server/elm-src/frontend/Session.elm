@@ -95,10 +95,10 @@ addReleases author project releases data =
   { data | releases = newReleases }
 
 
-fetchReleases : String -> String -> Http.Request (OneOrMore Release.Release)
-fetchReleases author project =
+fetchReleases : String -> String -> String -> Http.Request (OneOrMore Release.Release)
+fetchReleases repository author project =
   Http.get
-    (Url.absolute [ "packages", author, project, "releases.json" ] [])
+    (Url.absolute [ "dashboard", "repository", repository, "packages", author, project, "releases.json" ] [])
     Release.decoder
 
 
@@ -125,10 +125,10 @@ addReadme author project version readme data =
   { data | readmes = newReadmes }
 
 
-fetchReadme : String -> String -> V.Version -> Http.Request String
-fetchReadme author project version =
+fetchReadme : String -> String -> String -> V.Version -> Http.Request String
+fetchReadme repository author project version =
   Http.getString <|
-    Url.absolute [ "packages", author, project, V.toString version, "README.md" ] []
+    Url.absolute [ "dashboard", "repository", repository, "packages", author, project, V.toString version, "README.md" ] []
 
 
 
@@ -149,10 +149,10 @@ addDocs author project version docs data =
   { data | docs = newDocs }
 
 
-fetchDocs : String -> String -> V.Version -> Http.Request (List Docs.Module)
-fetchDocs author project version =
+fetchDocs : String -> String -> String -> V.Version -> Http.Request (List Docs.Module)
+fetchDocs repository author project version =
   Http.get
-    (Url.absolute [ "packages", author, project, V.toString version, "docs.json" ] [])
+    (Url.absolute [ "dashboard", "repository", repository, "packages", author, project, V.toString version, "docs.json" ] [])
     (Decode.list Docs.decoder)
 
 
@@ -174,10 +174,10 @@ addManifest author project version manifest data =
   { data | manifests = newManifests }
 
 
-fetchManifest : String -> String -> V.Version -> Http.Request Project.PackageInfo
-fetchManifest author project version =
+fetchManifest : String -> String -> String -> V.Version -> Http.Request Project.PackageInfo
+fetchManifest repository author project version =
   Http.get
-    (Url.absolute [ "packages", author, project, V.toString version, "elm.json" ] [])
+    (Url.absolute [ "dashboard", "repository", repository, "packages", author, project, V.toString version, "elm.json" ] [])
     packageInfoDecoder
 
 

@@ -35,6 +35,9 @@ import Utils.LoginUpdate exposing (LoginUpdate(..), httpErrorToLoginUpdate)
 type alias Model =
   { session : Session.Data
   , query : String
+  -- FIXME: This is technically bad data modelling; it shouldn't be possible for
+  -- the author to be Just ... and the repository to be Nothing
+  , repository : Maybe String
   , author : Maybe String
   , entries : Entries
   }
@@ -47,17 +50,17 @@ type Entries
 
 
 
-init : Session.Data -> Maybe String -> Maybe String -> ( Model, Cmd Msg, LoginUpdate )
-init session query author =
+init : Session.Data -> Maybe String -> Maybe String -> Maybe String -> ( Model, Cmd Msg, LoginUpdate )
+init session query repository author =
   case Session.getEntries session of
     Just entries ->
-      ( Model session (Maybe.withDefault "" query) author (Success entries)
+      ( Model session (Maybe.withDefault "" query) repository author (Success entries)
       , Cmd.none
       , NoUpdateAboutLoginStatus
       )
 
     Nothing ->
-      ( Model session (Maybe.withDefault "" query) author Loading
+      ( Model session (Maybe.withDefault "" query) repository author Loading
       , Http.send GotPackages <|
           Http.get "http://localhost:3000/dashboard/all-data" (Entry.redecodeBackToEntries)
       , NoUpdateAboutLoginStatus
@@ -144,7 +147,10 @@ view model =
   , header =
       case model.author of
         Nothing     -> []
-        Just author -> [ Skeleton.authorSegment author ]
+        Just author ->
+          case model.repository of
+            Just repository -> [ Skeleton.authorSegment repository author ]
+            Nothing -> []
   , warning = Skeleton.NoProblems
   , attrs = []
   , kids =
@@ -207,11 +213,11 @@ viewEntry entry =
 
 
 viewEntryHelp : Entry -> Html msg
-viewEntryHelp ({ author, project, summary } as entry) =
+viewEntryHelp ({ repositoryId, author, project, summary } as entry) =
   div [ class "pkg-summary" ]
     [ div [ class "pkg-summary-title" ]
         [ h1 []
-            [ a [ href (Href.toVersion author project Nothing Nothing) ]
+            [ a [ href (Href.toVersion repositoryId author project Nothing Nothing) ]
                 [ span [ class "pkg-summary-author" ] [ text (author ++ "/") ]
                 , wbr [] []
                 , span [ class "pkg-summary-project" ] [ text project ]
@@ -229,16 +235,16 @@ viewLatestVersion entry =
     case V.toTuple entry.version of
       (1, 0, 0) ->
         [ a
-            [ href (Href.toVersion entry.author entry.project (Just entry.version) Nothing) ]
+            [ href (Href.toVersion entry.repositoryId entry.author entry.project (Just entry.version) Nothing) ]
             [ text (V.toString entry.version) ]
         ]
 
       _ ->
         [ a
-            [ href (Href.toProject entry.author entry.project) ]
+            [ href (Href.toProject entry.repositoryId entry.author entry.project) ]
             [ text "… " ]
         , a
-            [ href (Href.toVersion entry.author entry.project (Just entry.version) Nothing) ]
+            [ href (Href.toVersion entry.repositoryId entry.author entry.project (Just entry.version) Nothing) ]
             [ text (V.toString entry.version) ]
         ]
 
@@ -333,9 +339,9 @@ singlePageApp : Html msg
 singlePageApp =
   makeHint
     [ text "All single-page apps in Elm use "
-    , codeLink (Href.toVersion "elm" "browser" Nothing Nothing) "elm/browser"
+    , codeLink "https://package.elm-lang.org/packages/elm/browser/latest/" "elm/browser"
     , text " to control the URL, with help from "
-    , codeLink (Href.toVersion "elm" "url" Nothing Nothing) "elm/url"
+    , codeLink "https://package.elm-lang.org/packages/elm/url/latest/" "elm/url"
     , text " convert between URLs and nice structured data. I very highly recommend working through "
     , guide
     , text " to learn how! Once you have made one or two single-page apps the standard way, it will be much easier to tell which (if any) of the packages below can make your code any easier."
@@ -366,11 +372,11 @@ router : Html msg
 router =
   makeHint
     [ text "The "
-    , codeLink (Href.toVersion "elm" "url" Nothing Nothing) "elm/url"
+    , codeLink "https://package.elm-lang.org/packages/elm/url/latest/" "elm/url"
     , text " package has everything you need to turn paths, queries, and hashes into useful data. But definitely work through "
     , guide
     , text " to learn how this fits into a "
-    , codeLink (Href.toModule "elm" "browser" Nothing "Browser" (Just "application")) "Browser.application"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "browser" Nothing "Browser" (Just "application")) "Browser.application"
     , text " that manages the URL!"
     ]
 
@@ -379,13 +385,13 @@ focus : Html msg
 focus =
   makeHint
     [ text "Check out "
-    , codeLink (Href.toModule "elm" "browser" Nothing "Browser.Dom" Nothing) "Browser.Dom"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "browser" Nothing "Browser.Dom" Nothing) "Browser.Dom"
     , text " for focusing on certain nodes. It uses tasks, so be sure you have learned about "
     , code [] [ text "Cmd" ]
     , text " values in "
     , guide
     , text " and then read through the "
-    , codeLink (Href.toModule "elm" "core" Nothing "Task" Nothing) "Task"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "core" Nothing "Task" Nothing) "Task"
     , text " module so you do not have to guess at how anything works!"
     ]
 
@@ -394,13 +400,13 @@ scroll : Html msg
 scroll =
   makeHint
     [ text "Check out "
-    , codeLink (Href.toModule "elm" "browser" Nothing "Browser.Dom" Nothing) "Browser.Dom"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "browser" Nothing "Browser.Dom" Nothing) "Browser.Dom"
     , text " for getting and setting scroll positions. It uses tasks, so be sure you have learned about "
     , code [] [ text "Cmd" ]
     , text " values in "
     , guide
     , text " and then read through the "
-    , codeLink (Href.toModule "elm" "core" Nothing "Task" Nothing) "Task"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "core" Nothing "Task" Nothing) "Task"
     , text " module so you do not have to guess at how anything works!"
     ]
 
@@ -409,9 +415,9 @@ mouse : Html msg
 mouse =
   makeHint
     [ text "Folks usually use "
-    , codeLink (Href.toModule "elm" "html" Nothing "Html.Events" Nothing) "Html.Events"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "html" Nothing "Html.Events" Nothing) "Html.Events"
     , text " to detect clicks on buttons. If you want mouse events for the whole page, you may want "
-    , codeLink (Href.toModule "elm" "browser" Nothing "Browser.Events" Nothing) "Browser.Events"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "browser" Nothing "Browser.Events" Nothing) "Browser.Events"
     , text " instead. Reading "
     , guide
     , text " should give the foundation for using either!"
@@ -422,9 +428,9 @@ keyboard : Html msg
 keyboard =
   makeHint
     [ text "Folks usually use "
-    , codeLink (Href.toModule "elm" "html" Nothing "Html.Events" Nothing) "Html.Events"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "html" Nothing "Html.Events" Nothing) "Html.Events"
     , text " for key presses in text fields. If you want keyboard events for the whole page, you may want "
-    , codeLink (Href.toModule "elm" "browser" Nothing "Browser.Events" Nothing) "Browser.Events"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "browser" Nothing "Browser.Events" Nothing) "Browser.Events"
     , text " instead. Reading "
     , guide
     , text " should give the foundation for using either!"
@@ -435,9 +441,9 @@ window : Html msg
 window =
   makeHint
     [ text "Use "
-    , codeLink (Href.toModule "elm" "browser" Nothing "Browser.Dom" Nothing) "Browser.Dom"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "browser" Nothing "Browser.Dom" Nothing) "Browser.Dom"
     , text " to get the current window size, and use "
-    , codeLink (Href.toModule "elm" "browser" Nothing "Browser.Events" Nothing) "Browser.Events"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "browser" Nothing "Browser.Events" Nothing) "Browser.Events"
     , text " to detect when the window changes size or is not visible at the moment."
     ]
 
@@ -446,7 +452,7 @@ animation : Html msg
 animation =
   makeHint
     [ text "If you are not using CSS animations, you will need "
-    , codeLink (Href.toModule "elm" "browser" Nothing "Browser.Events" (Just "onAnimationFrame")) "onAnimationFrame"
+    , codeLink (Href.toModuleInStandardElmPackageRepo "elm" "browser" Nothing "Browser.Events" (Just "onAnimationFrame")) "onAnimationFrame"
     , text " to get smooth animations. The packages below may make one of these paths easier for you, but sometimes it is easier to just do things directly!"
     ]
 

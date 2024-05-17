@@ -58,10 +58,10 @@ view info block =
 
 
 viewCodeBlock : Info -> String -> String -> List (Line msg) -> Html msg
-viewCodeBlock {author, project, version, moduleName} name comment header =
+viewCodeBlock {repository, author, project, version, moduleName} name comment header =
   let
     url =
-      Href.toModule author project version moduleName (Just name)
+      Href.toModule repository author project version moduleName (Just name)
   in
   div [ class "docs-block", id name ]
     [ div [ class "docs-header" ] (List.map (div []) header)
@@ -178,7 +178,8 @@ unionMore info =
 
 
 type alias Info =
-  { author : String
+  { repository : String
+  , author : String
   , project : String
   , version : Maybe V.Version
   , moduleName : String
@@ -191,8 +192,8 @@ type alias TypeNameDict =
   Dict.Dict String (String, String)
 
 
-makeInfo : String -> String -> Maybe V.Version -> String -> List Docs.Module -> Int -> Info
-makeInfo author project version moduleName docsList width =
+makeInfo : String -> String -> String -> Maybe V.Version -> String -> List Docs.Module -> Int -> Info
+makeInfo repository author project version moduleName docsList width =
   let
     addUnion home union docs =
       Dict.insert (home ++ "." ++ union.name) (home, union.name) docs
@@ -207,7 +208,8 @@ makeInfo author project version moduleName docsList width =
         else
             defaultMaxWidth
   in
-    { author = author
+    { repository = repository
+    , author = author
     , project = project
     , version = version
     , moduleName = moduleName
@@ -221,10 +223,10 @@ makeInfo author project version moduleName docsList width =
 
 
 toBoldLink : Info -> String -> String -> Html msg
-toBoldLink {author, project, version, moduleName} name humanName =
+toBoldLink {repository, author, project, version, moduleName} name humanName =
   let
     url =
-      Href.toModuleWithSource author project version moduleName (Just name)
+      Href.toModuleWithSource repository author project version moduleName (Just name)
   in
   a [ href url, bold ] [ text humanName ]
 
@@ -235,10 +237,10 @@ bold =
 
 
 makeLink : Info -> List (Attribute msg) -> String -> String -> Html msg
-makeLink {author, project, version, moduleName} attrs tagName humanName =
+makeLink {repository, author, project, version, moduleName} attrs tagName humanName =
   let
     url =
-      Href.toModule author project version moduleName (Just tagName)
+      Href.toModule repository author project version moduleName (Just tagName)
   in
   a (href url :: attrs) [ text humanName ]
 
