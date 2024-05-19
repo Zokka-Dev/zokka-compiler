@@ -191,8 +191,7 @@ viewLogo =
         , style "display" "-ms-flexbox"
         , style "display" "flex"
         ]
-        [ Logo.logo 30
-        , div
+        [ div
             [ class "logo-text"
             , style "padding-left" "8px"
             ]
@@ -201,7 +200,7 @@ viewLogo =
                 , style "font-size" "30px"
                 , style "transform" "translateY(-4px)"
                 ]
-                [ text "elm" ]
+                [ text "zokka custom repository" ]
             , div
                 [ style "line-height" "10px"
                 , style "font-size" "12px"

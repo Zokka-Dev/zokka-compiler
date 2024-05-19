@@ -1,3 +1,4 @@
+import json
 import subprocess
 import threading
 import time
@@ -133,7 +134,8 @@ if __name__ == "__main__":
         create_user()
         user_login_token = login_as_user()
         repository_id = create_repository(user_login_token)
-        repository_auth_token = create_token(repository_id, user_login_token)
+        repository_auth_token_as_json_str = create_token(repository_id, user_login_token)
+        repository_auth_token = json.loads(repository_auth_token_as_json_str)["value"]
         upload_output = upload_package(repository_id, repository_auth_token)
         all_packages_output = get_all_packages(repository_id, repository_auth_token)
         dashboard_output = get_dashboard(user_login_token)

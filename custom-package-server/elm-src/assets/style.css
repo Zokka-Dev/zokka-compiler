@@ -74,14 +74,14 @@ pre {
   top: 0;
   height: 64px;
   width: calc(100vw - 100%);
-  background-color: #5FABDC;
+  background-color: #E683E4;
   content: "";
 }
 
 .page-margin {
   flex: 1;
   height: 64px;
-  background-color: #5FABDC;
+  background-color: #E683E4;
 }
 
 .content {
@@ -102,7 +102,7 @@ pre {
 
 .header-bar {
   min-height: 64px;
-  background-color: #5FABDC;
+  background-color: #E683E4;
   display: flex;
   align-items: center;
 }
@@ -113,7 +113,7 @@ pre {
 
 .header-bar .center {
   /* Cover potential overflow */
-  background-color: #5FABDC;
+  background-color: #E683E4;
 }
 
 .header {

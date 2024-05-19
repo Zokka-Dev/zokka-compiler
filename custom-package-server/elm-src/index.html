@@ -13,7 +13,19 @@
 </head>
 <body>
 <script>
-Elm.Main.init({ flags: window.innerWidth });
+const app = Elm.Main.init({ flags: window.innerWidth });
+app.ports.toggleDialogById.subscribe(function(dialogAction) {
+  const dialogId = dialogAction.dialogId;
+  const action = dialogAction.action;
+  const dialog = document.querySelector(`#${dialogId}`);
+  if (dialog.open && action === "close") {
+    dialog.close();
+  } else if (!dialog.open && action === "open") {
+    dialog.showModal();
+  } else {
+    console.warn(`Unknown dialog action: {action}`);
+  }
+});
 </script>
 </body>
 </html>

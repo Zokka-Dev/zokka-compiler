@@ -8,9 +8,9 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..), encode, decode)
 import qualified Data.Aeson.Key as DAK
 import qualified Data.Aeson.Types as DAT
-import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam, Parsable, ScottyM, redirect)
+import Web.Scotty (scotty, get, post, pathParam, queryParam, json, status, files, File, ActionM, finish, status, setHeader, raw, header, middleware, formParam, Parsable, ScottyM, redirect, delete)
 import Web.Scotty.Cookie (getCookie, setCookie, defaultSetCookie, setCookieName, setCookieValue)
-import Database.SQLite.Simple (execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection(..), field, Only (..), withTransaction, withConnection)
+import Database.SQLite.Simple (changes, execute, execute_, query, query_, FromRow, ToRow, fromRow, toRow, Connection(..), field, Only (..), withTransaction, withConnection)
 import Data.Text (Text, splitOn)
 import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
 import Data.Text.Read (decimal)
@@ -44,11 +44,12 @@ import qualified Options.Applicative as OA
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import System.IO.Unsafe (unsafePerformIO)
 import System.IO (readFile)
-import Control.Exception (bracket)
+import Control.Exception (bracket, Exception, throwIO)
 import qualified Network.Wai.Middleware.Static as Static
 import qualified Network.Wai.Middleware.Cors as Cors
 import qualified Debug.Trace as Debug
 import qualified System.FilePath as FP
+import Data.Data (Typeable)
 
 safeHead :: [a] -> Maybe a
 safeHead (x : _) = Just x
@@ -56,6 +57,9 @@ safeHead _ = Nothing
 
 unOnly :: Only a  -> a
 unOnly (Only x) = x
+
+newtype RepositoryAuthTokenId = RepositoryAuthTokenId { unRepositoryAuthTokenId :: Int }
+  deriving (ToField, FromField, ToJSON, Parsable, Eq, Show)
 
 newtype RepositoryId = RepositoryId { unRepositoryId :: Int }
   deriving (ToField, FromField, ToJSON, Parsable, Eq, Show)
@@ -426,18 +430,39 @@ mimeTypeFromFileName fileName =
 customAuthSchemeName :: Text
 customAuthSchemeName = "CustomZokkaRepoAuthToken"
 
-newtype RepositoryAuthToken = RepositoryAuthToken { unRepositoryAuthToken :: Base64EncodedBytes }
+data FreshlyCreatedRepositoryAuthToken = FreshlyCreatedRepositoryAuthToken
+  { _freshlyCreatedRepositoryAuthTokenId :: RepositoryAuthTokenId
+  , _freshlyCreatedRepositoryAuthTokenValue :: RepositoryAuthTokenValue
+  , _freshlyCreatedRepositoryAuthTokenPermission :: AuthTokenPermission
+  , _freshlyCreatedRepositoryAuthTokenFragment :: Text
+  , _freshlyCreatedRepositoryAuthTokenRepositoryId :: RepositoryId
+  }
+
+instance ToJSON FreshlyCreatedRepositoryAuthToken
+  where
+    toJSON :: FreshlyCreatedRepositoryAuthToken -> Value
+    toJSON authToken =
+      object
+        [ "fragment" .= _freshlyCreatedRepositoryAuthTokenFragment authToken
+        , "permission" .= _freshlyCreatedRepositoryAuthTokenPermission authToken
+        , "repository" .= _freshlyCreatedRepositoryAuthTokenRepositoryId authToken
+        , "id" .= _freshlyCreatedRepositoryAuthTokenId authToken
+        , "value" .= _freshlyCreatedRepositoryAuthTokenValue authToken
+        ]
+
+newtype RepositoryAuthTokenValue = RepositoryAuthTokenValue { unRepositoryAuthTokenValue :: Base64EncodedBytes }
 -- Note that since we shouldn't be storing this token in the database, it should NOT have instances of ToField and FromField
   deriving (ToJSON, Parsable, Eq)
 
 newtype RepositoryAuthTokenHash = RepositoryAuthTokenHash { unRepositoryAuthTokenHash :: ByteString }
+-- Note that since this hash value should only ever be used in internal computation and not exposed to a frontend client, it should NOT have instances of ToJSON
   deriving (ToField, FromField, Eq)
 
-deriveTokenFragment :: RepositoryAuthToken -> Text
-deriveTokenFragment (RepositoryAuthToken (Base64EncodedBytes base64text)) = T.take 6 base64text
+deriveTokenFragment :: RepositoryAuthTokenValue -> Text
+deriveTokenFragment (RepositoryAuthTokenValue (Base64EncodedBytes base64text)) = T.take 6 base64text
 
-repositoryAuthTokenToText :: RepositoryAuthToken -> Text
-repositoryAuthTokenToText (RepositoryAuthToken (Base64EncodedBytes base64text)) = base64text
+repositoryAuthTokenToText :: RepositoryAuthTokenValue -> Text
+repositoryAuthTokenToText (RepositoryAuthTokenValue (Base64EncodedBytes base64text)) = base64text
 
 -- Repository auth tokens tokens are randomly generated so an additional salt
 -- gives us no real security advantage (since salts protect against rainbow
@@ -447,8 +472,8 @@ repositoryAuthTokenToText (RepositoryAuthToken (Base64EncodedBytes base64text)) 
 repositoryAuthTokenSalt :: BS.ByteString
 repositoryAuthTokenSalt = "aehirawehripawhrpawhprawhpoerhawperp"
 
-hashRepositoryAuthToken :: RepositoryAuthToken -> RepositoryAuthTokenHash
-hashRepositoryAuthToken (RepositoryAuthToken base64)= RepositoryAuthTokenHash (BS.fromStrict hashedBytes)
+hashRepositoryAuthToken :: RepositoryAuthTokenValue -> RepositoryAuthTokenHash
+hashRepositoryAuthToken (RepositoryAuthTokenValue base64)= RepositoryAuthTokenHash (BS.fromStrict hashedBytes)
   where
     hashedBytes = securelyHashBytes (decodeBase64 base64) repositoryAuthTokenSalt
 
@@ -456,7 +481,7 @@ authTokenHashToRepositoryId :: RepositoryAuthTokenHash -> IO (Maybe (AuthTokenPe
 authTokenHashToRepositoryId authToken = withCustomConnection
   (\conn -> safeHead <$> query conn "SELECT permission_id, repository_id FROM auth_tokens WHERE token_value_hash = ?" (Only authToken))
 
-authTokenToRepositoryId :: RepositoryAuthToken -> IO (Maybe (AuthTokenPermission, RepositoryId))
+authTokenToRepositoryId :: RepositoryAuthTokenValue -> IO (Maybe (AuthTokenPermission, RepositoryId))
 authTokenToRepositoryId authToken = authTokenHashToRepositoryId (hashRepositoryAuthToken authToken)
 
 -- We use a Text instead of a ByteString as the underlying datatype because
@@ -528,7 +553,7 @@ retrieveRepositoryIdForAuthToken =
           -- space, should split more generally on whitespace
           let authScheme : authTokenText : _ = splitOn " " (TL.toStrict authHeaderValue)
           when (authScheme /= customAuthSchemeName) (do {status status400; text "Incorrect authentication scheme used!"; finish})
-          repositoryAuthToken <- maybe (do { status status400; text "Token was not valid base 64!"; finish;}) (pure . RepositoryAuthToken) (validateTextIsBase64 authTokenText)
+          repositoryAuthToken <- maybe (do { status status400; text "Token was not valid base 64!"; finish;}) (pure . RepositoryAuthTokenValue) (validateTextIsBase64 authTokenText)
           repositoryIdMaybe <- liftIO $ authTokenToRepositoryId repositoryAuthToken
           case repositoryIdMaybe of
             Just (authPermission, repositoryId) -> pure (authPermission, repositoryId)
@@ -715,19 +740,74 @@ authUserIdAgainstRepository userId repositoryId =
 tokenSizeInBytes :: Int
 tokenSizeInBytes = 40
 
-createTokenQuery :: Connection -> UserId -> RepositoryId -> AuthTokenPermission -> IO RepositoryAuthToken
+createTokenQuery :: Connection -> UserId -> RepositoryId -> AuthTokenPermission -> IO FreshlyCreatedRepositoryAuthToken
 createTokenQuery conn userId repositoryId permission =
   do
     tokenAsBytes <- getEntropy tokenSizeInBytes
-    let token = RepositoryAuthToken $ encodeBase64 tokenAsBytes
-    -- FIXME: Right now all tokens are created with read and write permissions
-    execute conn "INSERT INTO auth_tokens (token_value_hash, token_value_fragment, user_id, repository_id, permission_id) VALUES (?,?,?,?,?)" (hashRepositoryAuthToken token, deriveTokenFragment token, userId, repositoryId, permission)
-    pure token
+    let token = RepositoryAuthTokenValue $ encodeBase64 tokenAsBytes
+    let tokenFragment = deriveTokenFragment token
+    -- If the INSERT is successful (i.e. doesn't throw an exception), then we
+    -- should definitely get a RETURNING value, so head is safe
+    (Only tokenId) <- head <$> query conn "INSERT INTO auth_tokens (token_value_hash, token_value_fragment, user_id, repository_id, permission_id) VALUES (?,?,?,?,?) RETURNING id" (hashRepositoryAuthToken token, tokenFragment, userId, repositoryId, permission)
+    pure FreshlyCreatedRepositoryAuthToken
+      { _freshlyCreatedRepositoryAuthTokenFragment=tokenFragment
+      , _freshlyCreatedRepositoryAuthTokenId=tokenId
+      , _freshlyCreatedRepositoryAuthTokenPermission=permission
+      , _freshlyCreatedRepositoryAuthTokenRepositoryId=repositoryId
+      , _freshlyCreatedRepositoryAuthTokenValue=token
+      }
 
-createToken :: UserId -> RepositoryId -> AuthTokenPermission -> IO RepositoryAuthToken
+createToken :: UserId -> RepositoryId -> AuthTokenPermission -> IO FreshlyCreatedRepositoryAuthToken
 createToken userId repositoryId permission = withCustomConnection
-  (\conn -> withTransaction conn $
+  (\conn -> withTransaction conn $ do
     createTokenQuery conn userId repositoryId permission
+  )
+
+-- Technically we only need the repository ID to carry out a deletion, but
+-- forcing us to include a user ID is a nice little safeguard against making
+-- sure we only delete things that a user has access to
+deleteRepositoryQuery :: Connection -> UserId -> RepositoryId -> IO ()
+deleteRepositoryQuery conn userId repositoryId =
+  withTransaction conn $ do
+    execute conn "DELETE FROM packages WHERE repository_id = ?" (Only userId)
+    execute conn "DELETE FROM auth_tokens WHERE repository_id = ?" (Only repositoryId)
+    execute conn "DELETE FROM repositories WHERE owner_user_id = ? AND id = ?" (userId, repositoryId)
+
+deleteRepository :: UserId -> RepositoryId -> IO ()
+deleteRepository userId repositoryId =
+  withCustomConnection (\conn -> deleteRepositoryQuery conn userId repositoryId)
+
+deletePackageQuery :: Connection -> RepositoryId -> Author -> Project -> Version -> IO ()
+deletePackageQuery conn repositoryId author project version =
+  execute conn "DELETE FROM packages WHERE repository_id = ? AND author = ? AND project = ? AND version = ?" (repositoryId, author, project, version)
+
+deletePackage :: RepositoryId -> Author -> Project -> Version -> IO ()
+deletePackage repositoryId author project version =
+  withCustomConnection (\conn -> deletePackageQuery conn repositoryId author project version)
+
+-- Technically we only need the token ID to carry out a deletion, but forcing us
+-- to include the user ID and repository ID is a good safeguard against bugs
+-- that cause bad deletions
+deleteTokenQuery :: Connection -> UserId -> RepositoryId -> RepositoryAuthTokenId -> IO ()
+deleteTokenQuery conn userId repositoryId repositoryAuthTokenId =
+  execute conn "DELETE FROM auth_tokens WHERE id = ? AND repository_id = ? AND user_id = ?" (repositoryAuthTokenId, repositoryId, userId)
+
+data BugInDeletionException = BugInDeletionException UserId RepositoryId RepositoryAuthTokenId
+  deriving (Show, Typeable)
+
+instance Exception BugInDeletionException
+
+-- FIXME: Deal with boolean blindness
+-- Bool is whether successful or not
+deleteToken :: UserId -> RepositoryId -> RepositoryAuthTokenId -> IO Bool
+deleteToken userId repositoryId repositoryAuthTokenId = withCustomConnection
+  (\conn ->
+    withTransaction conn $ do
+      deleteTokenQuery conn userId repositoryId repositoryAuthTokenId
+      numOfDeletedTokens <- changes conn
+      if numOfDeletedTokens > 1
+        then throwIO (BugInDeletionException userId repositoryId repositoryAuthTokenId)
+        else pure $ numOfDeletedTokens == 1
   )
 
 createRepositoryQuery :: Connection -> Text -> Text -> UserId -> IO ()
@@ -787,26 +867,32 @@ instance ToJSON AuthTokenPermission where
 data AuthToken = AuthToken
   { _authTokenValueFragment :: Text
   , _authTokenPermission :: AuthTokenPermission
-  , _authTokenUserId :: Int
+  , _authTokenUserId :: UserId
+  , _authTokenRepositoryId :: RepositoryId
+  , _authTokenId :: RepositoryAuthTokenId
   }
 
 instance ToJSON AuthToken where
-  toJSON (AuthToken tokenValueFragment tokenPermission tokenUserId) = object
+  toJSON (AuthToken tokenValueFragment tokenPermission tokenUserId tokenRepositoryId tokenId) = object
     [ "fragment" .= tokenValueFragment
     , "permission" .= tokenPermission
-    , "userId" .= tokenUserId
+    , "user-id" .= tokenUserId
+    , "repository" .= tokenRepositoryId
+    , "id" .= tokenId
     ]
 
 data DashboardData = DashboardData
   { _dashboardDataPackages :: [Package]
   , _dashboardDataAuthTokens :: [AuthToken]
+  , _dashboardDataRepoIds :: [RepositoryId]
   }
 
 instance ToJSON DashboardData where
   toJSON :: DashboardData -> Value
-  toJSON (DashboardData packages authTokens) = object
+  toJSON (DashboardData packages authTokens repositoryIds) = object
     [ "packages" .= toJSON packages
     , "auth-tokens" .= toJSON authTokens
+    , "repository-ids" .= toJSON repositoryIds
     ]
 
 
@@ -821,22 +907,32 @@ allAuthTokensForReposForUsernameQuery :: Connection -> UserId -> IO [AuthToken]
 allAuthTokensForReposForUsernameQuery conn userId =
   fmap (fmap tupleToAuthToken) queryResult
   where
-    queryResult :: IO [(Text, Int, Int)]
-    queryResult = query conn "SELECT token_value_fragment, permission_id, user_id FROM auth_tokens WHERE user_id = ?" (Only userId)
+    queryResult :: IO [(RepositoryAuthTokenId, Text, Int, UserId, RepositoryId)]
+    queryResult = query conn "SELECT id, token_value_fragment, permission_id, user_id, repository_id FROM auth_tokens WHERE user_id = ?" (Only userId)
     -- FIXME low: Deal with error case here (even those this is probably a db bug if it occurs)
     intToAuthTokenPermission 0 = ReadOnly
     intToAuthTokenPermission 1 = ReadWrite
-    tupleToAuthToken (tokenValue, tokenPermission, userId) = AuthToken {_authTokenValueFragment=tokenValue, _authTokenPermission=intToAuthTokenPermission tokenPermission, _authTokenUserId=userId}
+    tupleToAuthToken (repositoryAuthTokenId, tokenValue, tokenPermission, userId, repositoryId) =
+      AuthToken {_authTokenValueFragment=tokenValue, _authTokenPermission=intToAuthTokenPermission tokenPermission, _authTokenUserId=userId, _authTokenRepositoryId=repositoryId, _authTokenId=repositoryAuthTokenId}
 
 allAuthTokensForReposForUserId :: UserId -> IO [AuthToken]
 allAuthTokensForReposForUserId userId = withCustomConnection (\conn -> allAuthTokensForReposForUsernameQuery conn userId)
+
+allRepoIdsForUserIdQuery :: Connection -> UserId -> IO [RepositoryId]
+allRepoIdsForUserIdQuery conn userId =
+  fmap unOnly <$> query conn "SELECT id FROM repositories WHERE owner_user_id = ?" (Only userId)
+
+allRepoIdsForUserId :: UserId -> IO [RepositoryId]
+allRepoIdsForUserId userId =
+  withCustomConnection (\conn -> allRepoIdsForUserIdQuery conn userId)
 
 getTopLevelDashboard :: UserId -> IO DashboardData
 getTopLevelDashboard userId =
   do
     packages <- allPackagesForReposForUserId userId
     authTokens <- allAuthTokensForReposForUserId userId
-    pure (DashboardData{_dashboardDataPackages=packages, _dashboardDataAuthTokens=authTokens})
+    repoIds <- allRepoIdsForUserId userId
+    pure (DashboardData{_dashboardDataPackages=packages, _dashboardDataAuthTokens=authTokens, _dashboardDataRepoIds=repoIds})
 
 scottyServer :: Text -> Bool -> ScottyM ()
 scottyServer externalWebsiteUrl corsAllowAll =
@@ -941,7 +1037,35 @@ scottyServer externalWebsiteUrl corsAllowAll =
             text (T.concat ["Gave an unknown permission level: ", x, ". Valid levels are readonly and readwrite"])
             finish
       tokenValue <- liftIO $ createToken userId repositoryId permissionLevel
-      text (repositoryAuthTokenToText tokenValue)
+      json tokenValue
+
+    delete "/dashboard/repository/:repository-id/token/:token-id" $ do
+      repositoryId <- pathParam "repository-id"
+      userId <- retrieveUserIdForLoginSessionToken
+      tokenId <- pathParam "token-id"
+      deletionWasSuccessful <- liftIO $ deleteToken userId repositoryId tokenId
+      if deletionWasSuccessful
+        then text "Successful deletion!"
+        else text "There was no token found to delete!"
+
+    delete "/dashboard/repository/:repository-id/packages/:author/:project/:version" $ do
+      userId <- retrieveUserIdForLoginSessionToken
+      repositoryId <- pathParam "repository-id"
+      authUserIdAgainstRepository userId repositoryId
+      author <- pathParam "author"
+      project <- pathParam "project"
+      version <- pathParam "version"
+      -- FIXME: Add some sort of return value to confirm that deletion was successful
+      liftIO $ deletePackage repositoryId author project version
+      text "Package deleted successfully!"
+
+    delete "/dashboard/repository/:repository-id" $ do
+      userId <- retrieveUserIdForLoginSessionToken
+      repositoryId <- pathParam "repository-id"
+      authUserIdAgainstRepository userId repositoryId
+      -- FIXME: Add some sort of return value to confirm that deletion was successful
+      liftIO $ deleteRepository userId repositoryId
+      text "Repository deleted successfully!"
 
     get "/dashboard/repository/:repository-id/all-tokens" $ do
       repositoryId <- pathParam "repository-id"
@@ -1095,7 +1219,7 @@ main =
   do
     commandLineArgs <- OA.execParser commandLineArgParserInfo
     let dbFilePath = _commandLineOptionsDatabaseFilename commandLineArgs
-    putStrLn ("USing (or creating) SQLite database at " ++ dbFilePath)
+    putStrLn ("Using (or creating) SQLite database at " ++ dbFilePath)
     writeIORef dbFileName dbFilePath
     let scriptLocation = _commandLineOptionsSQLInitializationScriptLocation commandLineArgs
     if scriptLocation == ""

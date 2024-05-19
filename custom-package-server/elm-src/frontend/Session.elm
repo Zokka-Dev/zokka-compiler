@@ -1,7 +1,6 @@
 module Session exposing
   ( Data
   , empty
-  , getEntries
   , addEntries
   , getReleases
   , getLatestVersion
@@ -25,7 +24,7 @@ import Elm.Project as Project
 import Elm.Version as V
 import Http
 import Json.Decode as Decode
-import Page.Search.Entry as Entry
+import Page.Search.Entry as Entry exposing (DataFromBackend)
 import Release
 import Url.Builder as Url
 import Utils.OneOrMore exposing (OneOrMore(..))
@@ -36,7 +35,7 @@ import Utils.OneOrMore exposing (OneOrMore(..))
 
 
 type alias Data =
-  { entries : Maybe (List Entry.Entry)
+  { entries : Maybe DataFromBackend
   , releases : Dict.Dict String (OneOrMore Release.Release)
   , readmes : Dict.Dict String String
   , docs : Dict.Dict String (List Docs.Module)
@@ -58,12 +57,7 @@ empty =
 -- ENTRIES
 
 
-getEntries : Data -> Maybe (List Entry.Entry)
-getEntries data =
-  data.entries
-
-
-addEntries : List Entry.Entry -> Data -> Data
+addEntries : DataFromBackend -> Data -> Data
 addEntries entries data =
   { data | entries = Just entries }
 

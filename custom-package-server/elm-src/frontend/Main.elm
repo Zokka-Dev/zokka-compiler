@@ -112,7 +112,7 @@ viewLoginPage =
   Html.div []
     [ Html.text "You must login!"
     , Html.form
-      [ Html.Attributes.method "post", Html.Attributes.action "http://localhost:3000/dashboard/login" ]
+      [ Html.Attributes.method "post", Html.Attributes.action "/dashboard/login" ]
       [ Html.div
         []
         [ Html.label [ Html.Attributes.for "username" ] [ Html.text "Username:" ]

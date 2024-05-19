@@ -1,4 +1,4 @@
-module Page.Search exposing
+port module Page.Search exposing
   ( Model
   , init
   , Msg
@@ -8,7 +8,8 @@ module Page.Search exposing
 
 
 import Browser.Navigation as Nav
-import Elm.Version as V
+import Dict exposing (Dict)
+import Elm.Version as V exposing (Version)
 import Html exposing (..)
 import Html.Attributes exposing (autocomplete, autofocus, class, href, name, placeholder, style, type_, value)
 import Html.Events exposing (..)
@@ -17,7 +18,8 @@ import Html.Keyed as Keyed
 import Http
 import Href
 import Json.Decode as Decode
-import Page.Search.Entry as Entry exposing (Entry)
+import Json.Encode as Encode exposing (Value)
+import Page.Search.Entry as Entry exposing (AuthToken, DataFromBackend, Package, Repository, authTokenDecoder, newlyCreatedAuthTokenDecoder)
 import Page.Problem as Problem
 import Process
 import Session
@@ -25,7 +27,14 @@ import Skeleton
 import Task
 import Url.Builder as Url
 import Url
+import Utils.AuthTokenId as AuthTokenId exposing (AuthTokenId)
+import Utils.DictUtils exposing (groupBy)
 import Utils.LoginUpdate exposing (LoginUpdate(..), httpErrorToLoginUpdate)
+import Utils.NonEmptyList as NonEmptyList
+import Utils.PermissionLevel as PermissionLevel exposing (PermissionLevel)
+import Utils.RepositoryId as RepositoryId exposing (RepositoryId(..))
+import Utils.RepositoryName as RepositoryName exposing (RepositoryName)
+import Utils.RepositoryUrlSafeName as RepositoryUrlSafeName exposing (RepositoryUrlSafeName)
 
 
 
@@ -35,34 +44,53 @@ import Utils.LoginUpdate exposing (LoginUpdate(..), httpErrorToLoginUpdate)
 type alias Model =
   { session : Session.Data
   , query : String
+  -- Pulling out the repository and author separately are for cases where we want to display a view for /repository/author URLs
+  --
   -- FIXME: This is technically bad data modelling; it shouldn't be possible for
   -- the author to be Just ... and the repository to be Nothing
   , repository : Maybe String
   , author : Maybe String
   , entries : Entries
+  -- These two are fields to handle forms that need text input to create a repository
+  , createRepositoryCurrentName : String
+  , createRepositoryCurrentUrlSafeName : String
   }
 
 
 type Entries
   = Failure
   | Loading
-  | Success (List Entry)
+  | Success (List Repository)
 
 
 
 init : Session.Data -> Maybe String -> Maybe String -> Maybe String -> ( Model, Cmd Msg, LoginUpdate )
 init session query repository author =
-  case Session.getEntries session of
-    Just entries ->
-      ( Model session (Maybe.withDefault "" query) repository author (Success entries)
+  case session.entries of
+    Just backendData ->
+      ( Model
+        session
+        (Maybe.withDefault "" query)
+        repository
+        author
+        (Success (Entry.backendDataToRepositories backendData |> Dict.values))
+        ""
+        ""
       , Cmd.none
       , NoUpdateAboutLoginStatus
       )
 
     Nothing ->
-      ( Model session (Maybe.withDefault "" query) repository author Loading
+      ( Model
+        session
+        (Maybe.withDefault "" query)
+        repository
+        author
+        Loading
+        ""
+        ""
       , Http.send GotPackages <|
-          Http.get "http://localhost:3000/dashboard/all-data" (Entry.redecodeBackToEntries)
+          Http.get "/dashboard/all-data" (Entry.dashboardDataDecoder)
       , NoUpdateAboutLoginStatus
       )
 
@@ -74,8 +102,27 @@ init session query repository author =
 type Msg
   = QueryChanged String
   | QuerySubmitted
-  | GotPackages (Result Http.Error (List Entry))
+  | GotPackages (Result Http.Error DataFromBackend)
+  | OpenGenericDialogById String
+  | CloseGenericDialogById String
+  -- We special case this one because we need to do something other than just close the dialog when we get this
+  | CloseCreateTokenDialog RepositoryId
+  | CreateRepositoryRequestRepositoryName String
+  | CreateRepositoryRequestRepositoryUrlSafeName String
+  | SendCreateRepositoryRequest
+  | ReceivedCreateRepositoryConfirmation (Result Http.Error RepositoryId)
+  | SendDeleteTokenRequest RepositoryId AuthTokenId
+  | ReceivedDeleteTokenConfirmation (Result Http.Error (RepositoryId, AuthTokenId))
+  | SendCreateTokenRequest RepositoryId PermissionLevel
+  | ReceivedCreateTokenConfirmation (Result Http.Error (AuthToken, String))
+  | SendDeleteRepositoryRequest RepositoryId
+  | ReceivedDeleteRepositoryConfirmation (RepositoryId, Result Http.Error ())
+  | SendDeletePackageRequest PackageIdentifier
+  | ReceivedDeletePackageConfirmation (PackageIdentifier, Result Http.Error ())
   | DelayedUrlChange String
+
+
+type alias PackageIdentifier = { repository: RepositoryId, author: String, project: String, version: String }
 
 
 update : Nav.Key -> Msg -> Model -> ( Model, Cmd Msg, LoginUpdate )
@@ -93,10 +140,10 @@ update key msg model =
         Err httpError ->
             ({ model | entries = Failure }, Cmd.none, httpErrorToLoginUpdate httpError)
 
-        Ok entries ->
+        Ok backendData ->
           ( { model
-                | entries = Success entries
-                , session = Session.addEntries entries model.session
+                | entries = Success (Entry.backendDataToRepositories backendData |> Dict.values)
+                , session = Session.addEntries backendData model.session
             }
           , Cmd.none
           , ConfirmedUserIsLoggedIn
@@ -115,6 +162,227 @@ update key msg model =
       else
         ( model, Cmd.none, NoUpdateAboutLoginStatus )
 
+    OpenGenericDialogById dialogId ->
+      ( model
+      , openDialogById dialogId
+      , NoUpdateAboutLoginStatus )
+
+    CloseGenericDialogById dialogId ->
+      ( model
+      , closeDialogById dialogId
+      , NoUpdateAboutLoginStatus )
+
+    SendDeleteTokenRequest repository authTokenId ->
+      ( model
+      , Http.send ReceivedDeleteTokenConfirmation <| httpDelete
+        ("/dashboard/repository/" ++ (RepositoryId.toString repository) ++ "/token/" ++ (AuthTokenId.toString authTokenId))
+        (repository, authTokenId)
+      , NoUpdateAboutLoginStatus
+      )
+
+    ReceivedDeleteTokenConfirmation result ->
+      case Debug.log "ReceivedDeleteTokenConfirmation result" result of
+        Err httpError ->
+            ({ model | entries = Failure }, Cmd.none, httpErrorToLoginUpdate httpError)
+
+        Ok (repository, authTokenId) ->
+          let
+            newEntries = case model.entries of
+              Success repositories ->
+                Success (List.map (\r -> if r.id == repository then { r | authTokens = List.filter (\a -> a.id /= authTokenId) r.authTokens } else r) repositories)
+              Failure -> model.entries
+              Loading -> model.entries
+
+          in
+          ( { model | entries = newEntries }
+          , closeDialogById (deleteTokenDialogId authTokenId)
+          , ConfirmedUserIsLoggedIn
+          )
+
+    SendCreateTokenRequest repositoryName permissionLevel ->
+      ( model
+      , Http.send ReceivedCreateTokenConfirmation <|
+        Http.post
+          ("/dashboard/repository/" ++ (RepositoryId.toString repositoryName) ++ "/token?permission=" ++ PermissionLevel.toStringInUrlQueryParam permissionLevel)
+          Http.emptyBody
+          newlyCreatedAuthTokenDecoder
+      , ConfirmedUserIsLoggedIn
+      )
+
+    ReceivedCreateTokenConfirmation result ->
+      case Debug.log "createtokenconfirmation" result of
+        Err httpError ->
+            -- FIXME: Deal with this better; instead of failing the entire model, we should have some sort of failure modal
+            ({ model | entries = Failure }, Cmd.none, httpErrorToLoginUpdate httpError)
+
+        Ok (authToken, newlyCreatedTokenValue) ->
+          let
+            newEntries = case model.entries of
+              Success repositories ->
+                repositories
+                  |> List.map (\r -> if r.id == authToken.repository then { r | authTokens = authToken :: r.authTokens, newTokenValue = Just newlyCreatedTokenValue } else r )
+                  |> Success
+              Failure -> model.entries
+              Loading -> model.entries
+          in
+          ( { model | entries = newEntries }
+          , Cmd.batch[closeDialogById createTokenDialogId, openDialogById tokenSuccessfullyCreatedDialogId]
+          , ConfirmedUserIsLoggedIn
+          )
+
+    CloseCreateTokenDialog repositoryName ->
+      ( case model.entries of
+        Success repositories -> { model | entries = Success (List.map (\r -> if r.id == repositoryName then { r | newTokenValue = Nothing } else r ) repositories) }
+        Failure -> model
+        Loading -> model
+      , closeDialogById createTokenDialogId
+      , ConfirmedUserIsLoggedIn
+      )
+
+    SendCreateRepositoryRequest ->
+      ( model
+      , Http.send ReceivedCreateRepositoryConfirmation <| Http.post
+        (Url.absolute ["dashboard", "repository"] [ Url.string "repository-name" model.createRepositoryCurrentName, Url.string "repository-url-safe-name" model.createRepositoryCurrentUrlSafeName ])
+        Http.emptyBody
+        (Decode.map (\i -> RepositoryId (String.fromInt i)) Decode.int)
+      , NoUpdateAboutLoginStatus
+      )
+
+    ReceivedCreateRepositoryConfirmation result ->
+      case result of
+        Err httpError ->
+            -- FIXME: Deal with this better; instead of failing the entire model, we should have some sort of failure modal
+            ({ model | entries = Failure }, closeDialogById createRepositoryDialogId, httpErrorToLoginUpdate httpError)
+
+        Ok repositoryId ->
+          ( case model.entries of
+            Failure -> model
+            Loading -> model
+            Success repositories ->
+              { model | entries = Success ({id=repositoryId, packages=[], authTokens=[], newTokenValue=Nothing} :: repositories)}
+          , closeDialogById createRepositoryDialogId
+          , ConfirmedUserIsLoggedIn
+          )
+
+    CreateRepositoryRequestRepositoryName string ->
+      ( { model | createRepositoryCurrentName = string }
+      , Cmd.none
+      , NoUpdateAboutLoginStatus
+      )
+
+    CreateRepositoryRequestRepositoryUrlSafeName string ->
+      ( { model | createRepositoryCurrentUrlSafeName = string }
+      , Cmd.none
+      , NoUpdateAboutLoginStatus
+      )
+
+    SendDeleteRepositoryRequest repositoryId ->
+      ( model
+      , Http.send (\result -> ReceivedDeleteRepositoryConfirmation (repositoryId, result)) <| httpDelete
+        (Url.absolute ["dashboard", "repository", RepositoryId.toString repositoryId] [])
+        ()
+      , NoUpdateAboutLoginStatus
+      )
+
+    ReceivedDeleteRepositoryConfirmation result ->
+      case result of
+        (repositoryId, Err httpError) ->
+            -- FIXME: Deal with this better; instead of failing the entire model, we should have some sort of failure modal
+            ({ model | entries = Failure }, closeDialogById (deleteRepositoryDialogId repositoryId), httpErrorToLoginUpdate httpError)
+
+        (repositoryId, Ok ()) ->
+          ( case model.entries of
+            Failure -> model
+            Loading -> model
+            Success repositories ->
+              { model | entries = Success (List.filter (\r -> r.id /= repositoryId) repositories)}
+          , closeDialogById (deleteRepositoryDialogId repositoryId)
+          , ConfirmedUserIsLoggedIn
+          )
+
+    SendDeletePackageRequest record ->
+      ( model
+      , Http.send (\httpresult -> ReceivedDeletePackageConfirmation (record, httpresult)) <| httpDelete
+        (Url.absolute ["dashboard", "repository", RepositoryId.toString record.repository, "packages", record.author, record.project, record.version] [])
+        ()
+      , NoUpdateAboutLoginStatus
+      )
+
+    ReceivedDeletePackageConfirmation (record, result) ->
+      case result of
+        Err httpError ->
+            -- FIXME: Deal with this better; instead of failing the entire model, we should have some sort of failure modal
+            ({ model | entries = Failure }, closeDialogById (deletePackageDialogId record.repository record.author record.project record.version), httpErrorToLoginUpdate httpError)
+
+        Ok () ->
+          ( case model.entries of
+            Failure -> model
+            Loading -> model
+            Success repositories ->
+              { model | entries = Success (List.map (\r -> {r | packages = removePackageFromList record r.packages}) repositories)}
+          , closeDialogById (deletePackageDialogId record.repository record.author record.project record.version)
+          , ConfirmedUserIsLoggedIn
+          )
+
+
+
+doesPackageIdentifierMatchPackage : PackageIdentifier -> Package -> Bool
+doesPackageIdentifierMatchPackage packageIdentifier package =
+    packageIdentifier.repository == RepositoryId package.repositoryId
+      && packageIdentifier.author == package.author
+      && packageIdentifier.project == package.project
+      && packageIdentifier.version == V.toString package.version
+
+
+
+removePackageFromList : PackageIdentifier -> List Package -> List Package
+removePackageFromList packageIdentifier packages =
+    List.filter (\p -> not (doesPackageIdentifierMatchPackage packageIdentifier p)) packages
+
+
+closeDialogById : String -> Cmd msg
+closeDialogById dialogId =
+  toggleDialogById
+    ( Encode.object
+      [ ("dialogId", Encode.string dialogId)
+      , ("action", Encode.string "close")
+      ]
+    )
+
+openDialogById : String -> Cmd msg
+openDialogById dialogId =
+  toggleDialogById
+    ( Encode.object
+      [ ("dialogId", Encode.string dialogId)
+      , ("action", Encode.string "open")
+      ]
+    )
+
+httpDelete url valueToReturnOnSuccess = Http.request
+  { method = "DELETE"
+  , headers = []
+  , url = url
+  , body = Http.emptyBody
+  -- We don't actually care about the response value at all
+  , expect = Http.expectStringResponse (\_ -> Ok valueToReturnOnSuccess)
+  , timeout = Nothing
+  , withCredentials = False
+  }
+
+port toggleDialogById : Value -> Cmd msg
+
+createTokenDialogId = "create-token-dialog"
+
+deleteTokenDialogId tokenId = ("delete-token-dialog-" ++ (AuthTokenId.toString tokenId))
+
+createRepositoryDialogId = "create-repository-dialog"
+
+deleteRepositoryDialogId repositoryId = "delete-repository-dialog-" ++ (RepositoryId.toString repositoryId)
+
+deletePackageDialogId repositoryId author project version =
+  "delete-package-dialog-" ++ (RepositoryId.toString repositoryId) ++ "-" ++ author ++ "-" ++ project ++ "-" ++ version
+
+tokenSuccessfullyCreatedDialogId = "token-creation-success-dialog"
 
 searchByType : String -> Cmd msg
 searchByType query =
@@ -154,7 +422,7 @@ view model =
   , warning = Skeleton.NoProblems
   , attrs = []
   , kids =
-      [ lazy3 viewSearch model.query model.author model.entries
+      [ lazy5 viewSearch model.query model.author model.entries model.createRepositoryCurrentName model.createRepositoryCurrentUrlSafeName
       , viewSidebar
       ]
   }
@@ -164,8 +432,8 @@ view model =
 -- VIEW SEARCH
 
 
-viewSearch : String -> Maybe String -> Entries -> Html Msg
-viewSearch query author entries =
+viewSearch : String -> Maybe String -> Entries -> String -> String -> Html Msg
+viewSearch query author entries createRepoFormRepoName createRepoFormRepoUrlSafeName =
   div [ class "catalog" ]
     [ Html.form
         [ onSubmit QuerySubmitted
@@ -180,6 +448,29 @@ viewSearch query author entries =
             ]
             []
         ]
+    , button
+      [ onClick (OpenGenericDialogById createRepositoryDialogId) ]
+      [ text "Create new repository" ]
+    , node "dialog"
+      [ Html.Attributes.id createRepositoryDialogId ]
+      [ form
+        [ onSubmit SendCreateRepositoryRequest ]
+        [ label
+          [ Html.Attributes.for "repository-name" ]
+          [ text "Repository human readable name:" ]
+        , input
+          [ Html.Attributes.id "repository-name", value createRepoFormRepoName, onInput CreateRepositoryRequestRepositoryName ]
+          []
+        , label
+          [ Html.Attributes.for "repository-url-safe-name" ]
+          [ text "Repository URL safe name:" ]
+        , input
+          [ Html.Attributes.id "repository-url-safe-name", value createRepoFormRepoUrlSafeName, onInput CreateRepositoryRequestRepositoryUrlSafeName ]
+          []
+        , button [ type_ "submit" ] [ text "Create Repository" ]
+        ]
+      , button [ onClick (CloseGenericDialogById createRepositoryDialogId) ] [ text "Cancel" ]
+      ]
     , case entries of
         Failure ->
           div Problem.styles (Problem.offline "search.json")
@@ -191,13 +482,120 @@ viewSearch query author entries =
           let
             results =
               Entry.search query author es
-                |> List.take 300
-                |> List.map viewEntry
           in
-          div []
-            [ Keyed.node "div" [] <|
-                ("h", viewHint (List.isEmpty results) query) :: results
-            ]
+          viewAllRepositories query results
+    ]
+
+
+-- VIEW BACKEND DATA
+
+
+viewAuthToken : Entry.AuthToken -> Html Msg
+viewAuthToken authToken =
+  li
+    [ style "list-style-type" "none" ]
+    [ div
+      []
+      [ h5 [] [ text "Token Value (only initial fragment is shown for security reasons)" ]
+      , text (authToken.fragment ++ "...")
+      ]
+    , div
+      []
+      [ h5 [] [ text "Permission Level" ]
+      , case authToken.permission of
+          PermissionLevel.ReadWrite -> text "Read/Write"
+          PermissionLevel.ReadOnly -> text "Read Only"
+      ]
+    , button
+      [ onClick (OpenGenericDialogById (deleteTokenDialogId authToken.id)) ]
+      [ text "Delete this token" ]
+    , node "dialog"
+      [ Html.Attributes.id (deleteTokenDialogId authToken.id) ]
+      [ div [] [ text ("Are you sure you want to delete token " ++ authToken.fragment ++ "...?") ]
+      , button
+        -- TODO: Add confirmation spinner
+        [ onClick (SendDeleteTokenRequest authToken.repository authToken.id) ]
+        [ text "Delete this token" ]
+      , button
+        [ onClick (CloseGenericDialogById (deleteTokenDialogId authToken.id)) ]
+        [ text "Cancel" ]
+      ]
+    ]
+
+
+viewAllRepositories : String -> List Entry.Repository -> Html Msg
+viewAllRepositories query repositories = repositories
+    |> List.map (\repository -> div [] [ h2 [] [ text ("Repository:" ++ (RepositoryId.toString repository.id)) ], viewRepository query repository ])
+    |> div []
+
+
+viewRepository : String -> Entry.Repository -> Html Msg
+viewRepository query repository =
+  let
+    results =
+      repository.packages
+        |> groupBy (\p -> (p.author, p.project))
+        |> Dict.map (\_ differentVersionsOfPackage -> NonEmptyList.maxIn (\p -> V.toString p.version) differentVersionsOfPackage)
+        |> Dict.values
+        |> List.map viewPackage
+  in
+  div
+    []
+    [ details []
+      [ summary [] [ span [ style "font-weight" "bold" ] [ text "API Auth Tokens" ]]
+      , ul [] (List.map viewAuthToken repository.authTokens)
+      , button
+        [ onClick (OpenGenericDialogById createTokenDialogId) ]
+        [ text "Create new auth token" ]
+    , node "dialog"
+      [ Html.Attributes.id createTokenDialogId ]
+      [ button
+        -- TODO: Add confirmation spinner
+        [ onClick (SendCreateTokenRequest repository.id PermissionLevel.ReadWrite) ]
+        [ text "Create token with both package read and package publish permissions" ]
+      , button
+        -- TODO: Add confirmation spinner
+        [ onClick (SendCreateTokenRequest repository.id PermissionLevel.ReadOnly) ]
+        [ text "Create token with only package read permissions" ]
+      , button
+        [ onClick (CloseGenericDialogById createTokenDialogId) ]
+        [ text "Cancel" ]
+      ]
+      ]
+    , node "dialog"
+      [ Html.Attributes.id tokenSuccessfullyCreatedDialogId ]
+      [ div
+        []
+        [ text "Your new authentication token has the following value. Store it somewhere safe! For security purposes, as soon as you close this window this value will never be shown again!"
+        , pre [] [ text (Maybe.withDefault "ERROR UNKNOWN TOKEN VALUE" repository.newTokenValue) ]
+        ]
+      , button
+        [ onClick (CloseGenericDialogById tokenSuccessfullyCreatedDialogId) ]
+        [ text "Close" ]
+      ]
+    , div []
+      [ Keyed.node "div" [] <|
+          -- FIXME: Originally was the following:
+          --("h", viewHint (List.isEmpty results) query) :: results
+          -- Figure out what the hint was for
+          if (List.isEmpty results)
+            then [("h", div [] [ text "Use ", pre [] [ text "zokka publish" ], text " to publish a new package to this repository!"])]
+            else results
+      ]
+    , button
+      [ onClick (OpenGenericDialogById (deleteRepositoryDialogId repository.id)) ]
+      [ text "Delete this repository" ]
+    , node "dialog"
+      [ Html.Attributes.id (deleteRepositoryDialogId repository.id) ]
+      [ div
+        []
+        [ text ("Are you sure you want to delete repository " ++ (RepositoryId.toString repository.id) ++ "? ")
+        , text "You will delete every package and authentication token in this repository as well!"
+        ]
+      , button
+        [ onClick (SendDeleteRepositoryRequest repository.id)]
+        [ text ("Delete repository " ++ RepositoryId.toString repository.id)]
+      ]
     ]
 
 
@@ -205,15 +603,15 @@ viewSearch query author entries =
 -- VIEW ENTRY
 
 
-viewEntry : Entry -> (String, Html msg)
-viewEntry entry =
+viewPackage : Package -> (String, Html Msg)
+viewPackage entry =
   ( entry.author ++ "/" ++ entry.project
-  , lazy viewEntryHelp entry
+  , lazy viewPackageHelp entry
   )
 
 
-viewEntryHelp : Entry -> Html msg
-viewEntryHelp ({ repositoryId, author, project, summary } as entry) =
+viewPackageHelp : Package -> Html Msg
+viewPackageHelp ({ repositoryId, author, project, summary } as entry) =
   div [ class "pkg-summary" ]
     [ div [ class "pkg-summary-title" ]
         [ h1 []
@@ -229,7 +627,7 @@ viewEntryHelp ({ repositoryId, author, project, summary } as entry) =
     ]
 
 
-viewLatestVersion : Entry -> Html msg
+viewLatestVersion : Package -> Html msg
 viewLatestVersion entry =
   div [ class "pkg-summary-version" ] <|
     case V.toTuple entry.version of
@@ -257,12 +655,7 @@ viewLatestVersion entry =
 viewSidebar : Html msg
 viewSidebar =
   div [ class "catalog-sidebar" ]
-    [ h2 [] [ text "Core Packages" ]
-    , ul []
-        [ li [] [ a [ href "/packages/elm" ] [ text "elm" ] ]
-        , li [] [ a [ href "/packages/elm-explorations" ] [ text "elm-explorations" ] ]
-        ]
-    , h2 [] [ text "Resources" ]
+    [ h2 [] [ text "Resources" ]
     , ul []
         [ li [] [ a [ href "https://klaftertief.github.io/elm-search/" ] [ text "Search by Type" ] ]
         , li [] [ a [ href "https://guide.elm-lang.org/install/elm.html#elm-install" ] [ text "Using Packages" ] ]
