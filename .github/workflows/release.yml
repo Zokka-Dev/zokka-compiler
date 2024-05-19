@@ -70,6 +70,65 @@ jobs:
         name: zokka-compiler-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
 
+  build-package-server:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            binary-fragment-name: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    # Use older version of alpine that predates this change
+    # https://git.musl-libc.org/cgit/musl/commit/?id=246f1c811448f37a44b41cd8df8d0ef9736d95f4
+    # Otherwise we error out when linking statically complaining about sendfile64 in snap-server
+    container: alpine:3.16
+    # A lot of this comes from https://github.com/hasufell/stack2cabal/blob/160ae10b9e78c398803ed7ba4ab9d49c553df42d/.github/workflows/release.yaml#L32
+    steps:
+    - name: Install system dependencies
+      run: |
+        apk add --no-cache curl gcc g++ gmp-dev ncurses-dev libffi-dev make xz gzip tar perl git bash sudo binutils-gold
+        apk add --no-cache zlib zlib-dev zlib-static gmp gmp-dev ncurses-static
+
+    - name: Install ghcup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup > /usr/bin/ghcup
+        chmod +x /usr/bin/ghcup
+        echo "$HOME/.ghcup/bin" $GITHUB_PATH
+      shell: bash
+
+    - name: Install GHC and cabal
+      run: |
+        ghcup install ghc   --force -i /usr/local     9.4.8
+        ghcup install cabal --force -i /usr/local/bin 3.10
+      shell: bash
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Project
+      shell: bash
+      run: |
+        rm cabal.project
+        cd custom-package-server
+        cabal update
+        mkdir -p output
+        cabal install --enable-executable-static --installdir=output
+        python example_test.py
+        cp output/myPackage output/zokka-custom-package-server
+
+    # Extract the current git tag
+    - name: Extract Git Tag
+      id: get_version
+      run: |
+        git config --global --add safe.directory /__w/zokka-compiler/zokka-compiler
+        echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: zokka-custom-package-server-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
+        path: ./output/zokka-custom-package-server
+
   build:
     strategy:
       fail-fast: true
@@ -114,6 +173,7 @@ jobs:
       with:
         name: zokka-compiler-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
+
   publish-artifacts:
     runs-on: ubuntu-latest
     needs: [linux-build, build]
