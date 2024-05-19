@@ -45,3 +45,12 @@ jobs:
       run: cabal test all
     - name: Run elm-test-rs tests
       run: python run-test-rs-tests.py
+    - name: Build custom package server
+      # We have to do this weird thing where we remove the cabal.project file
+      # because cabal.project files really don't like different projects being
+      # at different levels of the hierarchy.
+      run: |
+        rm cabal.project
+        cd custom-package-server
+        cabal build
+        python example_test.py
