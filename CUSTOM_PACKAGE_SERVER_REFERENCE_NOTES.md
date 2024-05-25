@@ -18,7 +18,7 @@ separate system for authentication does obviate their need.
 Otherwise, we'll follow the standard Elm package server API pretty closely, so
 our overall API endpoints are the same as the standard Elm package server.
 
-As a point of reference, we'll first the standard Elm package server API
+As a point of reference, we'll first cover the standard Elm package server API
 endpoints.
 
 ## Standard Elm Package Server API
