@@ -106,10 +106,13 @@ Our `POST` request to `/register` will change. It will omit all mention of
 git/GitHub commit hashes and will add an additional `package.zip` which is meant
 to be the zipfile containing the entire package.
 
-+ `/register?name={package-name}&version={version}`: A
+To emphasize that the format of our upload request has changed, the endpoint
+name is also changed, from `register` to `upload-package`.
+
++ `/upload-package?name={package-name}&version={version}`: A
   `multipart/form-data` request that looks something like the following:
   ```
-  POST /register HTTP/1.1
+  POST /upload-package HTTP/1.1
   Host: foo.example
   Content-Type: multipart/form-data;boundary="boundary"
 
@@ -132,11 +135,43 @@ to be the zipfile containing the entire package.
   --boundary--
   ```
 
+We will also get rid of the `since` endpoint. We will allow users to delete
+custom repositories and packages, which significantly complicates how we do
+incremental package list updates. We cannot simply use a single numerical offset
+since that only works for append-only data structures. There are ideas I have to
+re-introduce incremental package list updates (mainly turning things into events
+and transmitting both "new package" and "package deleted" events from an
+offset), but they aren't necessary for this first iteration to work. The
+*entire* Elm package index is 205 KB, which is only 44 KB gzipped. Asking a user
+to simply redownload the entire package index of their custom repository each
+time will likely be fine for a pretty long time to come.
+
+Deletion of packages will be necessary in part because we will likely institute
+restrictions on the number of packages any single user to reduce server costs
+since we will now be storing the packages ourselves and could balloon our
+storage costs if not careful. Thus a user could be indefinitely locked out from
+uploading new packages if they hit a storage limit and had no way of removing
+packages.
+
+Since these are custom repositories meant for private usage or internally within
+an organization, deleting a package or repository is far less impactful than if
+this was a globally available repository.
+
+### UI paths
+
+There are also paths which exist for the web UI, entirely under the `/dashboard`
+path. These are paths which will never be hit by the Zokka compiler when
+publishing or downloading a package, but are necessary for a user to manage
+authentication tokens and repositories. I won't list them here because they are
+more subject to change and can evolve independently of the Zokka compiler.
+
 ### Design
 
 The original Elm package website creates a directory of files on disk and uses
 that entirely for its persistent state, i.e. it is not backed by a database.
-On the one hand this is quite nice for making sure
+On the one hand this is quite nice for making sure that we can reduce a lot of
+requests down to static file serving which minimizes computational load on the
+server.
 
 On the other hand, it tightly couples the package website's design to a single
 filesystem and makes it difficult to e.g. serve packages from S3 or some sort of
@@ -150,4 +185,21 @@ In order to do per-user authentication (something we'll need to implement since
 we're dropping the GitHub dependence), we'll need some sort of database anyway.
 
 As such, I've decided to code up the package server from scratch. There are few
-enough API endpoints that it's a feasible task and the moving away from . The package
+enough API endpoints that it's a feasible task and the moving away from the
+elm-package server is not a ridiculous burden.
+
+As a first pass I'll use SQLite as the backing database. We have a comparatively
+write-light workload, so the sequential write restriction that SQLite has will
+likely not be a big deal.
+
+Moreover SQLite has its `sqlar` module, which allows us to treat SQLite also as a
+filestore, so we can directly store ZIP blobs within our SQLite database itself,
+reducing our need for persistence and all the attendent complications with
+persistence (backups, atomicity, consistency, etc.) to a single point: the
+SQLite file.
+
+We will likely still want to keep the `sqlar` part of SQLite fairly separate
+from the rest of the database (i.e. not try to extend the standard `sqlar`
+table), to allow us to stay flexible with moving this out eventually if it turns
+out we simply have too many blobs to store on the server itself and want to move
+out to e.g. S3.
