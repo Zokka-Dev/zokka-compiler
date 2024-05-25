@@ -27,6 +27,10 @@ CREATE TABLE repositories (
 
 CREATE INDEX idx_repositories_owner_user_id ON repositories(owner_user_id);
 
+-- This table is meant hopefully as a temporary measure to tide us over before
+-- switching over to an identity provider such as Auth0, which will nicely
+-- handle things like password recovery and multi-factor auth, as well as
+-- alleviating the need for us to store PII such as email adddresses
 CREATE TABLE users (
     id INTEGER PRIMARY KEY NOT NULL,
     username TEXT NOT NULL UNIQUE,

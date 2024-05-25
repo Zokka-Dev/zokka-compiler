@@ -226,7 +226,7 @@ update key msg model =
               Loading -> model.entries
           in
           ( { model | entries = newEntries }
-          , Cmd.batch[closeDialogById createTokenDialogId, openDialogById tokenSuccessfullyCreatedDialogId]
+          , Cmd.batch[closeDialogById (createTokenDialogId authToken.repository), openDialogById (tokenSuccessfullyCreatedDialogId authToken.repository)]
           , ConfirmedUserIsLoggedIn
           )
 
@@ -235,7 +235,7 @@ update key msg model =
         Success repositories -> { model | entries = Success (List.map (\r -> if r.id == repositoryName then { r | newTokenValue = Nothing } else r ) repositories) }
         Failure -> model
         Loading -> model
-      , closeDialogById createTokenDialogId
+      , closeDialogById (createTokenDialogId repositoryName)
       , ConfirmedUserIsLoggedIn
       )
 
@@ -371,7 +371,7 @@ httpDelete url valueToReturnOnSuccess = Http.request
 
 port toggleDialogById : Value -> Cmd msg
 
-createTokenDialogId = "create-token-dialog"
+createTokenDialogId repositoryId = "create-token-dialog-" ++ (RepositoryId.toString repositoryId)
 
 deleteTokenDialogId tokenId = ("delete-token-dialog-" ++ (AuthTokenId.toString tokenId))
 
@@ -382,7 +382,7 @@ deleteRepositoryDialogId repositoryId = "delete-repository-dialog-" ++ (Reposito
 deletePackageDialogId repositoryId author project version =
   "delete-package-dialog-" ++ (RepositoryId.toString repositoryId) ++ "-" ++ author ++ "-" ++ project ++ "-" ++ version
 
-tokenSuccessfullyCreatedDialogId = "token-creation-success-dialog"
+tokenSuccessfullyCreatedDialogId repositoryId = "token-creation-success-dialog-" ++ (RepositoryId.toString repositoryId)
 
 searchByType : String -> Cmd msg
 searchByType query =
@@ -545,10 +545,10 @@ viewRepository query repository =
       [ summary [] [ span [ style "font-weight" "bold" ] [ text "API Auth Tokens" ]]
       , ul [] (List.map viewAuthToken repository.authTokens)
       , button
-        [ onClick (OpenGenericDialogById createTokenDialogId) ]
+        [ onClick (OpenGenericDialogById (createTokenDialogId repository.id)) ]
         [ text "Create new auth token" ]
     , node "dialog"
-      [ Html.Attributes.id createTokenDialogId ]
+      [ Html.Attributes.id (createTokenDialogId repository.id) ]
       [ button
         -- TODO: Add confirmation spinner
         [ onClick (SendCreateTokenRequest repository.id PermissionLevel.ReadWrite) ]
@@ -558,19 +558,19 @@ viewRepository query repository =
         [ onClick (SendCreateTokenRequest repository.id PermissionLevel.ReadOnly) ]
         [ text "Create token with only package read permissions" ]
       , button
-        [ onClick (CloseGenericDialogById createTokenDialogId) ]
+        [ onClick (CloseGenericDialogById (createTokenDialogId repository.id)) ]
         [ text "Cancel" ]
       ]
       ]
     , node "dialog"
-      [ Html.Attributes.id tokenSuccessfullyCreatedDialogId ]
+      [ Html.Attributes.id (tokenSuccessfullyCreatedDialogId repository.id) ]
       [ div
         []
         [ text "Your new authentication token has the following value. Store it somewhere safe! For security purposes, as soon as you close this window this value will never be shown again!"
         , pre [] [ text (Maybe.withDefault "ERROR UNKNOWN TOKEN VALUE" repository.newTokenValue) ]
         ]
       , button
-        [ onClick (CloseGenericDialogById tokenSuccessfullyCreatedDialogId) ]
+        [ onClick (CloseGenericDialogById (tokenSuccessfullyCreatedDialogId repository.id)) ]
         [ text "Close" ]
       ]
     , div []
@@ -595,6 +595,9 @@ viewRepository query repository =
       , button
         [ onClick (SendDeleteRepositoryRequest repository.id)]
         [ text ("Delete repository " ++ RepositoryId.toString repository.id)]
+      , button
+        [ onClick (CloseGenericDialogById (deleteRepositoryDialogId repository.id)) ]
+        [ text "Cancel" ]
       ]
     ]
 

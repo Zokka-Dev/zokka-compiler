@@ -2,7 +2,7 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-import Network.HTTP.Types.Status (status400, status401, Status, status403, status404)
+import Network.HTTP.Types.Status (status400, status401, Status, status403, status404, status500)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=), ToJSON, toJSON, object, Value(..), encode, decode)
@@ -644,15 +644,31 @@ securelyHashBytes bytes salt = case CA.hash CA.defaultHashOptions bytes salt of
   -- FIXME: Deal with this error case (see if it's actually possible to hit this error route)
   Left err -> error (show err)
 
-createUser :: Text -> Text -> IO ()
+createUser :: Text -> Text -> IO (Maybe SessionToken)
 createUser username password =
   do
     salt <- getEntropy saltSize
     let passwordBytes = encodeUtf8 password
     let successfulHash = securelyHashBytes passwordBytes salt
     withCustomConnection
-      (\conn -> execute conn "INSERT INTO users (username, password_hash, password_salt) VALUES (?,?,?)" (username, successfulHash, salt))
+      (\conn -> 
+        do
+          execute conn "INSERT INTO users (username, password_hash, password_salt) VALUES (?,?,?)" (username, successfulHash, salt)
+          loginUser username password
+      )
 
+createUserActionM :: Text -> Text -> ActionM SessionToken
+createUserActionM username password =
+  do
+    sessionTokenMaybe <- liftIO $ createUser username password
+    case sessionTokenMaybe of
+      Just sessionToken ->
+        pure sessionToken
+      Nothing ->
+        do
+          text "Something went wrong!" -- FIXME: Better message needed here
+          status status500
+          finish
 
 insertSessionTokenHashQuery :: Connection -> SessionTokenHash -> UserId -> IO ()
 insertSessionTokenHashQuery conn sessionTokenHash userId = execute conn "INSERT INTO login_sessions (session_token_value_hash, user_id) VALUES (?, ?)" (sessionTokenHash, userId)
@@ -997,7 +1013,18 @@ scottyServer externalWebsiteUrl corsAllowAll =
     post "/dashboard/user" $ do
       username <- formParam "username"
       password <- formParam "password"
-      liftIO $ createUser username password
+      loginToken <- createUserActionM username password
+      let loginTokenAsText = sessionTokenToText loginToken
+      -- Note that we don't want to use the underlying bytes of login, we want
+      -- the utf8 representation of the base64 encoding. This is because
+      -- annoyingly setCookie requires everything to be ByteStrings that are
+      -- sent into it. But we want to send the utf-8 representation of the
+      -- base64 string!
+      --
+      -- We can revisit this to see if this means we don't need to worry about
+      -- base64 encoding things.
+      let loginTokenAsByteString = encodeUtf8 loginTokenAsText
+      setCookie (defaultSetCookie { setCookieName = "login-token", setCookieValue = loginTokenAsByteString })
       text "Successfully created a user!"
 
     post "/dashboard/login" $ do
@@ -1014,7 +1041,7 @@ scottyServer externalWebsiteUrl corsAllowAll =
       -- We can revisit this to see if this means we don't need to worry about
       -- base64 encoding things.
       let loginTokenAsByteString = encodeUtf8 loginTokenAsText
-      setCookie (defaultSetCookie { setCookieName = "login-token", setCookieValue = encodeUtf8 loginTokenAsText })
+      setCookie (defaultSetCookie { setCookieName = "login-token", setCookieValue = loginTokenAsByteString })
       text loginTokenAsText
 
     post "/dashboard/repository" $ do

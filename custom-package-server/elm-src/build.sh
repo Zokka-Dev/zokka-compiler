@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-elm make frontend/Main.elm --output=elm.js
+elm make frontend/Main.elm --output=elm.js --debug
 
 mkdir -p ../generated-static-files/ui
 cp elm.js ../generated-static-files/ui
