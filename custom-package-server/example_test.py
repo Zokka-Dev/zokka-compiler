@@ -2,6 +2,7 @@ import json
 import subprocess
 import threading
 import time
+import argparse
 
 def run_command(command):
     print("Executing command:", " ".join(command))
@@ -94,14 +95,19 @@ def get_dashboard(login_token):
 SHOULD_SHUTDOWN_SERVER = False
 SQLITE_DATABASE_FILENAME = "temp_testing_package_db.db"
 
-def run_server_in_background():
-    command = [
-        f"cabal run myPackage -- --port=3000 --database-file={SQLITE_DATABASE_FILENAME} --initialization-script=initialize_tables.sql --external-website-url=https://localhost:3000",
-    ]
+def run_server_in_background(skip_initial_cabal_build=False):
     # hack until we figure out what's causing things to hang
     # this ensures that we don't have to wait for things to compile and
     # therefore that our sleep of 3 seconds is sufficient
-    run_command(["cabal", "build"])
+    if not skip_initial_cabal_build:
+        run_command(["cabal", "build"])
+    if not skip_initial_cabal_build:
+        command = [
+            f"cabal run myPackage -- --port=3000 --database-file={SQLITE_DATABASE_FILENAME} --initialization-script=initialize_tables.sql --external-website-url=https://localhost:3000",
+        ]
+    else:
+        location_of_zokka_executable = run_command(["cabal", "list-bin", "myPackage"]).rstrip()
+        command = [f"{location_of_zokka_executable} --port=3000 --database-file={SQLITE_DATABASE_FILENAME} --initialization-script=initialize_tables.sql --external-website-url=https://localhost:3000"]
     def target(setup_event, shutdown_event):
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
         print(f"Executing {command}")
@@ -128,8 +134,15 @@ def delete_database_file():
     return output
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog="Test Script for Zokka Custom Package", 
+        description="Tests the Zokka custom package server with basic smoke tests",
+    )
+    parser.add_argument("-s", "--skip-initial-cabal-build", action="store_true")
+    args = parser.parse_args()
     try:
-        (server_thread, server_has_setup_event, should_shutdown_server_event) = run_server_in_background()
+        (server_thread, server_has_setup_event, should_shutdown_server_event) =\
+            run_server_in_background(args.skip_initial_cabal_build)
         server_has_setup_event.wait()
         create_user()
         user_login_token = login_as_user()
