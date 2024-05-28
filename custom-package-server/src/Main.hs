@@ -785,9 +785,10 @@ createToken userId repositoryId permission = withCustomConnection
 deleteRepositoryQuery :: Connection -> UserId -> RepositoryId -> IO ()
 deleteRepositoryQuery conn userId repositoryId =
   withTransaction conn $ do
-    execute conn "DELETE FROM packages WHERE repository_id = ?" (Only userId)
+    execute conn "DELETE FROM packages WHERE repository_id = ?" (Only repositoryId)
     execute conn "DELETE FROM auth_tokens WHERE repository_id = ?" (Only repositoryId)
     execute conn "DELETE FROM repositories WHERE owner_user_id = ? AND id = ?" (userId, repositoryId)
+    execute conn "DELETE FROM sqlar WHERE name LIKE ?" (Only $ show (unRepositoryId repositoryId) ++ "/%")
 
 deleteRepository :: UserId -> RepositoryId -> IO ()
 deleteRepository userId repositoryId =
@@ -795,7 +796,9 @@ deleteRepository userId repositoryId =
 
 deletePackageQuery :: Connection -> RepositoryId -> Author -> Project -> Version -> IO ()
 deletePackageQuery conn repositoryId author project version =
-  execute conn "DELETE FROM packages WHERE repository_id = ? AND author = ? AND project = ? AND version = ?" (repositoryId, author, project, version)
+  withTransaction conn $ do
+    execute conn "DELETE FROM packages WHERE repository_id = ? AND author = ? AND project = ? AND version = ?" (repositoryId, author, project, version)
+    execute conn "DELETE FROM sqlar WHERE name LIKE ?" (Only $ T.concat [intToText (unRepositoryId repositoryId) , "/" , unAuthor author , "/" , unProject project , "/" , unVersion version , "/%"])
 
 deletePackage :: RepositoryId -> Author -> Project -> Version -> IO ()
 deletePackage repositoryId author project version =
