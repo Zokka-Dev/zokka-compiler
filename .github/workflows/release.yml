@@ -117,10 +117,10 @@ jobs:
         rm cabal.project
         cd custom-package-server
         cabal update
-        mkdir -p output
-        cabal install --enable-executable-static --installdir=output
+        mkdir -p /top-level-output
+        cabal install --enable-executable-static --installdir=/top-level-output
         python3 example_test.py
-        cp output/myPackage output/zokka-custom-package-server
+        cp /top-level-output/myPackage /top-level-output/zokka-custom-package-server
 
     # Extract the current git tag
     - name: Extract Git Tag
@@ -133,7 +133,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: zokka-custom-package-server-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
-        path: ./output/zokka-custom-package-server
+        path: /top-level-output/output/zokka-custom-package-server
 
   build:
     strategy:

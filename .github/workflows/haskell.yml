@@ -110,16 +110,14 @@ jobs:
         rm cabal.project
         cd custom-package-server
         cabal update
-        mkdir -p output
-        cabal install --enable-executable-static --installdir=output
+        mkdir -p /top-level-output
+        cabal install --enable-executable-static --installdir=/top-level-output
         python3 example_test.py
-        cp output/myPackage output/zokka-custom-package-server
-        echo "This is the output"
-        ls output
+        cp /top-level-output/myPackage /top-level-output/zokka-custom-package-server
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: zokka-custom-package-server-dev-version
-        path: ./output/zokka-custom-package-server
+        path: /top-level-output/output/zokka-custom-package-server
 
