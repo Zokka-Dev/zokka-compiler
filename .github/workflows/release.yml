@@ -61,7 +61,7 @@ jobs:
       run: cabal test all
 
     - name: Run elm-test-rs tests
-      run: python run-test-rs-tests.py
+      run: python3 run-test-rs-tests.py
 
     # Extract the current git tag
     - name: Extract Git Tag
@@ -119,7 +119,7 @@ jobs:
         cabal update
         mkdir -p output
         cabal install --enable-executable-static --installdir=output
-        python example_test.py
+        python3 example_test.py
         cp output/myPackage output/zokka-custom-package-server
 
     # Extract the current git tag
@@ -198,7 +198,7 @@ jobs:
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       run: |
-        python publish-to-npm.py \
+        python3 publish-to-npm.py \
           --windows-x86-binary-source-location=./zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}/zokka \
           --darwin-x86-binary-source-location=./zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}/zokka \
           --darwin-arm64-binary-source-location=./zokka-compiler-macos-arm_64-${{ steps.get_version.outputs.tag }}/zokka \

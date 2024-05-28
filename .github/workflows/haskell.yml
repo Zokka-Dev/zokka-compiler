@@ -67,7 +67,7 @@ jobs:
       run: cabal test all
 
     - name: Run elm-test-rs tests
-      run: python run-test-rs-tests.py
+      run: python3 run-test-rs-tests.py
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -112,7 +112,7 @@ jobs:
         cabal update
         mkdir -p output
         cabal install --enable-executable-static --installdir=output
-        python example_test.py
+        python3 example_test.py
         cp output/myPackage output/zokka-custom-package-server
 
     - name: Upload Artifacts
