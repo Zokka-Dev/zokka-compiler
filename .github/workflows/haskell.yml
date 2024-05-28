@@ -111,7 +111,7 @@ jobs:
         cd custom-package-server
         cabal update
         mkdir -p /top-level-output
-        cabal build --enable-executable-static --installdir=/top-level-output # We use build instead of install because our version of Cabal doesn't handle https://github.com/haskell/cabal/pull/9697, which prevents --enble-executable-static from being used with cabal install
+        cabal build --enable-executable-static # We use build instead of install because our version of Cabal doesn't handle https://github.com/haskell/cabal/pull/9697, which prevents --enble-executable-static from being used with cabal install
         OUTPUT_BIN=$(cabal list-bin myPackage)
         python3 example_test.py
         cp $OUTPUT_BIN /top-level-output/zokka-custom-package-server

@@ -118,10 +118,16 @@ jobs:
         cd custom-package-server
         cabal update
         mkdir -p /top-level-output
-        cabal build --enable-executable-static --installdir=/top-level-output # We use build instead of install because our version of Cabal doesn't handle https://github.com/haskell/cabal/pull/9697, which prevents --enble-executable-static from being used with cabal install
+        cabal build --enable-executable-static # We use build instead of install because our version of Cabal doesn't handle https://github.com/haskell/cabal/pull/9697, which prevents --enble-executable-static from being used with cabal install
         OUTPUT_BIN=$(cabal list-bin myPackage)
         python3 example_test.py
         cp $OUTPUT_BIN /top-level-output/zokka-custom-package-server
+        cd elm-src
+        npx zokka make frontend/Main.elm --output=elm.js
+        mkdir -p /top-level-output/generated-static-files/ui
+        cp elm.js /top-level-output/generated-static-files/ui
+        cp index.html /top-level-output/generated-static-files/ui
+        cp -r assets /top-level-output/generated-static-files/ui
 
     # Extract the current git tag
     - name: Extract Git Tag
