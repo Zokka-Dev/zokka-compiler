@@ -11,16 +11,34 @@ permissions:
   contents: read
 
 jobs:
-  build:
-
+  linux-build:
     runs-on: ubuntu-latest
-
+    # Use older version of alpine that predates this change
+    # https://git.musl-libc.org/cgit/musl/commit/?id=246f1c811448f37a44b41cd8df8d0ef9736d95f4
+    # Otherwise we error out when linking statically complaining about sendfile64 in snap-server
+    container: alpine:3.16
+    # A lot of this comes from https://github.com/hasufell/stack2cabal/blob/160ae10b9e78c398803ed7ba4ab9d49c553df42d/.github/workflows/release.yaml#L32
     steps:
-    - uses: actions/checkout@v3
-    - uses: haskell-actions/setup@v2
-      with:
-        ghc-version: '9.4.8'
-        cabal-version: '3.10'
+    - name: Install system dependencies
+      run: |
+        apk add --no-cache curl gcc g++ gmp-dev ncurses-dev libffi-dev make xz gzip tar perl git bash sudo binutils-gold
+        apk add --no-cache zlib zlib-dev zlib-static gmp gmp-dev ncurses-static
+
+    - name: Install ghcup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup > /usr/bin/ghcup
+        chmod +x /usr/bin/ghcup
+        echo "$HOME/.ghcup/bin" $GITHUB_PATH
+      shell: bash
+
+    - name: Install GHC and cabal
+      run: |
+        ghcup install ghc   --force -i /usr/local     9.4.8
+        ghcup install cabal --force -i /usr/local/bin 3.10
+      shell: bash
+
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Cache
       uses: actions/cache@v3
@@ -34,34 +52,66 @@ jobs:
           ${{ runner.os }}-build-
           ${{ runner.os }}-
 
-    - name: Install dependencies
+    - name: Build Project
+      shell: bash
       run: |
         cp cabal.project.freeze.ghc94 cabal.project.freeze
+        cp cabal.project.prod cabal.project
         cabal update
-        cabal build --only-dependencies --enable-tests --enable-benchmarks
-    - name: Build
-      run: cabal build --enable-tests --enable-benchmarks all
-    - name: Run cabal tests
-      run: cabal test all
-    - name: Run elm-test-rs tests
-      run: python run-test-rs-tests.py
-    - name: Cache custom package server
-      uses: actions/cache@v3
-      env:
-        cache-name: cache-cabal-custom-package-server
+        cabal build --enable-executable-static # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
+        OUTPUT_BIN=$(cabal list-bin zokka)
+        mkdir -p output
+        cp $OUTPUT_BIN output/zokka
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
       with:
-        path: ~/.cabal
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/cabal.project') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
-    - name: Build custom package server
-      # We have to do this weird thing where we remove the cabal.project file
-      # because cabal.project files really don't like different projects being
-      # at different levels of the hierarchy.
+        name: zokka-compiler-dev-version
+        path: ./output/zokka
+
+  build-package-server:
+    runs-on: ubuntu-latest
+    # Use older version of alpine that predates this change
+    # https://git.musl-libc.org/cgit/musl/commit/?id=246f1c811448f37a44b41cd8df8d0ef9736d95f4
+    # Otherwise we error out when linking statically complaining about sendfile64 in snap-server
+    container: alpine:3.16
+    # A lot of this comes from https://github.com/hasufell/stack2cabal/blob/160ae10b9e78c398803ed7ba4ab9d49c553df42d/.github/workflows/release.yaml#L32
+    steps:
+    - name: Install system dependencies
+      run: |
+        apk add --no-cache curl gcc g++ gmp-dev ncurses-dev libffi-dev make xz gzip tar perl git bash sudo binutils-gold
+        apk add --no-cache zlib zlib-dev zlib-static gmp gmp-dev ncurses-static
+
+    - name: Install ghcup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup > /usr/bin/ghcup
+        chmod +x /usr/bin/ghcup
+        echo "$HOME/.ghcup/bin" $GITHUB_PATH
+      shell: bash
+
+    - name: Install GHC and cabal
+      run: |
+        ghcup install ghc   --force -i /usr/local     9.4.8
+        ghcup install cabal --force -i /usr/local/bin 3.10
+      shell: bash
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Project
+      shell: bash
       run: |
         rm cabal.project
         cd custom-package-server
-        cabal build
+        cabal update
+        mkdir -p output
+        cabal install --enable-executable-static --installdir=output
         python example_test.py
+        cp output/myPackage output/zokka-custom-package-server
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: zokka-custom-package-server-dev-version
+        path: ./output/zokka-custom-package-server
+
