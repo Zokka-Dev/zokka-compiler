@@ -115,10 +115,17 @@ jobs:
         OUTPUT_BIN=$(cabal list-bin myPackage)
         python3 example_test.py
         cp $OUTPUT_BIN /top-level-output/zokka-custom-package-server
+        cd elm-src
+        npx zokka make frontend/Main.elm --output=elm.js
+        mkdir -p /top-level-output/generated-static-files/ui
+        cp elm.js /top-level-output/generated-static-files/ui
+        cp index.html /top-level-output/generated-static-files/ui
+        cp -r assets /top-level-output/generated-static-files/ui
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: zokka-custom-package-server-dev-version
-        path: /top-level-output/zokka-custom-package-server
+        path: |
+          /top-level-output/
 
