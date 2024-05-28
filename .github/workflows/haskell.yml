@@ -119,5 +119,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: zokka-custom-package-server-dev-version
-        path: /top-level-output/output/zokka-custom-package-server
+        path: /top-level-output/zokka-custom-package-server
 
