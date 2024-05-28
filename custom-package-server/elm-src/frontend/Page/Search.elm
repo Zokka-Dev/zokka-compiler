@@ -528,6 +528,32 @@ viewAllRepositories query repositories = repositories
     |> List.map (\repository -> div [] [ h2 [] [ text ("Repository:" ++ (RepositoryId.toString repository.id)) ], viewRepository query repository ])
     |> div []
 
+exampleConfigJsonFragment : RepositoryId -> String
+exampleConfigJsonFragment repoId =
+    String.concat
+        [ "{\n"
+        , "    \"repository-type\": \"package-server-with-personal-zokka-repo-v1.0-package-server-api\",\n"
+        , "    \"repository-url\": \"http://zokka-custom-repos.igneousworkshop.com/api/" ++ RepositoryId.toString repoId ++ "\",\n"
+        , "    \"repository-auth-token\": \"$FULL_TOKEN_VALUE\",\n"
+        , "    \"repository-local-name\": \"$SOME_LOCAL_NAME\",\n"
+        , "}"
+        ]
+
+exampleConfigJson : String
+exampleConfigJson =
+    """{
+    "repositories": [
+        {
+            "repository-type": "package-server-with-standard-elm-v0.19-package-server-api",
+            "repository-url": "https://package.elm-lang.org",
+            "repository-local-name": "standard-elm-repository"
+        },
+        ...
+        $INSERT_YOUR_JSON_FRAGMENT_HERE
+    ],
+    "single-package-locations": []
+}
+    """
 
 viewRepository : String -> Entry.Repository -> Html Msg
 viewRepository query repository =
@@ -542,6 +568,39 @@ viewRepository query repository =
   div
     []
     [ details []
+      [ summary [] [ span [ style "font-weight" "bold" ] [ text "How to use this repository" ]]
+      , p
+        []
+        [ text "Add the following JSON fragment to "
+        , code [] [ text "$ELM_HOME/0.19.1/zokka/custom-package-repository-config.json" ]
+        , text ". Usually that's the same as "
+        , code [] [ text "~/.elm/0.19.1/zokka/custom-package-repository-config.json" ]
+        , text ". "
+        ]
+      , p
+        []
+        [ pre [] [ text (exampleConfigJsonFragment repository.id) ]
+        ]
+      , p
+        []
+        [ code [] [ text "$FULL_TOKEN_VALUE" ]
+        , text " is given to you the first time you ever create an API auth token. You should keep this token stored somewhere safe! For security purposes we don't store tokens on our server and can't show you the full value ever again. "
+        , code [] [ text "$SOME_LOCAL_NAME" ]
+        , text " is the name you give to the repository that is used when you call "
+        , code [] [ text "zokka publish $SOME_LOCAL_NAME" ]
+        , text " to publish a package to this repository. Note that you can only publish a package if you have a Read/Write API auth token. If you have a Read Only token "
+        , code [] [ text "zokka make" ]
+        , text " can pull down packages as necessary from this repository to build a project, but "
+        , code [] [ text "zokka publish" ]
+        , text " cannot publish to this repository."
+        ]
+      , p
+        []
+        [ text "The above fragment is embedded into the configuration file as such (make sure you add a comma before this repository and don't have a comma at the end of the list of repositories!):"
+        , pre [] [ text exampleConfigJson ]
+        ]
+      ]
+    , details []
       [ summary [] [ span [ style "font-weight" "bold" ] [ text "API Auth Tokens" ]]
       , ul [] (List.map viewAuthToken repository.authTokens)
       , button

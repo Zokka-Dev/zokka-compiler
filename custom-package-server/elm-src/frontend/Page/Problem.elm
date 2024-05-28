@@ -41,7 +41,7 @@ offline file =
       [ text "Cannot find "
       , code [] [ text file ]
       ]
-  , p [] [ text "Are you offline or something?" ]
+  , p [] [ text "Are you offline or something? If you have just logged in, you may want to refresh this page." ]
   ]
 
 
