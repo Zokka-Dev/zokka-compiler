@@ -176,7 +176,7 @@ chompTag vs es fs src pos end row col revChunks =
     !tagPos = plusPtr pos (-1)
     !word = unsafeIndex tagPos
   in
-  if word == 0x24 {-$-} then
+  if word == 0x24 {- $ -} then
     let
       !name = Name.fromPtr pos newPos
     in

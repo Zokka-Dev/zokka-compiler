@@ -1,0 +1,3 @@
+*.db
+generated-static-files
+!cabal.project.freeze

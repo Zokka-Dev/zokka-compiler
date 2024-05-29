@@ -33,11 +33,11 @@ import qualified Http
 import qualified Json.Decode as D
 import qualified Reporting.Exit as Exit
 import qualified Stuff
-import Deps.Registry (ZokkaRegistries)
+import Deps.Registry (ZokkaRegistries, createAuthHeader)
 import qualified Deps.Registry as Registry
 import qualified Data.Utf8 as Utf8
 import Logging.Logger (printLog)
-import Elm.CustomRepositoryData (CustomSingleRepositoryData(..))
+import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData, DefaultPackageServerRepo(..), PZRPackageServerRepo(..))
 
 
 
@@ -360,6 +360,12 @@ changeMagnitude (Changes added changed removed) =
 -- GET DOCS
 
 
+getDocsFromCustomSingleRepositoryData :: CustomRepositoriesData -> IO ()
+getDocsFromCustomSingleRepositoryData customRepositoriesData =
+  do
+    pure ()
+
+
 getDocs :: Stuff.PackageCache -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.DocsProblem Docs.Documentation)
 getDocs cache zokkaRegistry manager name version =
   do  let home = Stuff.package cache name version
@@ -381,14 +387,32 @@ getDocs cache zokkaRegistry manager name version =
               repositoryData <- case registryKeyMaybe of
                 Just (Registry.RepositoryUrlKey repositoryUrl) -> pure repositoryUrl
                 _ -> printLog "Had a bad thing happen in getDocs" >> undefined -- FIXME: Should really get rid of this!
-              let repositoryUrl = _repositoryUrl repositoryData
-              let url = Website.metadata repositoryUrl name version "docs.json"
-              Http.get manager url [] Exit.DP_Http $ \body ->
-                case D.fromByteString Docs.decoder body of
-                  Right docs ->
-                    do  Dir.createDirectoryIfMissing True home
-                        File.writeUtf8 path body
-                        return $ Right docs
+              -- FIXME: Try to dedupe some of this
+              case repositoryData of
+                DefaultPackageServerRepoData defaultPackageServerRepo ->
+                  do
+                    let repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
+                    let url = Website.metadata repositoryUrl name version "docs.json"
+                    Http.get manager url [] Exit.DP_Http $ \body ->
+                      case D.fromByteString Docs.decoder body of
+                        Right docs ->
+                          do  Dir.createDirectoryIfMissing True home
+                              File.writeUtf8 path body
+                              return $ Right docs
 
-                  Left _ ->
-                    return $ Left $ Exit.DP_Data url body
+                        Left _ ->
+                          return $ Left $ Exit.DP_Data url body
+                PZRPackageServerRepoData pzrPackageServerRepo ->
+                  do
+                    let repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
+                    let repoAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
+                    let url = Website.metadata repositoryUrl name version "docs.json"
+                    Http.get manager url [createAuthHeader repoAuthToken] Exit.DP_Http $ \body ->
+                      case D.fromByteString Docs.decoder body of
+                        Right docs ->
+                          do  Dir.createDirectoryIfMissing True home
+                              File.writeUtf8 path body
+                              return $ Right docs
+
+                        Left _ ->
+                          return $ Left $ Exit.DP_Data url body

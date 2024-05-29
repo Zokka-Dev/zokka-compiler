@@ -8,7 +8,10 @@ module Publish
 
 import Control.Exception (bracket_)
 import Control.Monad (void)
+import qualified Data.ByteString as BS
 import qualified Data.List as List
+import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 import qualified Data.NonEmptyList as NE
 import qualified Data.Utf8 as Utf8
 import qualified System.Directory as Dir
@@ -41,11 +44,14 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Task as Task
 import qualified Stuff
-import Elm.CustomRepositoryData (RepositoryUrl)
+import Elm.CustomRepositoryData (RepositoryUrl, RepositoryAuthToken, RepositoryLocalName, DefaultPackageServerRepo(..), PZRPackageServerRepo(..), CustomSingleRepositoryData (..))
 import Deps.Website (standardElmPkgRepoDomain)
 import Data.List (isInfixOf)
-import Reporting.Exit (Publish(PublishWithNoRepositoryUrl, PublishCustomRepositoryConfigDataError))
+import Reporting.Exit (Publish(PublishWithNoRepositoryLocalName, PublishCustomRepositoryConfigDataError))
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
+import Deps.Registry (createAuthHeader)
+import qualified Codec.Archive.Zip as Zip
+import Logging.Logger (printLog)
 
 
 
@@ -53,21 +59,23 @@ import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 
 data Args
   = NoArgs
-  | PublishToRepository RepositoryUrl
+  | PublishToRepository RepositoryLocalName
 
 -- TODO mandate no "exposing (..)" in packages to make
 -- optimization to skip builds in Elm.Details always valid
 
 
 run :: Args -> () -> IO ()
-run args () = 
+run args () =
   Reporting.attempt Exit.publishToReport $
     case args of
       NoArgs ->
-        pure $ Left PublishWithNoRepositoryUrl
+        pure $ Left PublishWithNoRepositoryLocalName
       PublishToRepository repositoryUrl ->
-        Reporting.attempt Exit.publishToReport $
-          Task.run $ (\env -> fmap Right $ publish env repositoryUrl) =<< getEnv
+        Task.run $
+          do
+            env <- getEnv
+            publish env repositoryUrl
 
 
 
@@ -100,18 +108,85 @@ getEnv =
 
 -- PUBLISH
 
+convertRegistryKeyToCustomSingleRepositoryData :: Registry.RegistryKey -> Maybe CustomSingleRepositoryData
+convertRegistryKeyToCustomSingleRepositoryData registryKey =
+  case registryKey of
+    Registry.RepositoryUrlKey customSingleRepositoryData -> Just customSingleRepositoryData
+    Registry.PackageUrlKey _ -> Nothing
 
-publish ::  Env -> RepositoryUrl -> Task.Task Exit.Publish ()
-publish env@(Env root _ manager registry outline) repositoryUrl =
+
+allCustomSingleRepositoryDataFromRegistries :: Registry.ZokkaRegistries -> [CustomSingleRepositoryData]
+allCustomSingleRepositoryDataFromRegistries Registry.ZokkaRegistries{Registry._registries=registriesMap} =
+  Maybe.mapMaybe convertRegistryKeyToCustomSingleRepositoryData (Map.keys registriesMap)
+
+
+localNameOfCustomSingleRepositoryData :: CustomSingleRepositoryData -> RepositoryLocalName
+localNameOfCustomSingleRepositoryData customSingleRepositoryData =
+  case customSingleRepositoryData of
+    DefaultPackageServerRepoData defaultPackageServerRepo -> _defaultPackageServerRepoLocalName defaultPackageServerRepo
+    PZRPackageServerRepoData pzrPackageServerRepo -> _pzrPackageServerRepoLocalName pzrPackageServerRepo
+
+
+findKeyByLocalName :: RepositoryLocalName -> [CustomSingleRepositoryData] -> Maybe CustomSingleRepositoryData
+findKeyByLocalName localName [] = Nothing
+findKeyByLocalName localName (customSingleRepositoryData : restOfRepos) =
+  if localNameOfCustomSingleRepositoryData customSingleRepositoryData == localName
+    then Just customSingleRepositoryData
+    else findKeyByLocalName localName restOfRepos
+
+
+-- Consider whether a linear scan in a list of repositories is okay perf-wise
+lookupRepositoryByLocalName :: RepositoryLocalName -> Registry.ZokkaRegistries -> Maybe CustomSingleRepositoryData
+lookupRepositoryByLocalName repositoryLocalName zokkaRegistries =
+  findKeyByLocalName repositoryLocalName (allCustomSingleRepositoryDataFromRegistries zokkaRegistries)
+
+
+getAllLocalNamesInRegistries :: Registry.ZokkaRegistries -> [RepositoryLocalName]
+getAllLocalNamesInRegistries registries = map localNameOfCustomSingleRepositoryData (allCustomSingleRepositoryDataFromRegistries registries)
+
+
+-- The only relevant things we need to zip up are the elm.json file and all Elm
+-- files in `src`. Note that even though elm.json for applications can specify
+-- non-standard locations for source code, for packages, they must always be
+-- under src.
+--
+-- We specifically do NOT pass a root argument and use purely relative paths
+-- because absolute paths are actually quite annoying to deal with. In
+-- particular, they potentially expose sensitive data about a user's filesystem.
+--
+-- So we instead expect always that we are in the correct location when this is
+-- run (which is okay to do because the Elm compiler can only be run from the
+-- top-level of a project when building).
+--
+-- If we ever want to make the location of the compiler configurable, we'll have
+-- to revisit this.
+createZipArchiveOfSourceCode :: IO Zip.Archive
+createZipArchiveOfSourceCode = do
+  elmFiles <- File.listAllElmFilesRecursively "src"
+  -- Note that we must start with a "." entry. This is because the Elm compiler
+  -- expects the very first entry of a ZIP archive to be the parent directory
+  -- and then subtracts that prefix from every other file that is decompressed.
+  -- If we use ".", this creates an entry with a zero-length file name (the
+  -- period is effectively erased), which is what we want.
+  --
+  -- On the other hand if we used "", our underlying Zip library would blow up
+  -- with an exception.
+  let filesToZip = "." : "elm.json" : elmFiles
+  printLog ("All the files we are zipping: " ++ show filesToZip)
+  Zip.addFilesToArchive [] Zip.emptyArchive filesToZip
+
+
+publish ::  Env -> RepositoryLocalName -> Task.Task Exit.Publish ()
+publish env@(Env root _ manager registry outline) repositoryLocalName =
   case outline of
     Outline.App _ ->
       Task.throw Exit.PublishApplication
 
     Outline.Pkg (Outline.PkgOutline pkg summary _ vsn exposed _ _ _) ->
-      if Utf8.toChars standardElmPkgRepoDomain `isInfixOf` Utf8.toChars repositoryUrl
-        then
-          Task.throw Exit.PublishToStandardElmRepositoryUsingZokka
-        else
+      case lookupRepositoryByLocalName repositoryLocalName registry of
+        Nothing ->
+          Task.throw (Exit.PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig repositoryLocalName (getAllLocalNamesInRegistries registry))
+        Just customRepositoriesData ->
           do  let maybeKnownVersions = Registry.getVersions pkg registry
 
               reportPublishStart pkg vsn maybeKnownVersions
@@ -123,15 +198,37 @@ publish env@(Env root _ manager registry outline) repositoryUrl =
               verifyLicense root
               docs <- verifyBuild root
               verifyVersion env pkg vsn docs maybeKnownVersions
-              git <- getGit
-              commitHash <- verifyTag git manager pkg vsn
-              verifyNoChanges git commitHash vsn
-              zipHash <- verifyZip env pkg vsn
 
               Task.io $ putStrLn ""
-              register manager repositoryUrl pkg vsn docs commitHash zipHash
+              case customRepositoriesData of
+                DefaultPackageServerRepoData defaultPackageServerRepo ->
+                  let
+                    repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
+                  in
+                  if Utf8.toChars standardElmPkgRepoDomain `isInfixOf` Utf8.toChars repositoryUrl
+                    then
+                      Task.throw Exit.PublishToStandardElmRepositoryUsingZokka
+                    else
+                      do
+                        git <- getGit
+                        commitHash <- verifyTag git manager pkg vsn
+                        verifyNoChanges git commitHash vsn
+                        zipHash <- verifyZip env pkg vsn
+                        register manager repositoryUrl pkg vsn docs commitHash zipHash
+                PZRPackageServerRepoData pzrPackageServerRepo ->
+                  do
+                    Task.io $ putStrLn "Beginning to create in-memory ZIP archive of source code..."
+                    zipArchive <- Task.io createZipArchiveOfSourceCode
+                    Task.io $ putStrLn "Finished creating in-memory ZIP archive of source code!"
+                    Task.io $ printLog ("All files in ZIP archive: " ++ show (Zip.filesInArchive zipArchive))
+                    registerToPZRRepo
+                      manager
+                      (_pzrPackageServerRepoTypeUrl pzrPackageServerRepo) (_pzrPackageServerRepoAuthToken pzrPackageServerRepo)
+                      pkg
+                      vsn
+                      docs
+                      zipArchive
               Task.io $ putStrLn "Success!"
-
 
 
 -- VERIFY SUMMARY
@@ -417,6 +514,25 @@ register manager repositoryUrl pkg vsn docs commitHash sha =
       , Http.stringPart "github-hash" (Http.shaToChars sha)
       ]
 
+
+registerToPZRRepo :: Http.Manager -> RepositoryUrl -> RepositoryAuthToken -> Pkg.Name -> V.Version -> Docs.Documentation -> Zip.Archive -> Task.Task Exit.Publish ()
+registerToPZRRepo manager repositoryUrl repositoryAuthToken pkg vsn docs zipArchive =
+  let
+    url =
+      Website.route repositoryUrl "/upload-package"
+        [ ("name", Pkg.toChars pkg)
+        , ("version", V.toChars vsn)
+        ]
+  in
+  Task.eio Exit.PublishCannotRegister $
+    Http.uploadWithHeaders manager url
+      [ Http.filePart "elm.json" "elm.json"
+      , Http.jsonPart "docs.json" "docs.json" (Docs.encode docs)
+      , Http.filePart "README.md" "README.md"
+      , Http.bytesPart "package.zip" "package.zip" (BS.toStrict $ Zip.fromArchive zipArchive)
+      ]
+      [ createAuthHeader repositoryAuthToken
+      ]
 
 
 -- REPORTING

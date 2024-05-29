@@ -42,6 +42,7 @@ import qualified Network.HTTP.Types.Status as HTTP
 import qualified System.FilePath as FP
 import System.FilePath ((</>), (<.>))
 
+import qualified Data.Utf8 as Utf8
 import qualified Elm.Constraint as C
 import qualified Elm.Magnitude as M
 import qualified Elm.ModuleName as ModuleName
@@ -65,7 +66,7 @@ import Elm.PackageOverrideData (PackageOverrideData(..))
 import Deps.CustomRepositoryDataIO (CustomRepositoriesError(..))
 import qualified Json.Decode as D
 import qualified Reporting.Error.Json
-import Elm.CustomRepositoryData (CustomRepositoryDataParseError (..))
+import Elm.CustomRepositoryData (CustomRepositoryDataParseError (..), RepositoryLocalName)
 
 
 
@@ -395,7 +396,8 @@ data Publish
   -- When publishing with Zokka we have to be careful not to publish to the standard
   -- Elm repository so that we don't end up publishing packages that the vanilla Elm compiler cannot handle
   | PublishToStandardElmRepositoryUsingZokka
-  | PublishWithNoRepositoryUrl
+  | PublishWithNoRepositoryLocalName
+  | PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig RepositoryLocalName [RepositoryLocalName]
   | PublishCustomRepositoryConfigDataError CustomRepositoriesError
 
 
@@ -702,7 +704,7 @@ publishToReport publish =
             \ Elm compiler at the last moment to publish!"
         ]
 
-    PublishWithNoRepositoryUrl ->
+    PublishWithNoRepositoryLocalName ->
       Help.report "PUBLISH WITH NO REPOSITORY URL" Nothing
         "When publishing with Zokka you must provide a repository URL as an argument. For example:"
         [ D.vcat
@@ -712,6 +714,17 @@ publishToReport publish =
         , D.reflow $
             "This is different from the standard Elm publish command because Zokka allows for\
             \ custom repositories, which means when publishing you have to specify where to publish!"
+        ]
+
+    PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig localNameProvided availableLocalNames ->
+      Help.report "PUBLISH WITH UNRECOGNIZED LOCAL REPOSITORY NAME" Nothing
+      -- FIXME: Add actual path of the custom-repository-config.json
+        ("You provided the local repository name " ++ Utf8.toChars localNameProvided ++ " which does not seem to exist in the custom-package-repository-config.json being used in ELM_HOME. The following local names were found:")
+        [ D.vcat
+          (map (\name -> D.indent 4 $ D.yellow (D.fromChars (Utf8.toChars name))) availableLocalNames)
+        , D.reflow $
+          "This is different from the standard Elm publish command because Zokka allows for\
+          \ custom repositories, which means when publishing you have to specify where to publish!"
         ]
 
     PublishCustomRepositoryConfigDataError _ ->

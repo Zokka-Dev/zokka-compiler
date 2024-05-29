@@ -1,0 +1,31 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <link rel="shortcut icon" size="16x16, 32x32, 48x48, 64x64, 128x128, 256x256" href="/assets/favicon.ico?1581531095">
+  <title>Elm Packages</title>
+  
+  <link rel="stylesheet" href="/assets/style.css?1583745743">
+  <script src="/elm.js"></script>
+  <script src="/assets/highlight/highlight.pack.js"></script>
+  <link rel="stylesheet" href="/assets/highlight/styles/default.css">
+</head>
+<body>
+<script>
+const app = Elm.Main.init({ flags: window.innerWidth });
+app.ports.toggleDialogById.subscribe(function(dialogAction) {
+  const dialogId = dialogAction.dialogId;
+  const action = dialogAction.action;
+  const dialog = document.querySelector(`#${dialogId}`);
+  if (dialog.open && action === "close") {
+    dialog.close();
+  } else if (!dialog.open && action === "open") {
+    dialog.showModal();
+  } else {
+    console.warn(`Unknown dialog action: {action}`);
+  }
+});
+</script>
+</body>
+</html>

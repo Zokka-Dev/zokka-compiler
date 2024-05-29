@@ -1,0 +1,26 @@
++ Packages table
+    * id (INTEGER)
+    * project (TEXT)
+    * author (TEXT)
+    * version (TEXT)
+    * location (TEXT)
+    * hash (TEXT)
+    * repository_id (INTEGER)
++ Repositories table
+    * id (INTEGER)
+    * human_readable_name (TEXT)
+    * url_safe_name (TEXT)
++ Users table
+    * id (INTEGER)
+    * username (TEXT)
+    * password_hash (TEXT)
+    * repository_id (INTEGER)
++ Auth tokens table
+    * id (INTEGER)
+    * token_value (TEXT)
+    * user_id (INTEGER)
+    * permission_id (INTEGER)
+    * repository_id (INTEGER)
++ Permissions table
+    * id (INTEGER)
+    * level (TEXT)

@@ -3,10 +3,14 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Elm.CustomRepositoryData
   ( CustomSingleRepositoryData(..)
+  , DefaultPackageServerRepo(..)
+  , PZRPackageServerRepo(..)
   , CustomRepositoriesData(..)
   , SinglePackageLocationData(..)
   , RepositoryType(..)
   , RepositoryUrl
+  , RepositoryAuthToken
+  , RepositoryLocalName
   , PackageUrl
   , SinglePackageFileType(..)
   , customRepostoriesDataDecoder
@@ -37,26 +41,49 @@ import Control.Monad (when)
 
 data REPOSITORYURL
 data PACKAGEURL
+data REPOSITORYAUTHTOKEN
+data REPOSITORYLOCALNAME
 
 data RepositoryType
   = DefaultPackageServer
-  | BarebonesPackageServer
+  | PZRPackageServer
   deriving (Enum, Bounded, Show, Ord, Eq)
+
+
+data DefaultPackageServerRepo = DefaultPackageServerRepo
+  { _defaultPackageServerRepoTypeUrl :: !RepositoryUrl
+  , _defaultPackageServerRepoLocalName :: !RepositoryLocalName
+  }
+    deriving (Show, Ord, Eq)
+
+type RepositoryAuthToken = Utf8.Utf8 REPOSITORYAUTHTOKEN
+
+instance Binary.Binary (Utf8.Utf8 REPOSITORYAUTHTOKEN) where
+  get = Utf8.getVeryLong
+  put = Utf8.putVeryLong
+
+-- PZR stands for personal Zokka repo
+data PZRPackageServerRepo = PZRPackageServerRepo
+  { _pzrPackageServerRepoTypeUrl :: !RepositoryUrl
+  , _pzrPackageServerRepoAuthToken :: !RepositoryAuthToken
+  , _pzrPackageServerRepoLocalName :: !RepositoryLocalName
+  }
+    deriving (Show, Ord, Eq)
 
 allRepositoryTypes :: [RepositoryType]
 allRepositoryTypes = [(minBound :: RepositoryType) .. ]
 
 defaultPackageServerString :: Json.String
-defaultPackageServerString = Json.fromChars "package-server-with-standard-elm-package-server-api"
+defaultPackageServerString = Json.fromChars "package-server-with-standard-elm-v0.19-package-server-api"
 
-barebonesPackageServerString :: Json.String
-barebonesPackageServerString = Json.fromChars "package-server-with-barebones-api"
+pzrPackageServerString :: Json.String
+pzrPackageServerString = Json.fromChars "package-server-with-personal-zokka-repo-v1.0-package-server-api"
 
 repositoryTypeToString :: RepositoryType -> Json.String
 repositoryTypeToString repositoryType =
   case repositoryType of
     DefaultPackageServer -> defaultPackageServerString
-    BarebonesPackageServer -> barebonesPackageServerString
+    PZRPackageServer -> pzrPackageServerString
 
 allRepositoryTypeStrings :: [Json.String]
 allRepositoryTypeStrings = fmap repositoryTypeToString allRepositoryTypes
@@ -83,7 +110,22 @@ repositoryTypeDecoder toError =
 
 repositoryTypeEncoder :: RepositoryType -> E.Value
 repositoryTypeEncoder DefaultPackageServer = E.string defaultPackageServerString
-repositoryTypeEncoder BarebonesPackageServer = E.string barebonesPackageServerString
+repositoryTypeEncoder PZRPackageServer = E.string pzrPackageServerString
+
+type RepositoryLocalName = Utf8.Utf8 REPOSITORYLOCALNAME
+
+instance Binary.Binary (Utf8.Utf8 REPOSITORYLOCALNAME) where
+  get = Utf8.getVeryLong
+  put = Utf8.putVeryLong
+
+
+repositoryLocalNameDecoder :: D.Decoder e RepositoryLocalName
+repositoryLocalNameDecoder = fmap coerce D.string
+
+
+repositoryLocalNameEncoder :: RepositoryLocalName -> E.Value
+repositoryLocalNameEncoder repositoryLocalName = E.string (coerce repositoryLocalName)
+
 
 type RepositoryUrl = Utf8.Utf8 REPOSITORYURL
 
@@ -122,38 +164,65 @@ sha1Encoder :: HumanReadableShaDigest -> E.Value
 sha1Encoder (HumanReadableShaDigest shaDigest) = E.string shaDigest
 
 
-data CustomSingleRepositoryData =
-  CustomSingleRepositoryData
-    { _repositoryType :: !RepositoryType
-    , _repositoryUrl :: !RepositoryUrl
-    }
+data CustomSingleRepositoryData 
+  = DefaultPackageServerRepoData DefaultPackageServerRepo
+  | PZRPackageServerRepoData PZRPackageServerRepo
     deriving (Show, Ord, Eq)
 
+standardElmRepositoryDefaultPackageServerRepo :: DefaultPackageServerRepo
+standardElmRepositoryDefaultPackageServerRepo = DefaultPackageServerRepo
+  { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package.elm-lang.org"
+  , _defaultPackageServerRepoLocalName = Utf8.fromChars "standard-elm-repository"
+  }
+
 standardElmRepository :: CustomSingleRepositoryData
-standardElmRepository = CustomSingleRepositoryData
-  { _repositoryType = DefaultPackageServer
-  , _repositoryUrl = Utf8.fromChars "https://package.elm-lang.org"
+standardElmRepository = DefaultPackageServerRepoData standardElmRepositoryDefaultPackageServerRepo
+
+standardZokkaRepositoryDefaultPackageServerRepo :: DefaultPackageServerRepo
+standardZokkaRepositoryDefaultPackageServerRepo = DefaultPackageServerRepo
+  { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package-server.zokka-lang.com"
+  , _defaultPackageServerRepoLocalName = Utf8.fromChars "standard-zokka-repository"
   }
 
 standardZokkaRepository :: CustomSingleRepositoryData
-standardZokkaRepository = CustomSingleRepositoryData
-  { _repositoryType = DefaultPackageServer
-  , _repositoryUrl = Utf8.fromChars "https://package-server.zokka-lang.com"
-  }
+standardZokkaRepository = DefaultPackageServerRepoData standardZokkaRepositoryDefaultPackageServerRepo
+
+repositoryAuthTokenDecoder :: D.Decoder e RepositoryAuthToken
+repositoryAuthTokenDecoder = fmap coerce D.string
+
+repositoryAuthTokenEncoder :: RepositoryAuthToken -> E.Value
+repositoryAuthTokenEncoder authToken = E.string (coerce authToken)
 
 customSingleRepositoryDataDecoder :: D.Decoder CustomRepositoryDataParseError CustomSingleRepositoryData
 customSingleRepositoryDataDecoder =
   do
     repositoryType <- D.field "repository-type" (repositoryTypeDecoder UnsupportedRepositoryType)
     repositoryUrl <- D.field "repository-url" repositoryUrlDecoder
-    pure (CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl})
+    repositoryLocalName <- D.field "repository-local-name" repositoryLocalNameDecoder
+    case repositoryType of
+      DefaultPackageServer ->
+        pure (DefaultPackageServerRepoData (DefaultPackageServerRepo{_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName}))
+      PZRPackageServer ->
+        do
+          repositoryAuthToken <- D.field "repository-auth-token" repositoryAuthTokenDecoder
+          pure (PZRPackageServerRepoData (PZRPackageServerRepo {_pzrPackageServerRepoAuthToken=repositoryAuthToken, _pzrPackageServerRepoTypeUrl=repositoryUrl, _pzrPackageServerRepoLocalName=repositoryLocalName}))
 
 customSingleRepositoryDataEncoder :: CustomSingleRepositoryData -> E.Value
-customSingleRepositoryDataEncoder (CustomSingleRepositoryData repositoryType repositoryUrl) =
-  E.object
-    [ (Utf8.fromChars "repository-type", repositoryTypeEncoder repositoryType)
-    , (Utf8.fromChars "repository-url", repositoryUrlEncoder repositoryUrl)
-    ]
+customSingleRepositoryDataEncoder customSingleRepositoryData =
+  case customSingleRepositoryData of
+    DefaultPackageServerRepoData defaultPackageServerRepo ->
+      E.object
+        [ (Utf8.fromChars "repository-type", repositoryTypeEncoder DefaultPackageServer)
+        , (Utf8.fromChars "repository-url", repositoryUrlEncoder (_defaultPackageServerRepoTypeUrl defaultPackageServerRepo))
+        , (Utf8.fromChars "repository-local-name", repositoryLocalNameEncoder (_defaultPackageServerRepoLocalName defaultPackageServerRepo))
+        ]
+    PZRPackageServerRepoData pzrPackageServerRepo -> 
+      E.object
+        [ (Utf8.fromChars "repository-type", repositoryTypeEncoder PZRPackageServer)
+        , (Utf8.fromChars "repository-url", repositoryUrlEncoder (_pzrPackageServerRepoTypeUrl pzrPackageServerRepo))
+        , (Utf8.fromChars "repository-local-name", repositoryLocalNameEncoder (_pzrPackageServerRepoLocalName pzrPackageServerRepo))
+        , (Utf8.fromChars "repository-auth-token", repositoryAuthTokenEncoder (_pzrPackageServerRepoAuthToken pzrPackageServerRepo))
+        ]
 
 data SinglePackageFileType
   = TarballType
@@ -322,27 +391,40 @@ instance Binary.Binary RepositoryType where
     t <- Binary.get :: Binary.Get Binary.Word8
     case t of
       0 -> pure DefaultPackageServer
-      1 -> pure BarebonesPackageServer
+      1 -> pure PZRPackageServer
       _ -> 
         -- FIXME: Better error message
         error "Corrupt repository type! We should only have a 0 or 1 here."
   put repositoryType = case repositoryType of
     DefaultPackageServer -> Binary.put (0 :: Binary.Word8)
-    BarebonesPackageServer -> Binary.put (1 :: Binary.Word8)
+    PZRPackageServer -> Binary.put (1 :: Binary.Word8)
 
 instance Binary.Binary CustomSingleRepositoryData where
   get = do
     repositoryType <- Binary.get :: Binary.Get RepositoryType
     repositoryUrl <- Binary.get :: Binary.Get RepositoryUrl
-    pure $ CustomSingleRepositoryData
-      { _repositoryType = repositoryType
-      , _repositoryUrl = repositoryUrl
-      }
+    repositoryLocalName <- Binary.get :: Binary.Get RepositoryLocalName
+    case repositoryType of
+      DefaultPackageServer ->
+        pure (DefaultPackageServerRepoData (DefaultPackageServerRepo {_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName}))
+      PZRPackageServer ->
+        do
+          repositoryAuthToken <- Binary.get :: Binary.Get RepositoryAuthToken
+          pure (PZRPackageServerRepoData (PZRPackageServerRepo {_pzrPackageServerRepoAuthToken=repositoryAuthToken, _pzrPackageServerRepoTypeUrl=repositoryUrl, _pzrPackageServerRepoLocalName=repositoryLocalName}))
 
-  put CustomSingleRepositoryData{_repositoryType=repositoryType, _repositoryUrl=repositoryUrl} =
-    do
-      Binary.put repositoryType
-      Binary.put repositoryUrl
+  put customSingleRepositoryData =
+    case customSingleRepositoryData of
+      DefaultPackageServerRepoData defaultPackageServerRepo ->
+        do
+          Binary.put DefaultPackageServer
+          Binary.put (_defaultPackageServerRepoTypeUrl defaultPackageServerRepo)
+          Binary.put (_defaultPackageServerRepoLocalName defaultPackageServerRepo)
+      PZRPackageServerRepoData pzrPackageServer ->
+        do
+          Binary.put PZRPackageServer
+          Binary.put (_pzrPackageServerRepoTypeUrl pzrPackageServer)
+          Binary.put (_pzrPackageServerRepoLocalName pzrPackageServer)
+          Binary.put (_pzrPackageServerRepoAuthToken pzrPackageServer)
 
   -- = TarballType
   -- | ZipfileType
@@ -370,15 +452,6 @@ instance Binary.Binary HumanReadableShaDigest where
     Binary.put (coerce shaDigestAsUtf8String :: PackageUrl)
 
 
--- data SinglePackageLocationData =
---   SinglePackageLocationData
---     { _fileType :: !SinglePackageFileType
---     , _packageName :: !Name
---     , _version :: !Version
---     , _url :: !PackageUrl
---     , _shaHash :: !HumanReadableShaDigest
---     }
---   deriving (Eq, Ord, Show)
 instance Binary.Binary SinglePackageLocationData where
   get = do
     fileType <- Binary.get :: Binary.Get SinglePackageFileType

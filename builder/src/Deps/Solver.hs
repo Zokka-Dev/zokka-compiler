@@ -35,7 +35,7 @@ import qualified Http
 import qualified Json.Decode as D
 import qualified Reporting.Exit as Exit
 import qualified Stuff
-import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, CustomSingleRepositoryData(..), SinglePackageLocationData(..))
+import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, CustomSingleRepositoryData(..), SinglePackageLocationData(..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoTypeUrl, _pzrPackageServerRepoAuthToken))
 import Data.Maybe (fromJust)
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Reporting.Exit (RegistryProblem(..))
@@ -287,6 +287,65 @@ getRelevantVersions name constraint =
 -- GET CONSTRAINTS
 
 
+getFromCustomSingleRepositoryData :: CustomSingleRepositoryData 
+  -> Pkg.Name 
+  -> V.Version 
+  -> Stuff.PackageCache
+  -> (Constraints -> State)
+  -> Http.Manager 
+  -> (State -> Constraints -> (State -> IO b) -> IO b) 
+  -> (State -> IO b)
+  -> (Exit.Solver -> IO b)
+  -> IO b
+getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNewState manager ok back err =
+  -- FIXME: Reduce duplication
+  case customSingleRepositoryData of
+    DefaultPackageServerRepoData defaultPackageServerRepo -> 
+      let
+        repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
+        url = Website.metadata repositoryUrl pkg vsn "elm.json"
+        home = Stuff.package cache pkg vsn
+        path = home </> "elm.json"
+      in
+      do
+        result <- Http.get manager url [] id (return . Right)
+        case result of
+          Left httpProblem ->
+            err (Exit.SolverBadHttp pkg vsn httpProblem)
+
+          Right body ->
+            case D.fromByteString constraintsDecoder body of
+              Right cs ->
+                do  Dir.createDirectoryIfMissing True home
+                    File.writeUtf8 path body
+                    ok (toNewState cs) cs back
+
+              Left _ ->
+                err (Exit.SolverBadHttpData pkg vsn url)
+    PZRPackageServerRepoData pzrPackageServerRepo ->
+      let
+        repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
+        repositoryAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
+        url = Website.metadata repositoryUrl pkg vsn "elm.json"
+        home = Stuff.package cache pkg vsn
+        path = home </> "elm.json"
+      in
+      do
+        result <- Http.get manager url [Registry.createAuthHeader repositoryAuthToken] id (return . Right)
+        case result of
+          Left httpProblem ->
+            err (Exit.SolverBadHttp pkg vsn httpProblem)
+
+          Right body ->
+            case D.fromByteString constraintsDecoder body of
+              Right cs ->
+                do  Dir.createDirectoryIfMissing True home
+                    File.writeUtf8 path body
+                    ok (toNewState cs) cs back
+
+              Left _ ->
+                err (Exit.SolverBadHttpData pkg vsn url)
+
 getConstraints :: Pkg.Name -> V.Version -> Solver Constraints
 getConstraints pkg vsn =
   Solver $ \state@(State cache connection registry cDict) ok back err ->
@@ -328,24 +387,7 @@ getConstraints pkg vsn =
                             -- FIXME: I feel like this entire case should be nicer
                             case registryKeyMaybe of
                               Just (Registry.RepositoryUrlKey repositoryData) ->
-                                let
-                                  repositoryUrl = _repositoryUrl repositoryData
-                                  url = Website.metadata repositoryUrl pkg vsn "elm.json"
-                                in do
-                                  result <- Http.get manager url [] id (return . Right)
-                                  case result of
-                                    Left httpProblem ->
-                                      err (Exit.SolverBadHttp pkg vsn httpProblem)
-
-                                    Right body ->
-                                      case D.fromByteString constraintsDecoder body of
-                                        Right cs ->
-                                          do  Dir.createDirectoryIfMissing True home
-                                              File.writeUtf8 path body
-                                              ok (toNewState cs) cs back
-
-                                        Left _ ->
-                                          err (Exit.SolverBadHttpData pkg vsn url)
+                                getFromCustomSingleRepositoryData repositoryData pkg vsn cache toNewState manager ok back err
                               Just (Registry.PackageUrlKey singlePackageData) ->
                                 do
                                   let packageUrl = _url singlePackageData

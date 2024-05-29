@@ -63,7 +63,7 @@ import Elm.PackageOverrideData (PackageOverrideData(..))
 import Data.Function ((&))
 import Data.Map ((!))
 import Deps.Registry (ZokkaRegistries)
-import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl, HumanReadableShaDigest, humanReadableShaDigestIsEqualToSha, humanReadableShaDigestToString)
+import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl, HumanReadableShaDigest, humanReadableShaDigestIsEqualToSha, humanReadableShaDigestToString, CustomSingleRepositoryData (..), PZRPackageServerRepo(..), DefaultPackageServerRepo(..))
 import qualified Elm.CustomRepositoryData as CustomRepositoryData
 import Control.Exception (SomeException, catches, Handler (..), BlockedIndefinitelyOnMVar (BlockedIndefinitelyOnMVar), throwIO, Exception)
 import qualified Reporting.Annotation as Report.Annotation
@@ -189,7 +189,7 @@ load :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.Details Detai
 load style scope root =
   do  newTime <- File.getTime (root </> "elm.json")
       maybeDetails <- File.readBinary (Stuff.details root)
-      printLog "Made it to LOAD 1"
+      printLog "Finished file operations for generating the Details data structure"
       case maybeDetails of
         Nothing ->
           generate style scope root newTime
@@ -204,7 +204,7 @@ loadForReactorTH :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.D
 loadForReactorTH style scope root =
   do  newTime <- File.getTime (root </> "elm.json")
       maybeDetails <- File.readBinary (Stuff.details root)
-      printLog "Made it to LOAD 1"
+      printLog "Finished file operations for generating the Details data structure"
       case maybeDetails of
         Nothing ->
           generateForReactorTH style scope root newTime
@@ -333,8 +333,6 @@ verifyApp env time outline@(Outline.AppOutline elmVersion srcDirs direct _ _ _ p
   if elmVersion == V.compiler
   then
     do  stated <- checkAppDeps outline
-        noredinkexists <- Task.io $ Dir.doesDirectoryExist "/home/changlin/.elm/0.19.1/packages/NoRedInk/elm-json-decode-pipeline/1.0.0"
-        Task.io $ printLog (show noredinkexists ++ "does the NoRedInk file path exist before verifying constraints")
         actual <- verifyConstraints env (Map.map Con.exactly stated)
         -- FIXME: Think about what to do with multiple packageOverrides that have the same keys (probably shouldn't be possible?)
         let originalPkgToOverridingPkg = groupByOriginalPkg packageOverrides
@@ -1012,6 +1010,18 @@ toDocs result =
 
 -- DOWNLOAD PACKAGE
 
+getHeadersFromCustomRepositoryData :: CustomRepositoriesData.CustomSingleRepositoryData -> [Http.Header]
+getHeadersFromCustomRepositoryData customRepositoryData = 
+  case customRepositoryData of
+    DefaultPackageServerRepoData _ -> []
+    PZRPackageServerRepoData pzrPackageServerRepoData -> [Registry.createAuthHeader (_pzrPackageServerRepoAuthToken pzrPackageServerRepoData)]
+
+getRepoUrlFromCustomRepositoryData :: CustomRepositoriesData.CustomSingleRepositoryData -> RepositoryUrl
+getRepoUrlFromCustomRepositoryData customRepositoryData =
+  case customRepositoryData of
+    DefaultPackageServerRepoData defaultPackageServerRepo -> _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
+    PZRPackageServerRepoData pzrPackageServerRepoData -> _pzrPackageServerRepoTypeUrl pzrPackageServerRepoData
+
 
 downloadPackage :: Stuff.PackageCache -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
 downloadPackage cache zokkaRegistries manager pkg vsn =
@@ -1019,12 +1029,12 @@ downloadPackage cache zokkaRegistries manager pkg vsn =
     Just (Registry.RepositoryUrlKey repositoryData) ->
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-        printLog (show exists ++ "A" ++ Stuff.package cache pkg vsn)
-        downloadPackageFromElmPackageRepo cache (CustomRepositoryData._repositoryUrl repositoryData) manager pkg vsn
+        let headers = getHeadersFromCustomRepositoryData repositoryData
+        let repoUrl = getRepoUrlFromCustomRepositoryData repositoryData
+        downloadPackageFromElmPackageRepo cache repoUrl headers manager pkg vsn
     Just (Registry.PackageUrlKey packageData) ->
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-        printLog (show exists ++ "B" ++ Stuff.package cache pkg vsn)
         downloadPackageDirectly cache (CustomRepositoryData._url packageData) manager pkg vsn
     Nothing ->
       let
@@ -1042,11 +1052,13 @@ downloadPackageToFilePath filePath zokkaRegistries manager pkg vsn =
       do
         exists <- Dir.doesDirectoryExist filePath
         printLog (show exists ++ "A (toFilePath)" ++ filePath)
-        downloadPackageFromElmPackageRepoToFilePath filePath (CustomRepositoryData._repositoryUrl repositoryData) manager pkg vsn
+        let headers = getHeadersFromCustomRepositoryData repositoryData
+        let repoUrl = getRepoUrlFromCustomRepositoryData repositoryData
+        downloadPackageFromElmPackageRepoToFilePath filePath repoUrl headers manager pkg vsn
     Just (Registry.PackageUrlKey packageData) ->
       do
         exists <- Dir.doesDirectoryExist filePath
-        printLog (show exists ++ "B (toFilePath)" ++ filePath)
+        printLog ("Checking whether " ++ filePath ++ "exists as a directory. Result: " ++ show exists)
         downloadPackageDirectlyToFilePath filePath (CustomRepositoriesData._url packageData) (CustomRepositoriesData._shaHash packageData) manager
     Nothing ->
       let
@@ -1062,10 +1074,8 @@ downloadPackageDirectly cache packageUrl manager pkg vsn =
     urlString = Utf8.toChars packageUrl
   in
     Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
-    -- FIXME: Deal with the SHA hash instead of ignoring it
       \(_, archive) ->
         Right <$> do
-          printLog "hello world 2! FIXME"
           File.writePackage (Stuff.package cache pkg vsn) archive
 
 downloadPackageDirectlyToFilePath :: FilePath -> PackageUrl -> HumanReadableShaDigest -> Http.Manager -> IO (Either Exit.PackageProblem ())
@@ -1074,25 +1084,23 @@ downloadPackageDirectlyToFilePath filePath packageUrl expectedShaDigest manager 
     urlString = Utf8.toChars packageUrl
   in
     Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
-    -- FIXME: Deal with the SHA hash instead of ignoring it
       \(receivedShaHash, archive) ->
         if humanReadableShaDigestIsEqualToSha expectedShaDigest receivedShaHash
           then
             Right <$> do
-              printLog "hello world 2! FIXME (toFilePath)"
               File.writePackage filePath archive
           else
             -- FIXME Maybe use a custom error type instead of PP_BadArchiveHash that points to where the hash is defined in the custom-repo config
             pure (Left (PP_BadArchiveHash urlString (humanReadableShaDigestToString expectedShaDigest) (Http.shaToChars receivedShaHash)))
 
 
-downloadPackageFromElmPackageRepo :: Stuff.PackageCache -> RepositoryUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
-downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
+downloadPackageFromElmPackageRepo :: Stuff.PackageCache -> RepositoryUrl -> [Http.Header] -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackageFromElmPackageRepo cache repositoryUrl headers manager pkg vsn =
   let
     url = Website.metadata repositoryUrl pkg vsn "endpoint.json"
   in
   do  eitherByteString <-
-        Http.get manager url [] id (return . Right)
+        Http.get manager url headers id (return . Right)
       exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
       printLog (show exists ++ "B0" ++ Stuff.package cache pkg vsn)
 
@@ -1106,7 +1114,7 @@ downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
               return $ Left $ Exit.PP_BadEndpointContent url
 
             Right (endpoint, expectedHash) ->
-              Http.getArchive manager endpoint Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
+              Http.getArchiveWithHeaders manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                 \(sha, archive) ->
                   if expectedHash == Http.shaToChars sha
                   then Right <$> do
@@ -1117,13 +1125,13 @@ downloadPackageFromElmPackageRepo cache repositoryUrl manager pkg vsn =
 
 
 -- FIXME: Reduce duplication
-downloadPackageFromElmPackageRepoToFilePath :: FilePath -> RepositoryUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
-downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl manager pkg vsn =
+downloadPackageFromElmPackageRepoToFilePath :: FilePath -> RepositoryUrl -> [Http.Header] -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl headers manager pkg vsn =
   let
     url = Website.metadata repositoryUrl pkg vsn "endpoint.json"
   in
   do  eitherByteString <-
-        Http.get manager url [] id (return . Right)
+        Http.get manager url headers id (return . Right)
       exists <- Dir.doesDirectoryExist filePath
       printLog (show exists ++ "B0 (toFilePath)" ++ filePath)
 
@@ -1137,7 +1145,7 @@ downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl manager pkg v
               return $ Left $ Exit.PP_BadEndpointContent url
 
             Right (endpoint, expectedHash) ->
-              Http.getArchive manager endpoint Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
+              Http.getArchiveWithHeaders manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                 \(sha, archive) ->
                   if expectedHash == Http.shaToChars sha
                   then Right <$> do

@@ -28,7 +28,7 @@ jobs:
     - name: Install system dependencies
       run: |
         apk add --no-cache curl gcc g++ gmp-dev ncurses-dev libffi-dev make xz gzip tar perl git bash sudo binutils-gold
-        apk add --no-cache zlib zlib-dev zlib-static gmp gmp-dev ncurses-static
+        apk add --no-cache zlib zlib-dev zlib-static gmp gmp-dev ncurses-static python3-dev nodejs npm
 
     - name: Install ghcup
       run: |
@@ -39,7 +39,7 @@ jobs:
 
     - name: Install GHC and cabal
       run: |
-        ghcup install ghc   --force -i /usr/local     9.2.8
+        ghcup install ghc   --force -i /usr/local     9.4.8
         ghcup install cabal --force -i /usr/local/bin 3.10
       shell: bash
 
@@ -49,13 +49,19 @@ jobs:
     - name: Build Project
       shell: bash
       run: |
-        cp cabal.project.freeze.ghc92 cabal.project.freeze
+        cp cabal.project.freeze.ghc94 cabal.project.freeze
         cp cabal.project.prod cabal.project
         cabal update
         cabal build --enable-executable-static # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
         OUTPUT_BIN=$(cabal list-bin zokka)
         mkdir -p output
         cp $OUTPUT_BIN output/zokka
+
+    - name: Run cabal tests
+      run: cabal test all
+
+    - name: Run elm-test-rs tests
+      run: python3 run-test-rs-tests.py
 
     # Extract the current git tag
     - name: Extract Git Tag
@@ -69,6 +75,72 @@ jobs:
       with:
         name: zokka-compiler-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
+
+  build-package-server:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            binary-fragment-name: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    # Use older version of alpine that predates this change
+    # https://git.musl-libc.org/cgit/musl/commit/?id=246f1c811448f37a44b41cd8df8d0ef9736d95f4
+    # Otherwise we error out when linking statically complaining about sendfile64 in snap-server
+    container: alpine:3.16
+    # A lot of this comes from https://github.com/hasufell/stack2cabal/blob/160ae10b9e78c398803ed7ba4ab9d49c553df42d/.github/workflows/release.yaml#L32
+    steps:
+    - name: Install system dependencies
+      run: |
+        apk add --no-cache curl gcc g++ gmp-dev ncurses-dev libffi-dev make xz gzip tar perl git bash sudo binutils-gold
+        apk add --no-cache zlib zlib-dev zlib-static gmp gmp-dev ncurses-static python3-dev nodejs npm
+
+    - name: Install ghcup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup > /usr/bin/ghcup
+        chmod +x /usr/bin/ghcup
+        echo "$HOME/.ghcup/bin" $GITHUB_PATH
+      shell: bash
+
+    - name: Install GHC and cabal
+      run: |
+        ghcup install ghc   --force -i /usr/local     9.4.8
+        ghcup install cabal --force -i /usr/local/bin 3.10
+      shell: bash
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Project
+      shell: bash
+      run: |
+        rm cabal.project
+        cd custom-package-server
+        cabal update
+        mkdir -p /top-level-output
+        cabal build --enable-executable-static # We use build instead of install because our version of Cabal doesn't handle https://github.com/haskell/cabal/pull/9697, which prevents --enble-executable-static from being used with cabal install
+        OUTPUT_BIN=$(cabal list-bin myPackage)
+        python3 example_test.py --skip-initial-cabal-build
+        cp $OUTPUT_BIN /top-level-output/zokka-custom-package-server
+        cd elm-src
+        npx zokka make frontend/Main.elm --output=elm.js
+        mkdir -p /top-level-output/generated-static-files/ui
+        cp elm.js /top-level-output/generated-static-files/ui
+        cp index.html /top-level-output/generated-static-files/ui
+        cp -r assets /top-level-output/generated-static-files/ui
+
+    # Extract the current git tag
+    - name: Extract Git Tag
+      id: get_version
+      run: |
+        git config --global --add safe.directory /__w/zokka-compiler/zokka-compiler
+        echo "##[set-output name=tag;]$(git describe --tags --abbrev=0)"
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: zokka-custom-package-server-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
+        path: /top-level-output/zokka-custom-package-server
 
   build:
     strategy:
@@ -88,14 +160,14 @@ jobs:
     - name: Set up Haskell
       uses: haskell-actions/setup@v2
       with:
-        ghc-version: '9.2.8'  # Specify GHC version
+        ghc-version: '9.4.8'  # Specify GHC version
         cabal-version: '3.10'  # Specify Cabal version
 
     # Add steps here to build your Haskell project using Cabal
     - name: Build Project
       shell: bash
       run: |
-        cp cabal.project.freeze.ghc92 cabal.project.freeze
+        cp cabal.project.freeze.ghc94 cabal.project.freeze
         cp cabal.project.prod cabal.project
         cabal update
         cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
@@ -114,6 +186,7 @@ jobs:
       with:
         name: zokka-compiler-${{ matrix.binary-fragment-name }}-${{ steps.get_version.outputs.tag }}
         path: ./output/zokka
+
   publish-artifacts:
     runs-on: ubuntu-latest
     needs: [linux-build, build]
@@ -132,7 +205,7 @@ jobs:
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       run: |
-        python publish-to-npm.py \
+        python3 publish-to-npm.py \
           --windows-x86-binary-source-location=./zokka-compiler-windows-x86_64-${{ steps.get_version.outputs.tag }}/zokka \
           --darwin-x86-binary-source-location=./zokka-compiler-macos-x86_64-${{ steps.get_version.outputs.tag }}/zokka \
           --darwin-arm64-binary-source-location=./zokka-compiler-macos-arm_64-${{ steps.get_version.outputs.tag }}/zokka \

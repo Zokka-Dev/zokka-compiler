@@ -1,0 +1,633 @@
+@import url(https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,600,700,400italic,700italic|Source+Code+Pro:400,700);
+
+html,
+head {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  font-family: 'Source Sans Pro', 'Trebuchet MS', 'Lucida Grande', 'Bitstream Vera Sans', 'Helvetica Neue', sans-serif;
+  color: #000e16;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: normal;
+}
+
+input {
+  font-family: 'Source Sans Pro', 'Trebuchet MS', 'Lucida Grande', 'Bitstream Vera Sans', 'Helvetica Neue', sans-serif;
+}
+
+input::placeholder {
+  color: #000e16;
+  opacity: 0.54;
+}
+
+p,
+li {
+  line-height: 1.5em;
+}
+
+a {
+  color: #1293d8;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+a .pkg-summary-author {
+  color: #5FABDC;
+}
+
+pre {
+  margin: 0;
+  padding: 10px;
+  background-color: rgb(254, 254, 254);
+  border-style: solid;
+  border-width: 1px;
+  border-color: rgb(245, 245, 245);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+/* PAGE */
+
+.page {
+  display: flex;
+  flex: 1;
+  margin-left: calc(100vw - 100%);
+}
+
+.page::before {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 64px;
+  width: calc(100vw - 100%);
+  background-color: #E683E4;
+  content: "";
+}
+
+.page-margin {
+  flex: 1;
+  height: 64px;
+  background-color: #E683E4;
+}
+
+.content {
+  flex: 1;
+}
+
+/* HEADER */
+
+
+.center {
+  box-sizing: border-box;
+  min-width: 900px;
+  padding: 0 10px;
+  margin: 0 10px;
+  display: flex;
+  align-items: flex-start;
+}
+
+.header-bar {
+  min-height: 64px;
+  background-color: #E683E4;
+  display: flex;
+  align-items: center;
+}
+
+.header-bar svg {
+  fill: white;
+}
+
+.header-bar .center {
+  /* Cover potential overflow */
+  background-color: #E683E4;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 10px 0;
+  color: white;
+  font-size: 24px;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header>a {
+  color: white;
+}
+
+.header>a:first-of-type {
+  margin-right: 20px;
+}
+
+.version-warning {
+  text-align: center;
+  margin: 0;
+  padding: 4px 0;
+  color: black;
+  font-weight: bold;
+}
+
+.version-warning a {
+  color: black;
+  text-decoration: underline;
+}
+
+.spacey-char {
+  margin: 0 10px;
+}
+
+
+
+/* FOOTER */
+
+
+.footer {
+  text-align: center;
+  margin-top: 4em;
+  padding: 2em 0;
+  color: #bbbbbb;
+}
+
+
+.grey-link {
+  color: #bbbbbb;
+  cursor: pointer;
+}
+
+.grey-link:hover {
+  text-decoration: underline;
+}
+
+
+/* DOCUMENTATION */
+
+
+.block-list {
+  width: 600px;
+  vertical-align: top;
+}
+
+.block-list-title {
+  font-size: 3em;
+}
+
+.block-list img {
+  max-width: 100%;
+}
+
+.markdown-block h1 {
+  margin-top: 2em;
+  margin-bottom: 0.5px
+}
+
+.docs-block {
+  border-top: 1px solid #eeeeee;
+  margin-top: 1em;
+  margin-bottom: 2em;
+}
+
+
+.docs-header {
+  white-space: pre;
+  font-family: 'Source Code Pro', Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  padding-left: 54px;
+  text-indent: -54px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+
+.docs-comment {
+  overflow: hidden;
+  display: flex;
+}
+
+.docs-comment div {
+  min-width: 0;
+  flex: 1;
+}
+
+.docs-comment img {
+  max-width: 100%;
+}
+
+.docs-comment .permalink {
+  display: block;
+  flex: 0 0 36px;
+  outline: 0;
+}
+
+
+/* PACKAGE NAVIGATION */
+
+
+.pkg-nav {
+  vertical-align: top;
+  padding: 20px 20px 0 30px;
+  margin: 20px 20px 20px 40px;
+  border-left: 1px solid #eeeeee;
+  line-height: 1.5em;
+
+  position: sticky;
+  top: 0px;
+  overflow-x: visible;
+  width: 140px;
+}
+
+#pkg-nav-modules {
+  border-left: 1px solid #eeeeee;
+  padding-left: 30px;
+  padding-bottom: 20px;
+  transform: translateX(-31px);
+  position: absolute;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  max-height: calc(100vh - 308px);
+}
+
+#pkg-nav-modules::-webkit-scrollbar {
+  display: none;
+}
+
+.pkg-nav h2 {
+  margin-bottom: 10px;
+}
+
+.pkg-nav input {
+  width: 140px;
+  font-size: 1em;
+  padding: 5px;
+  margin: 0 -5px 10px -5px;
+  border: 1px solid #eeeeee;
+  border-radius: 6px;
+}
+
+.pkg-nav ul {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pkg-nav ul ul {
+  list-style-type: none;
+  margin: 0;
+  padding-left: 20px;
+}
+
+#pkg-nav-module {
+  font-family: 'Source Code Pro', Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  text-overflow: ellipsis;
+}
+
+.pkg-nav-value {
+  font-family: 'Source Code Pro', Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  text-overflow: ellipsis;
+}
+
+.pkg-nav-search-chunk {
+  padding-bottom: 10px;
+}
+
+
+
+/* PACKAGE VERSIONS OVERVIEW */
+
+
+.center.pkg-overview {
+  display: block;
+}
+
+
+
+/* CATALOG */
+
+
+.catalog {
+  width: 600px;
+  display: inline-block;
+  vertical-align: top;
+}
+
+.catalog form {
+  display: flex;
+  flex-direction: column;
+}
+
+.catalog input {
+  font-size: 1.5em;
+  padding: 10px;
+  margin: 40px -10px 10px -10px;
+  outline: none;
+  border: 1px solid #eeeeee;
+  border-radius: 8px;
+  margin-top: 40px;
+}
+
+
+.pkg-hint {
+  margin: 20px -10px;
+  padding: 20px 10px;
+  background-color: #fcfcfc;
+  border-radius: 8px;
+}
+
+.pkg-summary {
+  padding: 20px 0;
+  border-bottom: 1px solid #eeeeee;
+}
+
+.pkg-summary-title {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.pkg-summary h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.5em;
+  display: inline-block;
+}
+
+.pkg-summary-desc {
+  margin: 0.5em 0;
+}
+
+.pkg-summary-version {
+  font-size: 1em;
+  margin: 0.5em 0 0 10px;
+  color: #bbbbbb;
+}
+
+.pkg-summary-version a {
+  color: #bbbbbb;
+}
+
+
+
+/* CATALOG SIDEBAR */
+
+
+.catalog-sidebar {
+  width: 140px;
+  display: inline-block;
+  position: sticky;
+  top: 0px;
+  vertical-align: top;
+  padding: 20px;
+  margin: 20px 20px 20px 40px;
+  border-left: 1px solid #eeeeee;
+  white-space: nowrap;
+}
+
+.catalog-sidebar h2 {
+  font-size: 1.5em;
+  padding: 10px;
+  margin: 0;
+}
+
+.catalog-sidebar ul {
+  list-style-type: none;
+  margin: 0;
+  padding-left: 10px;
+  padding-bottom: 10px;
+}
+
+
+
+/* CODE */
+
+
+code {
+  font-family: 'Source Code Pro', Consolas, "Liberation Mono", Menlo, Courier, monospace;
+}
+
+/* I heard using :not() is slow for reflows.
+Not really any of those on the website though AFAIK.
+*/
+:not(pre)>code {
+  padding: 0;
+  padding-top: 0.2em;
+  padding-bottom: 0.2em;
+  margin: 0;
+  font-size: 85%;
+  background-color: rgba(0, 0, 0, 0.04);
+  border-radius: 3px;
+}
+
+:not(pre)>code::before,
+:not(pre)>code::after {
+  letter-spacing: -0.2em;
+  content: "\00a0";
+}
+
+
+
+/* ABOUT */
+
+.pkg-about ul {
+  list-style: none;
+  padding: 0;
+}
+
+.pkg-constraint {
+  white-space: nowrap;
+}
+
+/* SMALL WIDTH SCREENS */
+
+
+@media screen and (max-width: 768px) {
+  .center {
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap-reverse;
+    box-sizing: border-box;
+    margin: 0;
+  }
+
+  .page {
+    margin-left: 0;
+  }
+
+  .page::before {
+    display: none;
+  }
+
+  .page-margin {
+    display: none;
+  }
+
+  .header-bar {
+    min-height: 40px;
+  }
+
+  .header {
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 20px;
+  }
+
+  .header>a:first-of-type {
+    margin-right: 10px;
+  }
+
+  .header .logo-text {
+    display: none;
+  }
+
+  .footer {
+    padding: 10px;
+  }
+
+  .catalog {
+    flex: 1;
+    width: auto;
+    display: block;
+  }
+
+  .catalog input {
+    flex: 1;
+    width: auto;
+    padding: 10px 5px;
+    margin: 40px -5px 10px -5px;
+  }
+
+  .catalog-sidebar {
+    display: none;
+  }
+
+  .block-list {
+    width: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .block-list a {
+    word-break: break-word;
+  }
+
+  .pkg-summary h1 {
+    flex: 1;
+    overflow-wrap: anywhere;
+    display: inline-block;
+  }
+
+  .pkg-summary-desc {
+    clear: right;
+  }
+
+  .docs-header {
+    box-sizing: border-box;
+    width: calc(100vw - 40px);
+  }
+
+  .block-list h1 {
+    width: calc(100vw - 40px);
+    overflow-wrap: break-word;
+  }
+
+  .block-list pre {
+    box-sizing: border-box;
+    width: calc(100vw - 40px);
+  }
+
+  .docs-comment pre {
+    box-sizing: border-box;
+    width: calc(100vw - 40px - 36px);
+  }
+
+  .spacey-char {
+    margin: 0 4px;
+  }
+
+  .pkg-nav {
+    position: static;
+    border: 0;
+    padding: 0;
+    margin: 0.5em 0 0 0;
+
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+
+    max-height: initial;
+    overflow: visible;
+  }
+
+  #pkg-nav-modules {
+    border: 0;
+    max-width: calc(100vw - 20px);
+    overflow-x: scroll;
+  }
+
+  .pkg-nav h2 {
+    display: none;
+  }
+
+  .pkg-nav input {
+    margin-top: 10px;
+    width: auto;
+    line-height: 32px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pkg-nav-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .pkg-nav-links li {
+    white-space: nowrap;
+  }
+
+  .pkg-nav-links li:not(:last-child) {
+    margin-right: 10px;
+  }
+
+  #pkg-nav-modules {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 0;
+    position: static;
+    transform: none;
+  }
+
+  #pkg-nav-modules li {
+    white-space: nowrap;
+    min-width: 150px;
+  }
+
+  #pkg-nav-modules li:not(:last-child) {
+    margin-right: 20px;
+  }
+
+  .pkg-hint {
+    margin: 20px -5px;
+    padding: 10px 5px;
+  }
+
+}

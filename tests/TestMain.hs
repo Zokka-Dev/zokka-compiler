@@ -19,7 +19,7 @@ import qualified Data.Utf8 as Utf8
 import qualified Data.Map.Strict as Map
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
-import Elm.CustomRepositoryData (SinglePackageFileType, SinglePackageLocationData(..), CustomSingleRepositoryData (CustomSingleRepositoryData, _repositoryType, _repositoryUrl), HumanReadableShaDigest(..), shaToHumanReadableShaDigest, RepositoryType)
+import Elm.CustomRepositoryData (SinglePackageFileType, SinglePackageLocationData(..), CustomSingleRepositoryData (..), DefaultPackageServerRepo(..), PZRPackageServerRepo(..), HumanReadableShaDigest(..), shaToHumanReadableShaDigest, RepositoryType, RepositoryAuthToken)
 import File (Time(..))
 import Data.Fixed (Fixed(..))
 import qualified Data.Digest.Pure.SHA as SHA
@@ -56,11 +56,26 @@ singlePackageocationDataGen = do
 repositoryTypeGen :: Hedgehog.Gen RepositoryType
 repositoryTypeGen = Gen.element [minBound..]
 
+defaultPackageRepoGen :: Hedgehog.Gen DefaultPackageServerRepo
+defaultPackageRepoGen =
+  do
+    repositoryUrl <- utf8String
+    repositoryLocalName <- utf8String
+    pure (DefaultPackageServerRepo {_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName})
+
+pzrPackageServerRepoGen :: Hedgehog.Gen PZRPackageServerRepo
+pzrPackageServerRepoGen =
+  do
+    repositoryUrl <- utf8String
+    authToken <- utf8String
+    repositoryLocalName <- utf8String
+    pure (PZRPackageServerRepo {_pzrPackageServerRepoTypeUrl=repositoryUrl, _pzrPackageServerRepoAuthToken=authToken, _pzrPackageServerRepoLocalName=repositoryLocalName})
+
 customSingleRepositoryDataGen :: Hedgehog.Gen CustomSingleRepositoryData
 customSingleRepositoryDataGen = do
   repositoryType <- repositoryTypeGen
   repositoryUrl <- utf8String
-  pure $ CustomSingleRepositoryData {_repositoryUrl=repositoryUrl, _repositoryType=repositoryType}
+  Gen.choice [fmap DefaultPackageServerRepoData defaultPackageRepoGen, fmap PZRPackageServerRepoData pzrPackageServerRepoGen]
 
 registryKeyGen :: Hedgehog.Gen RegistryKey
 registryKeyGen = Gen.choice [ fmap PackageUrlKey singlePackageocationDataGen, fmap RepositoryUrlKey customSingleRepositoryDataGen ]
@@ -141,18 +156,19 @@ hedgehogProperties = testGroup "(checked by Hedgehog)"
 
 dummyProperty :: Hedgehog.Property
 dummyProperty =
-    Hedgehog.property $ do
-        x <- Hedgehog.forAll $ Gen.int (Range.linear 1 10)
-        x === x
+  Hedgehog.property $ do
+    x <- Hedgehog.forAll $ Gen.int (Range.linear 1 10)
+    x === x
 
 roundtripBinaryEncodingOfZokkaRegistryChangesNothing :: Hedgehog.Property
 roundtripBinaryEncodingOfZokkaRegistryChangesNothing =
-    Hedgehog.property $ do
-        x <- Hedgehog.forAll zokkaRegistriesGen
-        Binary.decode (Binary.encode x) === x
+  Hedgehog.property $ do
+    x <- Hedgehog.forAll zokkaRegistriesGen
+    let roundtrippedX = Binary.decode (Binary.encode x) :: ZokkaRegistries
+    roundtrippedX === x
 
 unitTests :: TestTree
 unitTests = testGroup "Unit tests"
   [ testCase "dummy unit test" $
-      1 @?= 1
+    1 @?= 1
   ]
