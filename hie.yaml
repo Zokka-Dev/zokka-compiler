@@ -1,0 +1,6 @@
+cradle:
+  cabal:
+    - path: "./compiler"
+      component: "exe:zokka"
+    - path: "./tests/TestMain.hs"
+      component: "test:zokka-tests"
