@@ -62,6 +62,7 @@ data Expr
   | Function [Name] Expr
   | Call Expr [Expr]
   | TailCall Name [(Name, Expr)]
+  | TailCallWithoutClosures Name [(Name, Expr)]
   | If [(Expr, Expr)] Expr
   | Let Def Expr
   | Destruct Destructor Expr
@@ -289,6 +290,7 @@ instance Binary Expr where
       Unit             -> putWord8 24
       Tuple a b c      -> putWord8 25 >> put a >> put b >> put c
       Shader a b c     -> putWord8 26 >> put a >> put b >> put c
+      TailCallWithoutClosures a b -> putWord8 27 >> put a >> put b
 
   get =
     do  word <- getWord8
@@ -320,6 +322,7 @@ instance Binary Expr where
           24 -> pure   Unit
           25 -> liftM3 Tuple get get get
           26 -> liftM3 Shader get get get
+          27 -> liftM2 TailCallWithoutClosures get get
           _  -> fail "problem getting Opt.Expr binary"
 
 

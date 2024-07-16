@@ -121,6 +121,9 @@ generate mode expression =
     Opt.TailCall name args ->
       JsBlock $ generateTailCall mode name args
 
+    Opt.TailCallWithoutClosures name args ->
+      JsBlock $ generateTailCallWhenNoClosures mode name args
+
     Opt.If branches final ->
       generateIf mode branches final
 
@@ -705,6 +708,26 @@ generateTailCall mode name args =
   JS.Vars (map toTempVars args)
   : map toRealVars args
   ++ [ JS.Return (JS.Ref (JsName.makeLoopSentinelName name)) ]
+
+
+-- We can generate a faster TCO-ed version, i.e. the original way that the Elm
+-- compiler did TCO, when there aren't closures because we don't need to worry
+-- about intermediate mutated variables being captured in the closure.
+--
+-- Of course, this is only safe if there are no closures!
+generateTailCallWhenNoClosures :: Mode.Mode -> Name.Name -> [(Name.Name, Opt.Expr)] -> [JS.Stmt]
+generateTailCallWhenNoClosures mode name args =
+  let
+    toTempVars (argName, arg) =
+      ( JsName.makeTemp argName, generateJsExpr mode arg )
+
+    toRealVars (argName, _) =
+      JS.ExprStmt $
+        JS.Assign (JS.LRef (JsName.fromLocal argName)) (JS.Ref (JsName.makeTemp argName))
+  in
+  JS.Vars (map toTempVars args)
+  : map toRealVars args
+  ++ [ JS.Continue (Just (JsName.fromLocal name)) ]
 
 
 
