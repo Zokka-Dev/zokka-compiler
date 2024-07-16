@@ -18,7 +18,8 @@ import qualified Type.UnionFind as UF
 
 
 occurs :: Type.Variable -> IO Bool
-occurs var =
+occurs var = do
+  putStrLn "in occurs!"
   occursHelp [] var False
 
 

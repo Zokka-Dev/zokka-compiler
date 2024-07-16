@@ -86,6 +86,7 @@ data FlatType
     | Record1 (Map.Map Name.Name Variable) Variable
     | Unit1
     | Tuple1 Variable Variable (Maybe Variable)
+    deriving Show
 
 
 data Type
@@ -98,6 +99,7 @@ data Type
     | RecordN (Map.Map Name.Name Type) Type
     | UnitN
     | TupleN Type Type (Maybe Type)
+    deriving Show
 
 
 
@@ -111,6 +113,7 @@ data Descriptor =
     , _mark :: Mark
     , _copy :: Maybe Variable
     }
+    deriving Show
 
 
 data Content
@@ -121,6 +124,7 @@ data Content
     | Structure FlatType
     | Alias ModuleName.Canonical Name.Name [(Name.Name,Variable)] Variable
     | Error
+    deriving Show
 
 
 data SuperType
@@ -128,7 +132,7 @@ data SuperType
   | Comparable
   | Appendable
   | CompAppend
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 makeDescriptor :: Content -> Descriptor
@@ -155,7 +159,7 @@ outermostRank =
 
 
 newtype Mark = Mark Word32
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 
 noMark :: Mark

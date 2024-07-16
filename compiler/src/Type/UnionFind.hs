@@ -31,6 +31,7 @@ Compared to the Haskell implementation, the major changes here include:
 import Control.Monad ( when )
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Word (Word32)
+import GHC.IO (unsafePerformIO)
 
 
 
@@ -39,12 +40,16 @@ import Data.Word (Word32)
 
 newtype Point a =
   Pt (IORef (PointInfo a))
-  deriving Eq
+  deriving (Eq, Show)
+
+instance (Show a) => Show (IORef a) where
+  show a = show (unsafePerformIO (readIORef a))
 
 
 data PointInfo a
   = Info {-# UNPACK #-} !(IORef Word32) {-# UNPACK #-} !(IORef a)
   | Link {-# UNPACK #-} !(Point a)
+  deriving Show
 
 
 

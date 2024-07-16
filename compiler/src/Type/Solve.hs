@@ -82,8 +82,11 @@ solve env rank pools state constraint =
       return (state { _env = env })
 
     CEqual region category tipe expectation ->
-      do  actual <- typeToVariable rank pools tipe
+      do  putStrLn "CEqual"
+          actual <- typeToVariable rank pools tipe
+          -- putStrLn ("actual: " ++ show actual)
           expected <- expectedToVariable rank pools expectation
+          -- putStrLn ("expected: " ++ show expected)
           answer <- Unify.unify actual expected
           case answer of
             Unify.Ok vars ->
@@ -99,6 +102,7 @@ solve env rank pools state constraint =
     CLocal region name expectation ->
       do  actual <- makeCopy rank pools (env ! name)
           expected <- expectedToVariable rank pools expectation
+          putStrLn "CLocal"
           answer <- Unify.unify actual expected
           case answer of
             Unify.Ok vars ->
@@ -114,6 +118,7 @@ solve env rank pools state constraint =
     CForeign region name (Can.Forall freeVars srcType) expectation ->
       do  actual <- srcTypeToVariable rank pools freeVars srcType
           expected <- expectedToVariable rank pools expectation
+          putStrLn "CForeign"
           answer <- Unify.unify actual expected
           case answer of
             Unify.Ok vars ->
@@ -129,6 +134,7 @@ solve env rank pools state constraint =
     CPattern region category tipe expectation ->
       do  actual <- typeToVariable rank pools tipe
           expected <- patternExpectationToVariable rank pools expectation
+          putStrLn "CPattern"
           answer <- Unify.unify actual expected
           case answer of
             Unify.Ok vars ->
