@@ -64,6 +64,7 @@ data Constraint
       , _headerCon :: Constraint
       , _bodyCon :: Constraint
       }
+  deriving Show
 
 
 exists :: [Variable] -> Constraint -> Constraint
