@@ -23,10 +23,16 @@ if __name__ == "__main__":
 
     print(f"=========\nRunning compiler-output tests found in {top_level_tests_dir}\n=========\n")
 
-    bad_occurs_check_test =\
+    bad_occurs_check_test_0 =\
         run_zokka_make(zokka_exec_location, os.path.join("src", "BadOccursCheck.elm"), top_level_tests_dir)
 
-    if bad_occurs_check_test.returncode == 0:
+    if bad_occurs_check_test_0.returncode == 0:
+        raise Exception("Our bad occurs check failed! The compiler succeeded when it should have failed!")
+
+    bad_occurs_check_test_1 =\
+        run_zokka_make(zokka_exec_location, os.path.join("src", "BadOccursCheck1.elm"), top_level_tests_dir)
+
+    if bad_occurs_check_test_1.returncode == 0:
         raise Exception("Our bad occurs check failed! The compiler succeeded when it should have failed!")
 
     total_test_duration = timeit.default_timer() - start_time
