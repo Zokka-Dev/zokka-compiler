@@ -12,7 +12,7 @@ type Msg = Msg1 Int | Msg2 Int
 -- We won't use Debug.todo just in case we want to double-check that all of
 -- this works fine when we run `--optimize` (although presently I can't
 -- think of any reason why --optimize would change anything WRT
--- typechecking, but just incase!)
+-- typechecking, but just in case!)
 applyIf : Bool -> (a -> a) -> a -> a
 applyIf x = applyIf x
 
