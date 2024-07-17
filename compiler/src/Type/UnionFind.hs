@@ -31,7 +31,6 @@ Compared to the Haskell implementation, the major changes here include:
 import Control.Monad ( when )
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Word (Word32)
-import GHC.IO (unsafePerformIO)
 
 
 
