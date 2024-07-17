@@ -40,16 +40,12 @@ import GHC.IO (unsafePerformIO)
 
 newtype Point a =
   Pt (IORef (PointInfo a))
-  deriving (Eq, Show)
-
-instance (Show a) => Show (IORef a) where
-  show a = show (unsafePerformIO (readIORef a))
+  deriving Eq
 
 
 data PointInfo a
   = Info {-# UNPACK #-} !(IORef Word32) {-# UNPACK #-} !(IORef a)
   | Link {-# UNPACK #-} !(Point a)
-  deriving Show
 
 
 

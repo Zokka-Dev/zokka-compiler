@@ -135,7 +135,6 @@ data Context =
     , _second :: Variable
     , _secondDesc :: Descriptor
     }
-    deriving Show
 
 
 reorient :: Context -> Context
