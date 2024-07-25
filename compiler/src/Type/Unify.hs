@@ -162,8 +162,13 @@ fresh (Context _ (Descriptor _ rank1 _ _) _ (Descriptor _ rank2 _ _)) content =
 
 -- ACTUALLY UNIFY THINGS
 
+-- See comment
+-- https://github.com/Zokka-Dev/zokka-compiler/pull/20#issuecomment-2234089482
+-- for why we have a recursionDepth check. We can take out the check if we
+-- gather enough evidence that even for pretty gnarly codebases we don't have a
+-- substantial slowdown in typechecking.
 recursionDepthAfterWhichToCheckForInfiniteVariable :: Int
-recursionDepthAfterWhichToCheckForInfiniteVariable = -1
+recursionDepthAfterWhichToCheckForInfiniteVariable = 100
 
 
 guardedUnify :: Variable -> Variable -> Int -> Unify ()
@@ -179,9 +184,9 @@ guardedUnify left right recursionDepth =
           if recursionDepth > recursionDepthAfterWhichToCheckForInfiniteVariable
             then 
               do
-                occursV1 <- Occurs.occurs left
-                occursV2 <- Occurs.occurs right
-                pure (occursV1 || occursV2)
+                occursLeft <- Occurs.occurs left
+                occursRight <- Occurs.occurs right
+                pure (occursLeft || occursRight)
           else
             pure False
         if occursErrorHasHappened
