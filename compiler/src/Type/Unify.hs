@@ -28,7 +28,7 @@ data Answer
 
 unify :: Variable -> Variable -> IO Answer
 unify v1 v2 =
-  case guardedUnify v1 v2 0 of
+  case guardedUnify v1 v2 of
     Unify k ->
       k [] onSuccess $ \vars () ->
         do  t1 <- Type.toErrorType v1
@@ -162,34 +162,27 @@ fresh (Context _ (Descriptor _ rank1 _ _) _ (Descriptor _ rank2 _ _)) content =
 
 -- ACTUALLY UNIFY THINGS
 
--- See comment
--- https://github.com/Zokka-Dev/zokka-compiler/pull/20#issuecomment-2234089482
--- for why we have a recursionDepth check. We can take out the check if we
--- gather enough evidence that even for pretty gnarly codebases we don't have a
--- substantial slowdown in typechecking.
-recursionDepthAfterWhichToCheckForInfiniteVariable :: Int
-recursionDepthAfterWhichToCheckForInfiniteVariable = 100
 
-
-guardedUnify :: Variable -> Variable -> Int -> Unify ()
-guardedUnify left right recursionDepth =
+guardedUnify :: Variable -> Variable -> Unify ()
+guardedUnify left right =
   Unify $ \vars ok err ->
-    do  equivalent <- UF.equivalent left right
-        occursErrorHasHappened <-
-          -- It might be possible to actually just do == instead of >. This is
-          -- because it might be the case that if a variable is not infinite
-          -- right now, it won't ever be infinite during this particular unify
-          -- call. But I haven't really thought that through enough to be
-          -- confident putting it in.
-          if recursionDepth > recursionDepthAfterWhichToCheckForInfiniteVariable
-            then 
-              do
-                occursLeft <- Occurs.occurs left
-                occursRight <- Occurs.occurs right
-                pure (occursLeft || occursRight)
-          else
-            pure False
-        if occursErrorHasHappened
+    do  -- It might be possible to actually just do == instead of >. This is
+        -- because it might be the case that if a variable is not infinite
+        -- right now, it won't ever be infinite during this particular unify
+        -- call. But I haven't really thought that through enough to be
+        -- confident putting it in.
+        --
+        -- Note that we ultimately decided against doing a recursion depth check
+        -- as detailed in
+        -- https://github.com/Zokka-Dev/zokka-compiler/pull/20#issuecomment-2234089482
+        -- This is because we didn't want to have an unpredictable performance
+        -- profile (i.e. mysterious immediate slowdown).
+        -- If we see slowdown we want to know soon so that we can think about a
+        -- better fix. So far benchmarks seem to show that this causes minimal slowdown.
+        occursLeft <- Occurs.occurs left
+        occursRight <- Occurs.occurs right
+        equivalent <- UF.equivalent left right
+        if occursLeft || occursRight
           then err vars ()
           else
             if equivalent
@@ -197,24 +190,24 @@ guardedUnify left right recursionDepth =
               else
                 do  leftDesc <- UF.get left
                     rightDesc <- UF.get right
-                    case actuallyUnify (Context left leftDesc right rightDesc) recursionDepth of
+                    case actuallyUnify (Context left leftDesc right rightDesc) of
                       Unify k ->
                         k vars ok err
 
 
-subUnify :: Variable -> Variable -> Int -> Unify ()
-subUnify var1 var2 recursionDepth =
-  guardedUnify var1 var2 (recursionDepth + 1)
+subUnify :: Variable -> Variable -> Unify ()
+subUnify var1 var2 =
+  guardedUnify var1 var2
 
 
-actuallyUnify :: Context -> Int -> Unify ()
-actuallyUnify context@(Context _ (Descriptor firstContent _ _ _) _ (Descriptor secondContent _ _ _)) recursionDepth =
+actuallyUnify :: Context -> Unify ()
+actuallyUnify context@(Context _ (Descriptor firstContent _ _ _) _ (Descriptor secondContent _ _ _)) =
   case firstContent of
     FlexVar _ ->
         unifyFlex context firstContent secondContent
 
     FlexSuper super _ ->
-        unifyFlexSuper context super firstContent secondContent recursionDepth
+        unifyFlexSuper context super firstContent secondContent
 
     RigidVar _ ->
         unifyRigid context Nothing firstContent secondContent
@@ -223,10 +216,10 @@ actuallyUnify context@(Context _ (Descriptor firstContent _ _ _) _ (Descriptor s
         unifyRigid context (Just super) firstContent secondContent
 
     Alias home name args realVar ->
-        unifyAlias context home name args realVar secondContent recursionDepth
+        unifyAlias context home name args realVar secondContent
 
     Structure flatType ->
-        unifyStructure context flatType firstContent secondContent recursionDepth
+        unifyStructure context flatType firstContent secondContent
 
     Error ->
         -- If there was an error, just pretend it is okay. This lets us avoid
@@ -310,11 +303,11 @@ unifyRigid context maybeSuper content otherContent =
 -- UNIFY SUPER VARIABLES
 
 
-unifyFlexSuper :: Context -> SuperType -> Content -> Content -> Int -> Unify ()
-unifyFlexSuper context super content otherContent recursionDepth =
+unifyFlexSuper :: Context -> SuperType -> Content -> Content -> Unify ()
+unifyFlexSuper context super content otherContent =
   case otherContent of
     Structure flatType ->
-        unifyFlexSuperStructure context super flatType recursionDepth
+        unifyFlexSuperStructure context super flatType
 
     RigidVar _ ->
         mismatch
@@ -359,7 +352,7 @@ unifyFlexSuper context super content otherContent recursionDepth =
             Number     -> mismatch
 
     Alias _ _ _ realVar ->
-        subUnify (_first context) realVar recursionDepth
+        subUnify (_first context) realVar
 
     Error ->
         merge context Error
@@ -397,8 +390,8 @@ isNumber home name =
   (name == Name.int || name == Name.float)
 
 
-unifyFlexSuperStructure :: Context -> SuperType -> FlatType -> Int -> Unify ()
-unifyFlexSuperStructure context super flatType recursionDepth =
+unifyFlexSuperStructure :: Context -> SuperType -> FlatType -> Unify ()
+unifyFlexSuperStructure context super flatType =
   case flatType of
     App1 home name [] ->
       if atomMatchesSuper super home name then
@@ -416,12 +409,12 @@ unifyFlexSuperStructure context super flatType recursionDepth =
 
         Comparable ->
             do  comparableOccursCheck context
-                unifyComparableRecursive variable recursionDepth
+                unifyComparableRecursive variable
                 merge context (Structure flatType)
 
         CompAppend ->
             do  comparableOccursCheck context
-                unifyComparableRecursive variable recursionDepth
+                unifyComparableRecursive variable
                 merge context (Structure flatType)
 
     Tuple1 a b maybeC ->
@@ -434,11 +427,11 @@ unifyFlexSuperStructure context super flatType recursionDepth =
 
         Comparable ->
             do  comparableOccursCheck context
-                unifyComparableRecursive a recursionDepth
-                unifyComparableRecursive b recursionDepth
+                unifyComparableRecursive a
+                unifyComparableRecursive b
                 case maybeC of
                   Nothing -> return ()
-                  Just c  -> unifyComparableRecursive c recursionDepth
+                  Just c  -> unifyComparableRecursive c
                 merge context (Structure flatType)
 
         CompAppend ->
@@ -459,32 +452,32 @@ comparableOccursCheck (Context _ _ var _) =
           else ok vars ()
 
 
-unifyComparableRecursive :: Variable -> Int -> Unify ()
-unifyComparableRecursive var recursionDepth =
+unifyComparableRecursive :: Variable -> Unify ()
+unifyComparableRecursive var =
   do  compVar <- register $
         do  (Descriptor _ rank _ _) <- UF.get var
             UF.fresh $ Descriptor (Type.unnamedFlexSuper Comparable) rank noMark Nothing
-      guardedUnify compVar var (recursionDepth + 1)
+      guardedUnify compVar var
 
 
 
 -- UNIFY ALIASES
 
 
-unifyAlias :: Context -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Variable)] -> Variable -> Content -> Int -> Unify ()
-unifyAlias context home name args realVar otherContent recursionDepth =
+unifyAlias :: Context -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Variable)] -> Variable -> Content -> Unify ()
+unifyAlias context home name args realVar otherContent =
   case otherContent of
     FlexVar _ ->
       merge context (Alias home name args realVar)
 
     FlexSuper _ _ ->
-      subUnify realVar (_second context) recursionDepth
+      subUnify realVar (_second context)
 
     RigidVar _ ->
-      subUnify realVar (_second context) recursionDepth
+      subUnify realVar (_second context)
 
     RigidSuper _ _ ->
-      subUnify realVar (_second context) recursionDepth
+      subUnify realVar (_second context)
 
     Alias otherHome otherName otherArgs otherRealVar ->
       if name == otherName && home == otherHome then
@@ -495,29 +488,29 @@ unifyAlias context home name args realVar otherContent recursionDepth =
                 Unify k ->
                   k vars1 ok err
           in
-          unifyAliasArgs vars context args otherArgs ok1 err recursionDepth
+          unifyAliasArgs vars context args otherArgs ok1 err
 
       else
-        subUnify realVar otherRealVar recursionDepth
+        subUnify realVar otherRealVar
 
     Structure _ ->
-      subUnify realVar (_second context) recursionDepth
+      subUnify realVar (_second context)
 
     Error ->
       merge context Error
 
 
-unifyAliasArgs :: [Variable] -> Context -> [(Name.Name,Variable)] -> [(Name.Name,Variable)] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> Int -> IO r
-unifyAliasArgs vars context args1 args2 ok err recursionDepth =
+unifyAliasArgs :: [Variable] -> Context -> [(Name.Name,Variable)] -> [(Name.Name,Variable)] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
+unifyAliasArgs vars context args1 args2 ok err =
   case args1 of
     (_,arg1):others1 ->
       case args2 of
         (_,arg2):others2 ->
-          case subUnify arg1 arg2 recursionDepth of
+          case subUnify arg1 arg2 of
             Unify k ->
               k vars
-                (\vs () -> unifyAliasArgs vs context others1 others2 ok err recursionDepth)
-                (\vs () -> unifyAliasArgs vs context others1 others2 err err recursionDepth)
+                (\vs () -> unifyAliasArgs vs context others1 others2 ok err)
+                (\vs () -> unifyAliasArgs vs context others1 others2 err err)
 
         _ ->
           err vars ()
@@ -535,14 +528,14 @@ unifyAliasArgs vars context args1 args2 ok err recursionDepth =
 -- UNIFY STRUCTURES
 
 
-unifyStructure :: Context -> FlatType -> Content -> Content -> Int -> Unify ()
-unifyStructure context flatType content otherContent recursionDepth =
+unifyStructure :: Context -> FlatType -> Content -> Content -> Unify ()
+unifyStructure context flatType content otherContent =
   case otherContent of
     FlexVar _ ->
         merge context content
 
     FlexSuper super _ ->
-        unifyFlexSuperStructure (reorient context) super flatType recursionDepth
+        unifyFlexSuperStructure (reorient context) super flatType
 
     RigidVar _ ->
         mismatch
@@ -551,7 +544,7 @@ unifyStructure context flatType content otherContent recursionDepth =
         mismatch
 
     Alias _ _ _ realVar ->
-        subUnify (_first context) realVar recursionDepth
+        subUnify (_first context) realVar
 
     Structure otherFlatType ->
         case (flatType, otherFlatType) of
@@ -563,39 +556,39 @@ unifyStructure context flatType content otherContent recursionDepth =
                       Unify k ->
                         k vars1 ok err
                 in
-                unifyArgs vars context args otherArgs ok1 err recursionDepth
+                unifyArgs vars context args otherArgs ok1 err
 
           (Fun1 arg1 res1, Fun1 arg2 res2) ->
-              do  subUnify arg1 arg2 recursionDepth
-                  subUnify res1 res2 recursionDepth
+              do  subUnify arg1 arg2
+                  subUnify res1 res2
                   merge context otherContent
 
           (EmptyRecord1, EmptyRecord1) ->
               merge context otherContent
 
           (Record1 fields ext, EmptyRecord1) | Map.null fields ->
-              subUnify ext (_second context) recursionDepth
+              subUnify ext (_second context)
 
           (EmptyRecord1, Record1 fields ext) | Map.null fields ->
-              subUnify (_first context) ext recursionDepth
+              subUnify (_first context) ext
 
           (Record1 fields1 ext1, Record1 fields2 ext2) ->
               Unify $ \vars ok err ->
                 do  structure1 <- gatherFields fields1 ext1
                     structure2 <- gatherFields fields2 ext2
-                    case unifyRecord context structure1 structure2 recursionDepth of
+                    case unifyRecord context structure1 structure2 of
                       Unify k ->
                         k vars ok err
 
           (Tuple1 a b Nothing, Tuple1 x y Nothing) ->
-              do  subUnify a x recursionDepth
-                  subUnify b y recursionDepth
+              do  subUnify a x
+                  subUnify b y
                   merge context otherContent
 
           (Tuple1 a b (Just c), Tuple1 x y (Just z)) ->
-              do  subUnify a x recursionDepth
-                  subUnify b y recursionDepth
-                  subUnify c z recursionDepth
+              do  subUnify a x
+                  subUnify b y
+                  subUnify c z
                   merge context otherContent
 
           (Unit1, Unit1) ->
@@ -612,22 +605,17 @@ unifyStructure context flatType content otherContent recursionDepth =
 -- UNIFY ARGS
 
 
-unifyArgs :: [Variable] -> Context -> [Variable] -> [Variable] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> Int -> IO r
-unifyArgs vars context args1 args2 ok err recursionDepth =
+unifyArgs :: [Variable] -> Context -> [Variable] -> [Variable] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
+unifyArgs vars context args1 args2 ok err =
   case args1 of
     arg1:others1 ->
       case args2 of
         arg2:others2 ->
-          case subUnify arg1 arg2 recursionDepth of
+          case subUnify arg1 arg2 of
             Unify k ->
               k vars
-                -- I don't increment recursionDepth here even though unifyArgs
-                -- is being called recursively because recursionDepth is only
-                -- meant to guard against infinite types, which this recursion
-                -- won't fall prey to (it's recursing on the number of
-                -- arguments)
-                (\vs () -> unifyArgs vs context others1 others2 ok err recursionDepth)
-                (\vs () -> unifyArgs vs context others1 others2 err err recursionDepth)
+                (\vs () -> unifyArgs vs context others1 others2 ok err)
+                (\vs () -> unifyArgs vs context others1 others2 err err)
 
         _ ->
           err vars ()
@@ -645,8 +633,8 @@ unifyArgs vars context args1 args2 ok err recursionDepth =
 -- UNIFY RECORDS
 
 
-unifyRecord :: Context -> RecordStructure -> RecordStructure -> Int -> Unify ()
-unifyRecord context (RecordStructure fields1 ext1) (RecordStructure fields2 ext2) recursionDepth =
+unifyRecord :: Context -> RecordStructure -> RecordStructure -> Unify ()
+unifyRecord context (RecordStructure fields1 ext1) (RecordStructure fields2 ext2) =
   let
     sharedFields = Map.intersectionWith (,) fields1 fields2
     uniqueFields1 = Map.difference fields1 fields2
@@ -655,44 +643,43 @@ unifyRecord context (RecordStructure fields1 ext1) (RecordStructure fields2 ext2
   if Map.null uniqueFields1 then
 
     if Map.null uniqueFields2 then
-      do  subUnify ext1 ext2 recursionDepth
-          unifySharedFields context sharedFields Map.empty ext1 recursionDepth
+      do  subUnify ext1 ext2
+          unifySharedFields context sharedFields Map.empty ext1
 
     else
       do  subRecord <- fresh context (Structure (Record1 uniqueFields2 ext2))
-          subUnify ext1 subRecord recursionDepth
-          unifySharedFields context sharedFields Map.empty subRecord recursionDepth
+          subUnify ext1 subRecord
+          unifySharedFields context sharedFields Map.empty subRecord
 
   else
 
     if Map.null uniqueFields2 then
       do  subRecord <- fresh context (Structure (Record1 uniqueFields1 ext1))
-          subUnify subRecord ext2 recursionDepth
-          unifySharedFields context sharedFields Map.empty subRecord recursionDepth
+          subUnify subRecord ext2
+          unifySharedFields context sharedFields Map.empty subRecord
 
     else
       do  let otherFields = Map.union uniqueFields1 uniqueFields2
           ext <- fresh context Type.unnamedFlexVar
           sub1 <- fresh context (Structure (Record1 uniqueFields1 ext))
           sub2 <- fresh context (Structure (Record1 uniqueFields2 ext))
-          subUnify ext1 sub2 recursionDepth
-          subUnify sub1 ext2 recursionDepth
-          unifySharedFields context sharedFields otherFields ext recursionDepth
+          subUnify ext1 sub2
+          subUnify sub1 ext2
+          unifySharedFields context sharedFields otherFields ext
 
 
-unifySharedFields :: Context -> Map.Map Name.Name (Variable, Variable) -> Map.Map Name.Name Variable -> Variable -> Int -> Unify ()
-unifySharedFields context sharedFields otherFields ext recursionDepth =
-  do  matchingFields <- Map.traverseMaybeWithKey (unifyField recursionDepth) sharedFields
+unifySharedFields :: Context -> Map.Map Name.Name (Variable, Variable) -> Map.Map Name.Name Variable -> Variable -> Unify ()
+unifySharedFields context sharedFields otherFields ext =
+  do  matchingFields <- Map.traverseMaybeWithKey unifyField sharedFields
       if Map.size sharedFields == Map.size matchingFields
         then merge context (Structure (Record1 (Map.union matchingFields otherFields) ext))
         else mismatch
 
 
-unifyField :: Int -> Name.Name -> (Variable, Variable) -> Unify (Maybe Variable)
--- Put the recursionDepth argument in first place because it helps with currying when using it in unifySharedFields
-unifyField recursionDepth _ (actual, expected) =
+unifyField :: Name.Name -> (Variable, Variable) -> Unify (Maybe Variable)
+unifyField _ (actual, expected) =
   Unify $ \vars ok _ ->
-    case subUnify actual expected recursionDepth of
+    case subUnify actual expected of
       Unify k ->
         k vars
           (\vs () -> ok vs (Just actual))
