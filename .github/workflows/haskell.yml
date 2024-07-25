@@ -69,6 +69,9 @@ jobs:
     - name: Run elm-test-rs tests
       run: python3 run-test-rs-tests.py
 
+    - name: Run compiler-output tests
+      run: python3 run-compiler-output-tests.py
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:

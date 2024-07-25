@@ -166,15 +166,33 @@ fresh (Context _ (Descriptor _ rank1 _ _) _ (Descriptor _ rank2 _ _)) content =
 guardedUnify :: Variable -> Variable -> Unify ()
 guardedUnify left right =
   Unify $ \vars ok err ->
-    do  equivalent <- UF.equivalent left right
-        if equivalent
-          then ok vars ()
+    do  -- It might be possible to actually just do == instead of >. This is
+        -- because it might be the case that if a variable is not infinite
+        -- right now, it won't ever be infinite during this particular unify
+        -- call. But I haven't really thought that through enough to be
+        -- confident putting it in.
+        --
+        -- Note that we ultimately decided against doing a recursion depth check
+        -- as detailed in
+        -- https://github.com/Zokka-Dev/zokka-compiler/pull/20#issuecomment-2234089482
+        -- This is because we didn't want to have an unpredictable performance
+        -- profile (i.e. mysterious immediate slowdown).
+        -- If we see slowdown we want to know soon so that we can think about a
+        -- better fix. So far benchmarks seem to show that this causes minimal slowdown.
+        occursLeft <- Occurs.occurs left
+        occursRight <- Occurs.occurs right
+        equivalent <- UF.equivalent left right
+        if occursLeft || occursRight
+          then err vars ()
           else
-            do  leftDesc <- UF.get left
-                rightDesc <- UF.get right
-                case actuallyUnify (Context left leftDesc right rightDesc) of
-                  Unify k ->
-                    k vars ok err
+            if equivalent
+              then ok vars ()
+              else
+                do  leftDesc <- UF.get left
+                    rightDesc <- UF.get right
+                    case actuallyUnify (Context left leftDesc right rightDesc) of
+                      Unify k ->
+                        k vars ok err
 
 
 subUnify :: Variable -> Variable -> Unify ()

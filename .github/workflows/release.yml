@@ -63,6 +63,9 @@ jobs:
     - name: Run elm-test-rs tests
       run: python3 run-test-rs-tests.py
 
+    - name: Run compiler-output tests
+      run: python3 run-compiler-output-tests.py
+
     # Extract the current git tag
     - name: Extract Git Tag
       id: get_version

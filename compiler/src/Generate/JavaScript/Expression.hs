@@ -36,7 +36,6 @@ import qualified Json.Encode as Encode
 import Json.Encode ((==>))
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.Annotation as A
-import qualified Debug.Trace as Debug
 
 
 

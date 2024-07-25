@@ -12,7 +12,7 @@ import TCOMiscompilation4 exposing (tcoMiscompilation4Test0, tcoMiscompilation4T
 
 
 suite : Test
-suite = describe "TCO tests" 
+suite = describe "All tests" 
     [ anotherBadClosureTest
     , tcoProducesBadClosuresTest
     , tcoMiscompilation0Test

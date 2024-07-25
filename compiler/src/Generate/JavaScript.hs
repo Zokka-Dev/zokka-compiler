@@ -30,7 +30,6 @@ import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
-import qualified Debug.Trace as Debug
 import Control.Exception (Exception, throw)
 import qualified Elm.Package as Pkg
 import qualified Data.Maybe as Maybe
