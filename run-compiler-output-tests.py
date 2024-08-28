@@ -3,7 +3,29 @@ import os
 import timeit
 
 def run_zokka_make(zokka_cmd, file_to_make, project_dir):
-    return subprocess.run([zokka_cmd, "make", file_to_make], cwd=project_dir)
+    return subprocess.run([zokka_cmd, "make", file_to_make], cwd=project_dir, capture_output=True)
+
+def run_compilation_tests(expected_return_code: int, filepath):
+    top_level_tests_dir = filepath
+
+    top_level_tests_src_dir = os.path.join(top_level_tests_dir, "src")
+
+    print(f"=========\nRunning compiler-output tests (expecting return code of {expected_return_code}) found in {top_level_tests_dir}\n=========\n")
+
+    test_files = os.listdir(top_level_tests_src_dir)
+
+    for test_file in test_files:
+        test_result =\
+            run_zokka_make(zokka_exec_location, os.path.join("src", test_file), top_level_tests_dir)
+
+        if test_result.returncode != expected_return_code:
+            if test_result.returncode != 0:
+                print(test_result.stderr.decode("utf-8"))
+            raise Exception(f"We failed when testing {test_file}! The compiler had a return code of {test_result.returncode} when we expected {expected_return_code}")
+
+    total_test_duration = timeit.default_timer() - start_time
+
+    print(f"=========\nTotal test duration: {total_test_duration} seconds\n=========\n")
 
 if __name__ == "__main__":
 
@@ -19,22 +41,10 @@ if __name__ == "__main__":
 
     current_dir = "."
 
-    top_level_tests_dir = os.path.join(current_dir, "compiler-output-tests")
+    expected_failed_compilation_path = os.path.join(current_dir, "compiler-output-tests", "expect-failed-compilation")
 
-    print(f"=========\nRunning compiler-output tests found in {top_level_tests_dir}\n=========\n")
+    run_compilation_tests(expected_return_code=1, filepath=expected_failed_compilation_path)
 
-    bad_occurs_check_test_0 =\
-        run_zokka_make(zokka_exec_location, os.path.join("src", "BadOccursCheck.elm"), top_level_tests_dir)
+    expected_successful_compilation_path = os.path.join(current_dir, "compiler-output-tests", "expect-successful-compilation")
 
-    if bad_occurs_check_test_0.returncode == 0:
-        raise Exception("Our bad occurs check failed! The compiler succeeded when it should have failed!")
-
-    bad_occurs_check_test_1 =\
-        run_zokka_make(zokka_exec_location, os.path.join("src", "BadOccursCheck1.elm"), top_level_tests_dir)
-
-    if bad_occurs_check_test_1.returncode == 0:
-        raise Exception("Our bad occurs check failed! The compiler succeeded when it should have failed!")
-
-    total_test_duration = timeit.default_timer() - start_time
-
-    print(f"=========\nTotal test duration: {total_test_duration} seconds\n=========\n")
+    run_compilation_tests(expected_return_code=0, filepath=expected_successful_compilation_path)
