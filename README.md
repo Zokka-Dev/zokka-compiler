@@ -24,11 +24,11 @@ also provides them directly. That means it includes on an ongoing basis:
 3. Minor compiler bug fixes and quality of life improvements *that do not change
    the Elm language* (ongoing)
 
-This aims to be the entirety of Zokka's mission until 2025. This
+This aims to be the entirety of Zokka's mission until 2026. This
 means Zokka is a quite conservative extension of Elm. What this implies is:
 
 + A commitment to bidirectional compatibility with Elm 0.19 through the end of
-  2024: any code that compiles with the default Elm compiler should compile with
+  2026: any code that compiles with the default Elm compiler should compile with
   Zokka *and vice versa*. In particular, this means that Zokka will not just be
   backwards-compatible with Elm, all Zokka code that compiles with the Zokka
   compiler should compile with the Elm compiler, barring compiler bugs in the
@@ -42,10 +42,10 @@ means Zokka is a quite conservative extension of Elm. What this implies is:
   are compiler crashes and improved error messages.
 + **Very little actual feature development.** Some experimentation may happen on side
   branches that may show up in both private and public channels, but those will
-  not be given an actual Github release until 2025 (if Zokka is still relevant
+  not be given an actual Github release until 2026 (if Zokka is still relevant
   then).
 
-**Again, Zokka's main function in the wider Elm community (at least until 2025)
+**Again, Zokka's main function in the wider Elm community (at least until 2026)
 is to collect bug fixes submitted by the community and merge them, not to do
 major Elm development itself.** As a (substantial) side effect of that Zokka
 provides private repositories as well, largely in part because this allows
