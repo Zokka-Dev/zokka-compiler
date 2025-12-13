@@ -113,11 +113,11 @@ file is generated the first time you successfully run a `zokka` subcommand (e.g.
 {
     "repositories": [
         {
-            "repository-type": "package-server-with-standard-elm-package-server-api",
+            "repository-type": "package-server-with-standard-elm-v0.19-package-server-api",
             "repository-url": "https://package.elm-lang.org"
         },
         {
-            "repository-type": "package-server-with-standard-elm-package-server-api",
+            "repository-type": "package-server-with-standard-elm-v0.19-package-server-api",
             "repository-url": "https://package-server.zokka-lang.com"
         }
     ],
