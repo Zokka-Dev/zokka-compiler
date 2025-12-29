@@ -87,9 +87,9 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - os: macos-12
+          - os: macos-15-intel
             binary-fragment-name: macos-x86_64
-          - os: macos-14
+          - os: macos-15-arm64
             binary-fragment-name: macos-arm_64
           - os: windows-latest
             binary-fragment-name: windows-x86_64
