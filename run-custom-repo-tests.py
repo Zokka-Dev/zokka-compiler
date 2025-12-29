@@ -8,7 +8,7 @@ def custom_package_repository_config(repository_filepath):
 {{
     "repositories": [
         {{
-            "repository-type": "local-directory-of-files-readonly-mirror-of-package-server",
+            "repository-type": "local-directory-of-files-readonly-mirror-of-package-server-v1.0",
             "repository-file-path": "{repository_filepath}"
         }}
     ],

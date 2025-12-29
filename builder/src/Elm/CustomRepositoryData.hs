@@ -101,7 +101,7 @@ pzrPackageServerString :: Json.String
 pzrPackageServerString = Json.fromChars "package-server-with-personal-zokka-repo-v1.0-package-server-api"
 
 localReadOnlyMirrorFileBundleString :: Json.String
-localReadOnlyMirrorFileBundleString = Json.fromChars "local-directory-of-files-readonly-mirror-of-package-server"
+localReadOnlyMirrorFileBundleString = Json.fromChars "local-directory-of-files-readonly-mirror-of-package-server-v1.0"
 
 repositoryTypeToString :: RepositoryType -> Json.String
 repositoryTypeToString repositoryType =
