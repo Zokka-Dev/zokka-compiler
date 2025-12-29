@@ -17,3 +17,6 @@ cabal.project.freeze
 
 # Scratch files for easy personal use
 *.scratch.*
+
+# Test output files
+test-output

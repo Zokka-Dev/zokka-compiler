@@ -44,7 +44,7 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Task as Task
 import qualified Stuff
-import Elm.CustomRepositoryData (RepositoryUrl, RepositoryAuthToken, RepositoryLocalName, DefaultPackageServerRepo(..), PZRPackageServerRepo(..), CustomSingleRepositoryData (..))
+import Elm.CustomRepositoryData (RepositoryUrl, RepositoryAuthToken, RepositoryLocalName, DefaultPackageServerRepo(..), PZRPackageServerRepo(..), LocalReadOnlyMirrorRepo(..), CustomSingleRepositoryData (..))
 import Deps.Website (standardElmPkgRepoDomain)
 import Data.List (isInfixOf)
 import Reporting.Exit (Publish(PublishWithNoRepositoryLocalName, PublishCustomRepositoryConfigDataError))
@@ -52,6 +52,7 @@ import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import Deps.Registry (createAuthHeader)
 import qualified Codec.Archive.Zip as Zip
 import Logging.Logger (printLog)
+import Data.Maybe (mapMaybe)
 
 
 
@@ -120,17 +121,19 @@ allCustomSingleRepositoryDataFromRegistries Registry.ZokkaRegistries{Registry._r
   Maybe.mapMaybe convertRegistryKeyToCustomSingleRepositoryData (Map.keys registriesMap)
 
 
-localNameOfCustomSingleRepositoryData :: CustomSingleRepositoryData -> RepositoryLocalName
+localNameOfCustomSingleRepositoryData :: CustomSingleRepositoryData -> Maybe RepositoryLocalName
 localNameOfCustomSingleRepositoryData customSingleRepositoryData =
   case customSingleRepositoryData of
-    DefaultPackageServerRepoData defaultPackageServerRepo -> _defaultPackageServerRepoLocalName defaultPackageServerRepo
-    PZRPackageServerRepoData pzrPackageServerRepo -> _pzrPackageServerRepoLocalName pzrPackageServerRepo
+    DefaultPackageServerRepoData defaultPackageServerRepo -> Just $ _defaultPackageServerRepoLocalName defaultPackageServerRepo
+    PZRPackageServerRepoData pzrPackageServerRepo -> Just $ _pzrPackageServerRepoLocalName pzrPackageServerRepo
+    -- Because we can't publish to local read only mirrors, they don't have local names
+    LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo -> Nothing
 
 
 findKeyByLocalName :: RepositoryLocalName -> [CustomSingleRepositoryData] -> Maybe CustomSingleRepositoryData
 findKeyByLocalName localName [] = Nothing
 findKeyByLocalName localName (customSingleRepositoryData : restOfRepos) =
-  if localNameOfCustomSingleRepositoryData customSingleRepositoryData == localName
+  if localNameOfCustomSingleRepositoryData customSingleRepositoryData == Just localName
     then Just customSingleRepositoryData
     else findKeyByLocalName localName restOfRepos
 
@@ -142,7 +145,7 @@ lookupRepositoryByLocalName repositoryLocalName zokkaRegistries =
 
 
 getAllLocalNamesInRegistries :: Registry.ZokkaRegistries -> [RepositoryLocalName]
-getAllLocalNamesInRegistries registries = map localNameOfCustomSingleRepositoryData (allCustomSingleRepositoryDataFromRegistries registries)
+getAllLocalNamesInRegistries registries = mapMaybe localNameOfCustomSingleRepositoryData (allCustomSingleRepositoryDataFromRegistries registries)
 
 
 -- The only relevant things we need to zip up are the elm.json file and all Elm
@@ -228,6 +231,12 @@ publish env@(Env root _ manager registry outline) repositoryLocalName =
                       vsn
                       docs
                       zipArchive
+                -- This shouldn't be reachable because local read-only mirror's
+                -- don't have local names to publish to, should consider whether
+                -- we can re-architect code to make this case impossible
+                LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo ->
+                  do
+                    Task.io $ putStrLn $ "You somehow are attempting to publish to a read-only local filesystem copy of your packages located at " ++ show (_localReadOnlyMirrorRepoFilePath localReadOnlyMirrorRepo) ++ ". The fact you're even able to do this is a minor bug that you should report since there shouldn't even be a repo local name for you to be able to pass to the publish command! Regardless we are ignoring your request to publish this package as a result."
               Task.io $ putStrLn "Success!"
 
 

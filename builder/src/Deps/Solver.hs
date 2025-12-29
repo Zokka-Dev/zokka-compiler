@@ -35,14 +35,14 @@ import qualified Http
 import qualified Json.Decode as D
 import qualified Reporting.Exit as Exit
 import qualified Stuff
-import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, CustomSingleRepositoryData(..), SinglePackageLocationData(..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoTypeUrl, _pzrPackageServerRepoAuthToken))
+import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, CustomSingleRepositoryData(..), SinglePackageLocationData(..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoTypeUrl, _pzrPackageServerRepoAuthToken), LocalReadOnlyMirrorRepo (..))
 import Data.Maybe (fromJust)
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Reporting.Exit (RegistryProblem(..))
 import Stuff (ZokkaCustomRepositoryConfigFilePath(unZokkaCustomRepositoryConfigFilePath), zokkaCacheToFilePath)
 import qualified Data.Utf8 as Utf8
 import Logging.Logger (printLog)
-import File (getTime)
+import File (getTime, readUtf8)
 import Deps.Registry (ZokkaRegistries(..))
 
 
@@ -287,20 +287,20 @@ getRelevantVersions name constraint =
 -- GET CONSTRAINTS
 
 
-getFromCustomSingleRepositoryData :: CustomSingleRepositoryData 
-  -> Pkg.Name 
-  -> V.Version 
+getFromCustomSingleRepositoryData :: CustomSingleRepositoryData
+  -> Pkg.Name
+  -> V.Version
   -> Stuff.PackageCache
   -> (Constraints -> State)
-  -> Http.Manager 
-  -> (State -> Constraints -> (State -> IO b) -> IO b) 
+  -> Http.Manager
+  -> (State -> Constraints -> (State -> IO b) -> IO b)
   -> (State -> IO b)
   -> (Exit.Solver -> IO b)
   -> IO b
 getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNewState manager ok back err =
   -- FIXME: Reduce duplication
   case customSingleRepositoryData of
-    DefaultPackageServerRepoData defaultPackageServerRepo -> 
+    DefaultPackageServerRepoData defaultPackageServerRepo ->
       let
         repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
         url = Website.metadata repositoryUrl pkg vsn "elm.json"
@@ -345,6 +345,21 @@ getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNew
 
               Left _ ->
                 err (Exit.SolverBadHttpData pkg vsn url)
+    LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo ->
+      let
+        repositoryFilePath = Utf8.toChars (_localReadOnlyMirrorRepoFilePath localReadOnlyMirrorRepo)
+        author = Utf8.toChars (Pkg._author pkg)
+        project = Utf8.toChars (Pkg._project pkg)
+        version = V.toChars vsn
+        elmJsonFilePath = repositoryFilePath </> "packages" </> author </> project </> version </> "elm.json"
+      in
+      do
+        elmJson <- readUtf8 elmJsonFilePath
+        case D.fromByteString constraintsDecoder elmJson of
+          Right constraints ->
+            ok (toNewState constraints) constraints back
+          Left decodeError ->
+            err (Exit.SolverBadHttpData pkg vsn ("file:///" ++ elmJsonFilePath))
 
 getConstraints :: Pkg.Name -> V.Version -> Solver Constraints
 getConstraints pkg vsn =
@@ -398,7 +413,7 @@ getConstraints pkg vsn =
                                     -- FIXME: Deal with the SHA hash instead of ignoring it
                                       \(_, archive) ->
                                         -- FIXME: Do I need to do this createDirectoryIfMissing?
-                                        Right <$> do { printLog "hello world! FIXME"; Dir.createDirectoryIfMissing True home; File.writePackageReturnElmJson (Stuff.package cache pkg vsn) archive }
+                                        Right <$> do { printLog ("Successfully downloaded ZIP archive from " ++ url); Dir.createDirectoryIfMissing True home; File.writePackageReturnElmJson (Stuff.package cache pkg vsn) archive }
                                   case result of
                                     -- In this case we should've successfully written elm.json to our cache so let's take a look
                                     -- FIXME: I don't like this implicit dependence
@@ -414,7 +429,7 @@ getConstraints pkg vsn =
                                     Right Nothing ->
                                       -- FIXME: Maybe want a custom error for this?
                                       err (Exit.SolverBadHttpData pkg vsn url)
-                                    Left archiveErr -> 
+                                    Left archiveErr ->
                                       err archiveErr
                               Nothing ->
                                 -- FIXME: I'm only ~70% sure you can actually hit this error case... should verify
@@ -451,7 +466,7 @@ initEnv =
       customRepositoriesConfigLocation <- Stuff.getOrCreateZokkaCustomRepositoryConfig
       customRepositoriesDataOrErr <- loadCustomRepositoriesData customRepositoriesConfigLocation
       case customRepositoriesDataOrErr of
-        Left err -> pure $ Left (RP_BadCustomReposData err (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
+        Left err -> pure $ Left (RP_BadCustomReposConfigFile err (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
         Right customRepositoriesData ->
           Stuff.withRegistryLock cache $
             do  maybeRegistry <- Registry.read zokkaCache
@@ -470,7 +485,7 @@ initEnv =
 
                   Just cachedRegistry@ZokkaRegistries{_lastModificationTimeOfCustomRepoConfig=customRepoConfigUpdateTime} ->
                     do  -- FIXME: Think about whether I need a lock on the custom repository JSON file as well
-                        eitherRegistry <- if customRepoConfigUpdateTime == modifiedTimeOfCustomRepositoriesData 
+                        eitherRegistry <- if customRepoConfigUpdateTime == modifiedTimeOfCustomRepositoriesData
                           then Registry.update manager zokkaCache cachedRegistry modifiedTimeOfCustomRepositoriesData
                           else Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
                         case eitherRegistry of
@@ -490,7 +505,7 @@ initEnvForReactorTH =
       customRepositoriesConfigLocation <- Stuff.getOrCreateZokkaCustomRepositoryConfig
       customRepositoriesDataOrErr <- loadCustomRepositoriesDataForReactorTH customRepositoriesConfigLocation
       case customRepositoriesDataOrErr of
-        Left err -> pure $ Left (RP_BadCustomReposData err (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
+        Left err -> pure $ Left (RP_BadCustomReposConfigFile err (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
         Right customRepositoriesData ->
           Stuff.withRegistryLock cache $
             do  maybeRegistry <- Registry.read zokkaCache

@@ -33,20 +33,23 @@ import qualified Json.Decode as D
 import qualified Parse.Primitives as P
 import qualified Reporting.Exit as Exit
 import qualified Stuff
-import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData(..), RepositoryUrl, RepositoryType(..), SinglePackageLocationData(..), PackageUrl, DefaultPackageServerRepo (..), PZRPackageServerRepo(..), RepositoryAuthToken)
+import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData(..), RepositoryUrl, RepositoryType(..), SinglePackageLocationData(..), PackageUrl, DefaultPackageServerRepo (..), PZRPackageServerRepo(..), LocalReadOnlyMirrorRepo(..), RepositoryAuthToken, RepositoryFilePath)
 import Data.Binary.Get (Get)
 import Data.Word (Word8)
 import qualified Data.Set as Set
 import qualified Data.NonEmptyList as NE
 import Data.Vector.Internal.Check (HasCallStack)
 import Data.Map.Utils (exchangeKeys, invertMap)
-import File (Time, getTime)
+import File (Time, getTime, readUtf8)
 import Stuff (ZokkaCustomRepositoryConfigFilePath(unZokkaCustomRepositoryConfigFilePath))
 import Http (Header)
 import qualified Data.Utf8 as Utf8
 import Data.ByteString.Char8 (pack)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as ByteString
+import Logging.Logger (printLog)
+import Reporting.Exit (RegistryProblem(RP_LocalReadOnlyMirrorRepoProblem), LocalReadOnlyMirrorRepoMalformedRegistryJson (..))
+import System.FilePath ((</>))
 
 
 
@@ -185,6 +188,13 @@ fetchSingleCustomRepository manager customRepositoryData =
         repositoryAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
       in
       fetchFromRepositoryUrlWithRepoAuthToken manager repositoryUrl repositoryAuthToken
+    LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo ->
+      -- FIXME: See if there's a way of re-architecting this so we don't need an HTTP manager at all, since technically we shouldn't need one for local files
+      let 
+        repositoryFilePath = _localReadOnlyMirrorRepoFilePath localReadOnlyMirrorRepo
+      in
+      retrieveFromLocalFileBundle repositoryFilePath
+
 
 
 fetchFromRepositoryUrlWithRepoAuthToken :: Http.Manager -> RepositoryUrl -> RepositoryAuthToken -> IO (Either Exit.RegistryProblem Registry)
@@ -202,6 +212,33 @@ fetchFromRepositoryUrl manager repositoryUrl =
       do  let size = Map.foldr' addEntry 0 versions
           pure $ Registry size versions
 
+
+-- Don't use the word fetch since this shouldn't require internet access
+retrieveFromLocalFileBundle :: RepositoryFilePath -> IO (Either Exit.RegistryProblem Registry)
+retrieveFromLocalFileBundle repositoryFilePath = 
+  do
+    registryJsonBytes <- readUtf8 (Utf8.toChars repositoryFilePath </> "registry.json")
+    let registryOrError = D.fromByteString localRegistryJsonDecoder registryJsonBytes
+    case registryOrError of
+      Left decodeError -> 
+        let 
+          errorStruct = LocalReadOnlyMirrorRepoMalformedRegistryJson
+            { _localReadOnlyMirrorRepoMalformedRegistryJsonParentFilePath=repositoryFilePath
+            , _localReadOnlyMirrorRepoMalformedRegistryJsonDecodeError=decodeError
+            }
+        in
+        pure $ Left (RP_LocalReadOnlyMirrorRepoProblem errorStruct)
+      Right registry -> pure $ Right registry
+
+
+
+localRegistryJsonDecoder :: D.Decoder () Registry
+localRegistryJsonDecoder = do
+  packageCount <- D.field "sync_checkpoint" D.int
+  let packageDecoder = D.field "id" newPkgDecoder
+  namesAndVersions <- D.field "packages" (D.list packageDecoder)
+  let versions = foldr addNew Map.empty namesAndVersions
+  pure (Registry {_count=packageCount, _versions=versions})
 
 addEntry :: KnownVersions -> Int -> Int
 addEntry (KnownVersions _ vs) count =
@@ -231,11 +268,12 @@ allPkgsDecoder =
 update :: Http.Manager -> Stuff.ZokkaSpecificCache -> ZokkaRegistries -> Time -> IO (Either Exit.RegistryProblem ZokkaRegistries)
 update manager cache zokkaRegistries customRepoConfigLastModified =
   do
+    printLog "Starting to update registries..."
     let registriesMap = _registries zokkaRegistries
     let listOfProblemsOrKeyRegistryPairs = traverse (\(k, v) -> fmap (fmap ((,) k)) (updateSingleRegistry manager k v)) (Map.toList registriesMap)
     newRegistryOrError <- sequence <$> listOfProblemsOrKeyRegistryPairs
     let newRegistryOrError' = fmap Map.fromList newRegistryOrError
-    case newRegistryOrError' of
+    newRegistries <- case newRegistryOrError' of
       Left err -> pure $ Left err
       Right newRegistry ->
         do
@@ -243,6 +281,8 @@ update manager cache zokkaRegistries customRepoConfigLastModified =
           let newZokkaRegistries = zokkaRegistriesFromRegistriesMap customRepoConfigLastModified newRegistry
           _ <- File.writeBinary (Stuff.registry cache) newZokkaRegistries
           pure $ Right newZokkaRegistries
+    printLog "Finished updating registries..."
+    pure newRegistries
 
 
 updateSingleRegistry :: Http.Manager -> RegistryKey -> Registry -> IO (Either Exit.RegistryProblem Registry)
@@ -254,6 +294,13 @@ updateSingleRegistry manager registryKey registry =
         updateSingleRegistryFromStandardElmRepo manager (_defaultPackageServerRepoTypeUrl defaultPackageServerRepo) registry
       -- FIXME: This is inefficient, in that we just download the entire custom repo every time, but we hope that custom repos are still quite small
       PZRPackageServerRepoData pzrPackageServerRepo -> updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo registry
+      -- FIXME: Is there a way of being more efficient here? We're basically
+      -- recreating the entire registry from scratch each time for an update.
+      -- This is currently not a big deal because registry.json usually isn't a
+      -- huge file in a local mirror. But it stil would be nice to see if we
+      -- didn't have to throw away everything and re-parse each time.
+      LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo ->
+        retrieveFromLocalFileBundle (_localReadOnlyMirrorRepoFilePath localReadOnlyMirrorRepo)
     -- With package URLs, only one package can correspond to a single URL so there is no sensible notion of "update"
     PackageUrlKey _ -> pure $ Right registry
 

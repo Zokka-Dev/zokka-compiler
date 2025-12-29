@@ -15,10 +15,12 @@ module Elm.Details
   where
 
 
+import qualified Codec.Archive.Zip as Zip
 import Control.Concurrent (forkIO, forkFinally)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar)
 import Control.Monad (liftM, liftM2, liftM3, when)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Either as Either
 import qualified Data.Map as Map
 import qualified Data.Map.Utils as Map
@@ -63,7 +65,7 @@ import Elm.PackageOverrideData (PackageOverrideData(..))
 import Data.Function ((&))
 import Data.Map ((!))
 import Deps.Registry (ZokkaRegistries)
-import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl, HumanReadableShaDigest, humanReadableShaDigestIsEqualToSha, humanReadableShaDigestToString, CustomSingleRepositoryData (..), PZRPackageServerRepo(..), DefaultPackageServerRepo(..))
+import Elm.CustomRepositoryData (RepositoryUrl, PackageUrl, HumanReadableShaDigest, humanReadableShaDigestIsEqualToSha, humanReadableShaDigestToString, CustomSingleRepositoryData (..), PZRPackageServerRepo(..), DefaultPackageServerRepo(..), LocalReadOnlyMirrorRepo(..), RepositoryLocation(..), RepositoryFilePath)
 import qualified Elm.CustomRepositoryData as CustomRepositoryData
 import Control.Exception (SomeException, catches, Handler (..), BlockedIndefinitelyOnMVar (BlockedIndefinitelyOnMVar), throwIO, Exception)
 import qualified Reporting.Annotation as Report.Annotation
@@ -73,6 +75,7 @@ import qualified Elm.Constraint as C
 import Logging.Logger (printLog)
 import Reporting.Exit (PackageProblem(PP_BadArchiveHash))
 import qualified Elm.CustomRepositoryData as CustomRepositoriesData
+import File (readUtf8)
 
 
 
@@ -1015,12 +1018,17 @@ getHeadersFromCustomRepositoryData customRepositoryData =
   case customRepositoryData of
     DefaultPackageServerRepoData _ -> []
     PZRPackageServerRepoData pzrPackageServerRepoData -> [Registry.createAuthHeader (_pzrPackageServerRepoAuthToken pzrPackageServerRepoData)]
+    LocalReadOnlyMirrorRepoData _ -> []
 
-getRepoUrlFromCustomRepositoryData :: CustomRepositoriesData.CustomSingleRepositoryData -> RepositoryUrl
-getRepoUrlFromCustomRepositoryData customRepositoryData =
+getRepoLocationFromCustomRepositoryData :: CustomRepositoriesData.CustomSingleRepositoryData -> RepositoryLocation
+getRepoLocationFromCustomRepositoryData customRepositoryData =
   case customRepositoryData of
-    DefaultPackageServerRepoData defaultPackageServerRepo -> _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
-    PZRPackageServerRepoData pzrPackageServerRepoData -> _pzrPackageServerRepoTypeUrl pzrPackageServerRepoData
+    DefaultPackageServerRepoData defaultPackageServerRepo -> 
+      RemoteRepository (_defaultPackageServerRepoTypeUrl defaultPackageServerRepo)
+    PZRPackageServerRepoData pzrPackageServerRepoData -> 
+      RemoteRepository (_pzrPackageServerRepoTypeUrl pzrPackageServerRepoData)
+    LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo ->
+      LocalFileSystemRepository (_localReadOnlyMirrorRepoFilePath localReadOnlyMirrorRepo)
 
 
 downloadPackage :: Stuff.PackageCache -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
@@ -1030,8 +1038,13 @@ downloadPackage cache zokkaRegistries manager pkg vsn =
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
         let headers = getHeadersFromCustomRepositoryData repositoryData
-        let repoUrl = getRepoUrlFromCustomRepositoryData repositoryData
-        downloadPackageFromElmPackageRepo cache repoUrl headers manager pkg vsn
+        let repoLocation = getRepoLocationFromCustomRepositoryData repositoryData
+        case repoLocation of
+          RemoteRepository repoUrl ->
+            downloadPackageFromElmPackageRepo cache repoUrl headers manager pkg vsn
+          LocalFileSystemRepository repoFilePath ->
+            readPackageFromLocalFileSystem cache repoFilePath pkg vsn
+
     Just (Registry.PackageUrlKey packageData) ->
       do
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
@@ -1051,14 +1064,18 @@ downloadPackageToFilePath filePath zokkaRegistries manager pkg vsn =
     Just (Registry.RepositoryUrlKey repositoryData) ->
       do
         exists <- Dir.doesDirectoryExist filePath
-        printLog (show exists ++ "A (toFilePath)" ++ filePath)
+        printLog ("[Full Repository Check] Checking whether " ++ filePath ++ "exists as a directory. Result: " ++ show exists)
         let headers = getHeadersFromCustomRepositoryData repositoryData
-        let repoUrl = getRepoUrlFromCustomRepositoryData repositoryData
-        downloadPackageFromElmPackageRepoToFilePath filePath repoUrl headers manager pkg vsn
+        let repoLocation = getRepoLocationFromCustomRepositoryData repositoryData
+        case repoLocation of
+          RemoteRepository repoUrl ->
+            downloadPackageFromElmPackageRepoToFilePath filePath repoUrl headers manager pkg vsn
+          LocalFileSystemRepository repoFilePath ->
+            readPackageFromLocalFileSystemDirectlyToFilePath filePath repoFilePath pkg vsn
     Just (Registry.PackageUrlKey packageData) ->
       do
         exists <- Dir.doesDirectoryExist filePath
-        printLog ("Checking whether " ++ filePath ++ "exists as a directory. Result: " ++ show exists)
+        printLog ("[Single Package Location] Checking whether " ++ filePath ++ "exists as a directory. Result: " ++ show exists)
         downloadPackageDirectlyToFilePath filePath (CustomRepositoriesData._url packageData) (CustomRepositoriesData._shaHash packageData) manager
     Nothing ->
       let
@@ -1093,6 +1110,52 @@ downloadPackageDirectlyToFilePath filePath packageUrl expectedShaDigest manager 
             -- FIXME Maybe use a custom error type instead of PP_BadArchiveHash that points to where the hash is defined in the custom-repo config
             pure (Left (PP_BadArchiveHash urlString (humanReadableShaDigestToString expectedShaDigest) (Http.shaToChars receivedShaHash)))
 
+readArchiveFromLocalFileSystem :: RepositoryFilePath -> Pkg.Name -> V.Version -> IO Zip.Archive
+readArchiveFromLocalFileSystem repositoryFilePath pkg vsn =
+  let
+    packageFilePath = Utf8.toChars repositoryFilePath </> "packages" </> Utf8.toChars (Pkg._author pkg) </> Utf8.toChars (Pkg._project pkg) </> V.toChars vsn </> "package.zip"
+  in
+  -- FIXME: Handle the case where the file path doesn't actually exist!
+  do
+    -- Note: yes I understand this is a little bit strange that we're basically
+    -- just copying a zip file from one place to another, but this helps us
+    -- preserve the integrity of the global Elm cache. If we move away from
+    -- maintaining compatibility with the global Elm cache we won't have to do
+    -- this.
+    archiveBytes <- readUtf8 packageFilePath
+    -- Note: We never compute the SHA hash of this package because it kind of
+    -- doesn't make sense to do so for local files. Remember that normally in
+    -- the vanilla Elm world, the Elm package server precomputes a hash and then
+    -- that's the hash that we use to compare a new package's hash against. But
+    -- that only makes sense because the new package is hosted in a different
+    -- place than the Elm package server itself, so we could worry about
+    -- tampering in one place that would be detectd by the package server. Here
+    -- we don't have a package server at all and we just host the package
+    -- locally. If someone could tamper with the local package, they certainly
+    -- could tamper with a locally stored hash as well (again remember in
+    -- analogy with the Elm package server, we store the hash right alongside
+    -- the package)! This still provides some marginal security/error-checking
+    -- for the case where somehow one gets modified, but not the other, but this
+    -- does not seem to be a high priority to ever implement.
+
+    -- FIXME: Handle the case where the zipfile is malformed! (Although this is
+    -- low priority since the SHA hash check should alleviate the need for this)
+    pure (Zip.toArchive (LBS.fromStrict archiveBytes))
+
+readPackageFromLocalFileSystem :: Stuff.PackageCache -> RepositoryFilePath -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+readPackageFromLocalFileSystem cache repositoryFilePath pkg vsn =
+  do
+    archive <- readArchiveFromLocalFileSystem repositoryFilePath pkg vsn
+    File.writePackage (Stuff.package cache pkg vsn) archive
+    pure (Right ())
+
+-- Note the amount of duplication with readPackageFromLocalFileSystem
+readPackageFromLocalFileSystemDirectlyToFilePath :: FilePath -> RepositoryFilePath -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
+readPackageFromLocalFileSystemDirectlyToFilePath filePath repositoryFilePath pkg vsn =
+  do
+    archive <- readArchiveFromLocalFileSystem repositoryFilePath pkg vsn
+    File.writePackage filePath archive
+    pure (Right ())
 
 downloadPackageFromElmPackageRepo :: Stuff.PackageCache -> RepositoryUrl -> [Http.Header] -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
 downloadPackageFromElmPackageRepo cache repositoryUrl headers manager pkg vsn =
@@ -1102,7 +1165,7 @@ downloadPackageFromElmPackageRepo cache repositoryUrl headers manager pkg vsn =
   do  eitherByteString <-
         Http.get manager url headers id (return . Right)
       exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-      printLog (show exists ++ "B0" ++ Stuff.package cache pkg vsn)
+      printLog ("downloadPackageFromElmPackageRepo: does this directory " ++ Stuff.package cache pkg vsn ++ " exist?: " ++ show exists)
 
       case eitherByteString of
         Left err ->

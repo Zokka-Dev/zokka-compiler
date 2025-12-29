@@ -1,6 +1,6 @@
 module Deps.CustomRepositoryDataIO
   ( loadCustomRepositoriesData
-  , CustomRepositoriesError(..)
+  , CustomRepositoriesFileError(..)
   , loadCustomRepositoriesDataForReactorTH
   )
   where
@@ -12,7 +12,8 @@ import qualified Json.Encode as E
 import Data.Bifunctor (first)
 import Stuff (ZokkaCustomRepositoryConfigFilePath (..))
 
-data CustomRepositoriesError = CREJsonDecodeError (D.Error CustomRepositoryDataParseError)
+data CustomRepositoriesFileError 
+  = CREJsonDecodeError (D.Error CustomRepositoryDataParseError)
   deriving Show
 
 -- FIXME: Boolean argument a hack for now
@@ -25,7 +26,7 @@ createCustomRepositoriesData (ZokkaCustomRepositoryConfigFilePath filePath) shou
     E.write filePath (customRepostoriesDataEncoder defaultData)
     pure (Right defaultData)
 
-loadCustomRepositoriesData :: ZokkaCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesError CustomRepositoriesData)
+loadCustomRepositoriesData :: ZokkaCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesFileError CustomRepositoriesData)
 loadCustomRepositoriesData z@(ZokkaCustomRepositoryConfigFilePath filePath) = do
   customReposDataDoesExist <- File.exists filePath
   if customReposDataDoesExist
@@ -35,7 +36,7 @@ loadCustomRepositoriesData z@(ZokkaCustomRepositoryConfigFilePath filePath) = do
     else
       createCustomRepositoriesData z True
 
-loadCustomRepositoriesDataForReactorTH :: ZokkaCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesError CustomRepositoriesData)
+loadCustomRepositoriesDataForReactorTH :: ZokkaCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesFileError CustomRepositoriesData)
 loadCustomRepositoriesDataForReactorTH z@(ZokkaCustomRepositoryConfigFilePath filePath) = do
   customReposDataDoesExist <- File.exists filePath
   if customReposDataDoesExist

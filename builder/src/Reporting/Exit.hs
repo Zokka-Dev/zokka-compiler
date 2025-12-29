@@ -26,6 +26,7 @@ module Reporting.Exit
   , toString
   , toStderr
   , toJson
+  , LocalReadOnlyMirrorRepoMalformedRegistryJson(..)
   )
   where
 
@@ -63,10 +64,10 @@ import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Error as Error
 import qualified Reporting.Render.Code as Code
 import Elm.PackageOverrideData (PackageOverrideData(..))
-import Deps.CustomRepositoryDataIO (CustomRepositoriesError(..))
+import Deps.CustomRepositoryDataIO (CustomRepositoriesFileError(..))
 import qualified Json.Decode as D
 import qualified Reporting.Error.Json
-import Elm.CustomRepositoryData (CustomRepositoryDataParseError (..), RepositoryLocalName)
+import Elm.CustomRepositoryData (CustomRepositoryDataParseError (..), RepositoryLocalName, RepositoryFilePath)
 
 
 
@@ -160,7 +161,7 @@ data Diff
   | DiffBadDetails Details
   | DiffBadBuild BuildProblem
   -- FIXME: Better comment here This is kind of weird
-  | DiffCustomReposDataProblem CustomRepositoriesError
+  | DiffCustomReposDataProblem CustomRepositoriesFileError
 
 
 diffToReport :: Diff -> Help.Report
@@ -262,7 +263,7 @@ data Bump
   | BumpBadDetails Details
   | BumpNoExposed
   | BumpBadBuild BuildProblem
-  | BumpCustomRepositoryDataProblem CustomRepositoriesError
+  | BumpCustomRepositoryDataProblem CustomRepositoriesFileError
 
 
 bumpToReport :: Bump -> Help.Report
@@ -398,7 +399,7 @@ data Publish
   | PublishToStandardElmRepositoryUsingZokka
   | PublishWithNoRepositoryLocalName
   | PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig RepositoryLocalName [RepositoryLocalName]
-  | PublishCustomRepositoryConfigDataError CustomRepositoriesError
+  | PublishCustomRepositoryConfigDataError CustomRepositoriesFileError
 
 
 publishToReport :: Publish -> Help.Report
@@ -1594,10 +1595,21 @@ toPackageProblemReport pkg vsn problem =
 -- REGISTRY PROBLEM
 
 
+data LocalReadOnlyMirrorRepoMalformedRegistryJson = LocalReadOnlyMirrorRepoMalformedRegistryJson
+  { _localReadOnlyMirrorRepoMalformedRegistryJsonParentFilePath :: RepositoryFilePath
+  , _localReadOnlyMirrorRepoMalformedRegistryJsonDecodeError :: D.Error ()
+  }
+  deriving Show
+
 data RegistryProblem
   = RP_Http Http.Error
   | RP_Data String BS.ByteString
-  | RP_BadCustomReposData CustomRepositoriesError FilePath
+  | RP_BadCustomReposConfigFile CustomRepositoriesFileError FilePath
+  -- It's kind of weird to separate this out as a separate category of errors
+  -- from other custom repos. If we have other custom repo errors that aren't
+  -- just problems with the config file itself, we should subsume this error
+  -- under those errors
+  | RP_LocalReadOnlyMirrorRepoProblem LocalReadOnlyMirrorRepoMalformedRegistryJson
   deriving Show
 
 
@@ -1626,11 +1638,31 @@ toRegistryProblemReport title problem context =
         ]
 
     --FIXME make this better!
-    RP_BadCustomReposData err configFilePath ->
+    RP_BadCustomReposConfigFile err configFilePath ->
       case err of
         CREJsonDecodeError jsonErr ->
           Json.toReport configFilePath (Json.FailureToReport toCustomPackageRepositoryProblemReport) jsonErr $
             Json.ExplicitReason "I ran into a problem with your elm.json file."
+    RP_LocalReadOnlyMirrorRepoProblem localReadOnlyMirrorProblem ->
+      let
+        (LocalReadOnlyMirrorRepoMalformedRegistryJson{_localReadOnlyMirrorRepoMalformedRegistryJsonDecodeError=jsonErr, _localReadOnlyMirrorRepoMalformedRegistryJsonParentFilePath=filePath}) = localReadOnlyMirrorProblem
+      in
+      Json.toReport (Utf8.toChars filePath </> "registry.json") (Json.FailureToReport toLocalReadOnlyMirrorRepoProblemReport) jsonErr $
+        Json.ExplicitReason "I ran into a problem with your registry.json file."
+
+toLocalReadOnlyMirrorRepoProblemReport :: FilePath -> Code.Source -> Json.Context -> A.Region -> () -> Help.Report
+toLocalReadOnlyMirrorRepoProblemReport path source _ region () =
+  let
+    toSnippet title highlight pair =
+      Help.jsonReport title (Just path) $
+        Code.toSnippet source region highlight pair
+  in
+  toSnippet "PROBLEM WITH REGISTRY.JSON FILE IN LOCAL READ-ONLY PACKAGE MIRROR" (Just region)
+    ( D.reflow $
+        "I got stuck while reading the registry.json file that is in your local filesystem mirror of Elm packages from an Elm package serve."
+    -- FIXME: Better error reporting here
+    , D.reflow "Unfortunately my error reporting here is very thread-bare at the moment. Please open an issue if you would like to see this fixed!"
+    )
 
 
 toHttpErrorReport :: String -> Http.Error -> String -> Help.Report

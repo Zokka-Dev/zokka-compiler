@@ -37,7 +37,8 @@ import Deps.Registry (ZokkaRegistries, createAuthHeader)
 import qualified Deps.Registry as Registry
 import qualified Data.Utf8 as Utf8
 import Logging.Logger (printLog)
-import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData, DefaultPackageServerRepo(..), PZRPackageServerRepo(..))
+import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData, DefaultPackageServerRepo(..), PZRPackageServerRepo(..), LocalReadOnlyMirrorRepo (_localReadOnlyMirrorRepoFilePath))
+import File (readUtf8)
 
 
 
@@ -416,3 +417,19 @@ getDocs cache zokkaRegistry manager name version =
 
                         Left _ ->
                           return $ Left $ Exit.DP_Data url body
+                LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo ->
+                  do
+                    let repositoryFilePath = Utf8.toChars (_localReadOnlyMirrorRepoFilePath localReadOnlyMirrorRepo)
+                    let author = Utf8.toChars (Pkg._author name)
+                    let project = Utf8.toChars (Pkg._project name)
+                    let versionChars = V.toChars version
+                    let docsLocationInPackageRepository = repositoryFilePath </> "packages" </> author </> project </> versionChars </> "docs.json"
+                    body <- readUtf8 docsLocationInPackageRepository
+                    case D.fromByteString Docs.decoder body of
+                      Right docs ->
+                        do
+                          Dir.createDirectoryIfMissing True home
+                          File.writeUtf8 path body
+                          pure $ Right docs
+                      Left _ ->
+                        return $ Left $ Exit.DP_Data docsLocationInPackageRepository body

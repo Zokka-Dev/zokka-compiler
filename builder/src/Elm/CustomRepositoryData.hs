@@ -7,10 +7,13 @@ module Elm.CustomRepositoryData
   , PZRPackageServerRepo(..)
   , CustomRepositoriesData(..)
   , SinglePackageLocationData(..)
+  , LocalReadOnlyMirrorRepo(..)
   , RepositoryType(..)
   , RepositoryUrl
   , RepositoryAuthToken
   , RepositoryLocalName
+  , RepositoryFilePath
+  , RepositoryLocation(..)
   , PackageUrl
   , SinglePackageFileType(..)
   , customRepostoriesDataDecoder
@@ -40,6 +43,7 @@ import Http (Sha, shaToChars)
 import Control.Monad (when)
 
 data REPOSITORYURL
+data REPOSITORYFILEPATH
 data PACKAGEURL
 data REPOSITORYAUTHTOKEN
 data REPOSITORYLOCALNAME
@@ -47,6 +51,7 @@ data REPOSITORYLOCALNAME
 data RepositoryType
   = DefaultPackageServer
   | PZRPackageServer
+  | LocalReadOnlyMirrorFileBundle
   deriving (Enum, Bounded, Show, Ord, Eq)
 
 
@@ -70,6 +75,22 @@ data PZRPackageServerRepo = PZRPackageServerRepo
   }
     deriving (Show, Ord, Eq)
 
+-- Note that we don't have a local name because this is a read-only repo that we
+-- cannot publish to. The reason we can't publish to it is because this is meant
+-- to be synchronized with the Elm package server which relies on counting the
+-- total number of packages to find the right number to send to "since".
+--
+-- This is solvable in theory (we can treat user-created packages differently
+-- than ones synced from the Elm package server), but it seems a cleaner
+-- solution is to just offer a different kind of repo altogether for user
+-- created packages. At the moment we require a local package server to do that,
+-- but if there's demand we can also have a version that just makes a series of
+-- files without the need for a server.
+data LocalReadOnlyMirrorRepo = LocalReadOnlyMirrorRepo
+  { _localReadOnlyMirrorRepoFilePath :: !RepositoryFilePath
+  }
+    deriving (Show, Ord, Eq)
+
 allRepositoryTypes :: [RepositoryType]
 allRepositoryTypes = [(minBound :: RepositoryType) .. ]
 
@@ -79,11 +100,15 @@ defaultPackageServerString = Json.fromChars "package-server-with-standard-elm-v0
 pzrPackageServerString :: Json.String
 pzrPackageServerString = Json.fromChars "package-server-with-personal-zokka-repo-v1.0-package-server-api"
 
+localReadOnlyMirrorFileBundleString :: Json.String
+localReadOnlyMirrorFileBundleString = Json.fromChars "local-directory-of-files-readonly-mirror-of-package-server"
+
 repositoryTypeToString :: RepositoryType -> Json.String
 repositoryTypeToString repositoryType =
   case repositoryType of
     DefaultPackageServer -> defaultPackageServerString
     PZRPackageServer -> pzrPackageServerString
+    LocalReadOnlyMirrorFileBundle -> localReadOnlyMirrorFileBundleString
 
 allRepositoryTypeStrings :: [Json.String]
 allRepositoryTypeStrings = fmap repositoryTypeToString allRepositoryTypes
@@ -111,6 +136,7 @@ repositoryTypeDecoder toError =
 repositoryTypeEncoder :: RepositoryType -> E.Value
 repositoryTypeEncoder DefaultPackageServer = E.string defaultPackageServerString
 repositoryTypeEncoder PZRPackageServer = E.string pzrPackageServerString
+repositoryTypeEncoder LocalReadOnlyMirrorFileBundle = E.string localReadOnlyMirrorFileBundleString
 
 type RepositoryLocalName = Utf8.Utf8 REPOSITORYLOCALNAME
 
@@ -126,10 +152,25 @@ repositoryLocalNameDecoder = fmap coerce D.string
 repositoryLocalNameEncoder :: RepositoryLocalName -> E.Value
 repositoryLocalNameEncoder repositoryLocalName = E.string (coerce repositoryLocalName)
 
+repositoryFilePathEncoder :: RepositoryFilePath -> E.Value
+repositoryFilePathEncoder repositoryFilePath = E.string (coerce repositoryFilePath)
+
+repositoryFilePathDecoder :: D.Decoder e RepositoryFilePath
+repositoryFilePathDecoder = fmap coerce D.string
+
+data RepositoryLocation 
+  = RemoteRepository RepositoryUrl 
+  | LocalFileSystemRepository RepositoryFilePath
 
 type RepositoryUrl = Utf8.Utf8 REPOSITORYURL
 
 instance Binary.Binary (Utf8.Utf8 REPOSITORYURL) where
+  get = Utf8.getVeryLong
+  put = Utf8.putVeryLong
+
+type RepositoryFilePath = Utf8.Utf8 REPOSITORYFILEPATH
+
+instance Binary.Binary (Utf8.Utf8 REPOSITORYFILEPATH) where
   get = Utf8.getVeryLong
   put = Utf8.putVeryLong
 
@@ -167,6 +208,7 @@ sha1Encoder (HumanReadableShaDigest shaDigest) = E.string shaDigest
 data CustomSingleRepositoryData 
   = DefaultPackageServerRepoData DefaultPackageServerRepo
   | PZRPackageServerRepoData PZRPackageServerRepo
+  | LocalReadOnlyMirrorRepoData LocalReadOnlyMirrorRepo
     deriving (Show, Ord, Eq)
 
 standardElmRepositoryDefaultPackageServerRepo :: DefaultPackageServerRepo
@@ -197,15 +239,23 @@ customSingleRepositoryDataDecoder :: D.Decoder CustomRepositoryDataParseError Cu
 customSingleRepositoryDataDecoder =
   do
     repositoryType <- D.field "repository-type" (repositoryTypeDecoder UnsupportedRepositoryType)
-    repositoryUrl <- D.field "repository-url" repositoryUrlDecoder
-    repositoryLocalName <- D.field "repository-local-name" repositoryLocalNameDecoder
     case repositoryType of
       DefaultPackageServer ->
-        pure (DefaultPackageServerRepoData (DefaultPackageServerRepo{_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName}))
+        do
+          repositoryUrl <- D.field "repository-url" repositoryUrlDecoder
+          repositoryLocalName <- D.field "repository-local-name" repositoryLocalNameDecoder
+          pure (DefaultPackageServerRepoData (DefaultPackageServerRepo{_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName}))
       PZRPackageServer ->
         do
+          repositoryUrl <- D.field "repository-url" repositoryUrlDecoder
+          repositoryLocalName <- D.field "repository-local-name" repositoryLocalNameDecoder
           repositoryAuthToken <- D.field "repository-auth-token" repositoryAuthTokenDecoder
           pure (PZRPackageServerRepoData (PZRPackageServerRepo {_pzrPackageServerRepoAuthToken=repositoryAuthToken, _pzrPackageServerRepoTypeUrl=repositoryUrl, _pzrPackageServerRepoLocalName=repositoryLocalName}))
+      LocalReadOnlyMirrorFileBundle ->
+        do
+          repositoryFilePath <- D.field "repository-file-path" repositoryFilePathDecoder
+          pure (LocalReadOnlyMirrorRepoData (LocalReadOnlyMirrorRepo {_localReadOnlyMirrorRepoFilePath=repositoryFilePath}))
+
 
 customSingleRepositoryDataEncoder :: CustomSingleRepositoryData -> E.Value
 customSingleRepositoryDataEncoder customSingleRepositoryData =
@@ -222,6 +272,12 @@ customSingleRepositoryDataEncoder customSingleRepositoryData =
         , (Utf8.fromChars "repository-url", repositoryUrlEncoder (_pzrPackageServerRepoTypeUrl pzrPackageServerRepo))
         , (Utf8.fromChars "repository-local-name", repositoryLocalNameEncoder (_pzrPackageServerRepoLocalName pzrPackageServerRepo))
         , (Utf8.fromChars "repository-auth-token", repositoryAuthTokenEncoder (_pzrPackageServerRepoAuthToken pzrPackageServerRepo))
+        ]
+    LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo ->
+      E.object
+        [ (Utf8.fromChars "repository-type", repositoryTypeEncoder LocalReadOnlyMirrorFileBundle)
+        , (Utf8.fromChars "repository-file-path", repositoryFilePathEncoder (_localReadOnlyMirrorRepoFilePath localReadOnlyMirrorRepo))
+        -- Note that there is no local name because we can't publish to this kind of repository
         ]
 
 data SinglePackageFileType
@@ -320,8 +376,8 @@ singlePackageLocationDataDecoder :: D.Decoder CustomRepositoryDataParseError Sin
 singlePackageLocationDataDecoder =
   do
     fileType <- D.field "file-type" (singlePackageFileTypeDecoder UnsupportedFileTypeError)
-    packageName <- D.field "package-name" (D.mapError InvalidVersionString Elm.Package.decoder)
-    version <- D.field "version" (D.mapError InvalidPackageName Elm.Version.decoder)
+    packageName <- D.field "package-name" (D.mapError InvalidPackageName Elm.Package.decoder)
+    version <- D.field "version" (D.mapError InvalidVersionString Elm.Version.decoder)
     url <- D.field "url" packageUrlDecoder
     hashType <- D.field "hash-type" D.string
     when (hashType /= sha1HashTypeString) $ D.failure (InvalidHashType hashType [sha1HashTypeString])
@@ -398,19 +454,27 @@ instance Binary.Binary RepositoryType where
   put repositoryType = case repositoryType of
     DefaultPackageServer -> Binary.put (0 :: Binary.Word8)
     PZRPackageServer -> Binary.put (1 :: Binary.Word8)
+    LocalReadOnlyMirrorFileBundle -> Binary.put (2 :: Binary.Word8)
 
 instance Binary.Binary CustomSingleRepositoryData where
   get = do
     repositoryType <- Binary.get :: Binary.Get RepositoryType
-    repositoryUrl <- Binary.get :: Binary.Get RepositoryUrl
-    repositoryLocalName <- Binary.get :: Binary.Get RepositoryLocalName
     case repositoryType of
       DefaultPackageServer ->
-        pure (DefaultPackageServerRepoData (DefaultPackageServerRepo {_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName}))
+        do
+          repositoryUrl <- Binary.get :: Binary.Get RepositoryUrl
+          repositoryLocalName <- Binary.get :: Binary.Get RepositoryLocalName
+          pure (DefaultPackageServerRepoData (DefaultPackageServerRepo {_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName}))
       PZRPackageServer ->
         do
+          repositoryUrl <- Binary.get :: Binary.Get RepositoryUrl
+          repositoryLocalName <- Binary.get :: Binary.Get RepositoryLocalName
           repositoryAuthToken <- Binary.get :: Binary.Get RepositoryAuthToken
           pure (PZRPackageServerRepoData (PZRPackageServerRepo {_pzrPackageServerRepoAuthToken=repositoryAuthToken, _pzrPackageServerRepoTypeUrl=repositoryUrl, _pzrPackageServerRepoLocalName=repositoryLocalName}))
+      LocalReadOnlyMirrorFileBundle ->
+        do
+          repositoryFilePath <- Binary.get :: Binary.Get RepositoryFilePath
+          pure (LocalReadOnlyMirrorRepoData (LocalReadOnlyMirrorRepo {_localReadOnlyMirrorRepoFilePath=repositoryFilePath}))
 
   put customSingleRepositoryData =
     case customSingleRepositoryData of
@@ -425,6 +489,10 @@ instance Binary.Binary CustomSingleRepositoryData where
           Binary.put (_pzrPackageServerRepoTypeUrl pzrPackageServer)
           Binary.put (_pzrPackageServerRepoLocalName pzrPackageServer)
           Binary.put (_pzrPackageServerRepoAuthToken pzrPackageServer)
+      LocalReadOnlyMirrorRepoData localReadOnlyMirrorRepo ->
+        do
+          Binary.put LocalReadOnlyMirrorFileBundle
+          Binary.put (_localReadOnlyMirrorRepoFilePath localReadOnlyMirrorRepo)
 
   -- = TarballType
   -- | ZipfileType
