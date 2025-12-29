@@ -72,6 +72,9 @@ jobs:
     - name: Run compiler-output tests
       run: python3 run-compiler-output-tests.py
 
+    - name: Run custom-repo tests
+      run: python3 run-custom-repo-tests.py
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
