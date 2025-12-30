@@ -55,7 +55,7 @@ jobs:
     - name: Build Project
       shell: bash
       run: |
-        cp cabal.project.freeze.ghc96 cabal.project.freeze
+        cp cabal.project.freeze.ghc_9_6_7 cabal.project.freeze
         cp cabal.project.prod cabal.project
         cabal update
         cabal build --enable-executable-static # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH

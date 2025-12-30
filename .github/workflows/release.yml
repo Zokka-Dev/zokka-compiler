@@ -53,7 +53,7 @@ jobs:
     - name: Build Project
       shell: bash
       run: |
-        cp cabal.project.freeze.ghc96 cabal.project.freeze
+        cp cabal.project.freeze.ghc_9_6_7 cabal.project.freeze
         cp cabal.project.prod cabal.project
         cabal update
         cabal build --enable-executable-static # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
@@ -104,14 +104,14 @@ jobs:
     - name: Set up Haskell
       uses: haskell-actions/setup@v2
       with:
-        ghc-version: '9.4.8'  # Specify GHC version
+        ghc-version: '9.6.7'  # Specify GHC version
         cabal-version: '3.10'  # Specify Cabal version
 
     # Add steps here to build your Haskell project using Cabal
     - name: Build Project
       shell: bash
       run: |
-        cp cabal.project.freeze.ghc94 cabal.project.freeze
+        cp cabal.project.freeze.ghc_9_6_7 cabal.project.freeze
         cp cabal.project.prod cabal.project
         cabal update
         cabal build # We use build instead of install because of a weird changeWorkingDirectory error when we do that, something to do with Elm's use of TH
