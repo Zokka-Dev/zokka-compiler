@@ -18,7 +18,7 @@ parser.add_argument("-w", "--windows-x86-binary-source-location", required=True)
 parser.add_argument("-d", "--darwin-x86-binary-source-location", required=True)
 parser.add_argument("-l", "--linux-x86-binary-source-location", required=True)
 parser.add_argument("-a", "--darwin-arm64-binary-source-location", required=True)
-parser.add_argument("-i", "--linux-arm64-binary-source-location")
+parser.add_argument("-i", "--linux-arm64-binary-source-location", required=True)
 parser.add_argument("-e", "--new-version", required=True)
 parser.add_argument("-n", "--npm-dry-run", action=argparse.BooleanOptionalAction)
 
@@ -27,7 +27,8 @@ args = parser.parse_args()
 windows_binary_source_location = args.windows_x86_binary_source_location
 darwin_x86_binary_source_location = args.darwin_x86_binary_source_location
 darwin_arm64_binary_source_location = args.darwin_arm64_binary_source_location
-linux_binary_source_location = args.linux_x86_binary_source_location
+linux_x86_binary_source_location = args.linux_x86_binary_source_location
+linux_arm64_binary_source_location = args.linux_arm64_binary_source_location
 new_version = args.new_version
 try:
     dry_run = args.npm_dry_run 
@@ -47,6 +48,7 @@ def rewrite_versions_of_optional_dependencies(package_json, version):
     package_json_copy["optionalDependencies"]["@zokka/zokka-binary-darwin_arm64"] = version
     package_json_copy["optionalDependencies"]["@zokka/zokka-binary-linux_x64"] = version
     package_json_copy["optionalDependencies"]["@zokka/zokka-binary-win32_x64"] = version
+    package_json_copy["optionalDependencies"]["@zokka/zokka-binary-linux_arm64"] = version
     return package_json_copy
 
 
@@ -59,7 +61,8 @@ top_level_npm_directory = "./installers/npm/"
 darwin_x86_directory = "./installers/npm/packages/darwin_x64/"
 darwin_arm64_directory = "./installers/npm/packages/darwin_arm64/"
 windows_directory = "./installers/npm/packages/win32_x64/"
-linux_directory = "./installers/npm/packages/linux_x64/"
+linux_x86_directory = "./installers/npm/packages/linux_x64/"
+linux_arm64_directory = "./installers/npm/packages/linux_arm64/"
 
 def copy_and_chmod_file(source, destination):
     try:
@@ -75,11 +78,12 @@ def copy_and_chmod_file(source, destination):
 copy_and_chmod_file(darwin_x86_binary_source_location, darwin_x86_directory + "/zokka")
 copy_and_chmod_file(darwin_arm64_binary_source_location, darwin_arm64_directory + "/zokka")
 copy_and_chmod_file(windows_binary_source_location, windows_directory + "/zokka.exe")
-copy_and_chmod_file(linux_binary_source_location, linux_directory + "/zokka")
+copy_and_chmod_file(linux_x86_binary_source_location, linux_x86_directory + "/zokka")
+copy_and_chmod_file(linux_arm64_binary_source_location, linux_arm64_directory + "/zokka")
 
 additional_npm_args = [ "--dry-run" ] if dry_run else []
 
-for directory in [darwin_x86_directory, darwin_arm64_directory, windows_directory, linux_directory]:
+for directory in [darwin_x86_directory, darwin_arm64_directory, windows_directory, linux_x86_directory]:
     with open(directory + "package.json", "r+") as f:
         package_json = json.load(f)
         new_package_json = rewrite_version_of_package_json(package_json, new_version)

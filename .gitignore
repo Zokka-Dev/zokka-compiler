@@ -15,6 +15,9 @@ dist-newstyle
 # cabal.project.freeze.ghc94 they want to use locally
 cabal.project.freeze
 
+# These are meant to just be local changes
+cabal.project.local
+
 # Scratch files for easy personal use
 *.scratch.*
 

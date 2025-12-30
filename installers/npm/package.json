@@ -39,9 +39,10 @@
     "zokka": "bin/zokka"
   },
   "optionalDependencies": {
-    "@zokka/zokka-binary-darwin_x64": "0.191.0-alpha.18",
-    "@zokka/zokka-binary-darwin_arm64": "0.191.0-alpha.18",
-    "@zokka/zokka-binary-linux_x64": "0.191.0-alpha.18",
-    "@zokka/zokka-binary-win32_x64": "0.191.0-alpha.18"
+    "@zokka/zokka-binary-darwin_x64": "replace_me",
+    "@zokka/zokka-binary-darwin_arm64": "replace_me",
+    "@zokka/zokka-binary-linux_x64": "replace_me",
+    "@zokka/zokka-binary-linux_arm64": "replace_me",
+    "@zokka/zokka-binary-win32_x64": "replace_me"
   }
 }
