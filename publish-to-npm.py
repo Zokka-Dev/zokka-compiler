@@ -18,7 +18,8 @@ parser.add_argument("-w", "--windows-x86-binary-source-location", required=True)
 parser.add_argument("-d", "--darwin-x86-binary-source-location", required=True)
 parser.add_argument("-l", "--linux-x86-binary-source-location", required=True)
 parser.add_argument("-a", "--darwin-arm64-binary-source-location", required=True)
-parser.add_argument("-i", "--linux-arm64-binary-source-location", required=True)
+# Leaving this off as required until we can actually get it working
+parser.add_argument("-i", "--linux-arm64-binary-source-location")
 parser.add_argument("-e", "--new-version", required=True)
 parser.add_argument("-n", "--npm-dry-run", action=argparse.BooleanOptionalAction)
 
@@ -48,7 +49,8 @@ def rewrite_versions_of_optional_dependencies(package_json, version):
     package_json_copy["optionalDependencies"]["@zokka/zokka-binary-darwin_arm64"] = version
     package_json_copy["optionalDependencies"]["@zokka/zokka-binary-linux_x64"] = version
     package_json_copy["optionalDependencies"]["@zokka/zokka-binary-win32_x64"] = version
-    package_json_copy["optionalDependencies"]["@zokka/zokka-binary-linux_arm64"] = version
+    if linux_arm64_binary_source_location:
+        package_json_copy["optionalDependencies"]["@zokka/zokka-binary-linux_arm64"] = version
     return package_json_copy
 
 
@@ -62,7 +64,8 @@ darwin_x86_directory = "./installers/npm/packages/darwin_x64/"
 darwin_arm64_directory = "./installers/npm/packages/darwin_arm64/"
 windows_directory = "./installers/npm/packages/win32_x64/"
 linux_x86_directory = "./installers/npm/packages/linux_x64/"
-linux_arm64_directory = "./installers/npm/packages/linux_arm64/"
+if linux_arm64_binary_source_location:
+    linux_arm64_directory = "./installers/npm/packages/linux_arm64/"
 
 def copy_and_chmod_file(source, destination):
     try:
@@ -79,7 +82,8 @@ copy_and_chmod_file(darwin_x86_binary_source_location, darwin_x86_directory + "/
 copy_and_chmod_file(darwin_arm64_binary_source_location, darwin_arm64_directory + "/zokka")
 copy_and_chmod_file(windows_binary_source_location, windows_directory + "/zokka.exe")
 copy_and_chmod_file(linux_x86_binary_source_location, linux_x86_directory + "/zokka")
-copy_and_chmod_file(linux_arm64_binary_source_location, linux_arm64_directory + "/zokka")
+if linux_arm64_binary_source_location:
+    copy_and_chmod_file(linux_arm64_binary_source_location, linux_arm64_directory + "/zokka")
 
 additional_npm_args = [ "--dry-run" ] if dry_run else []
 
