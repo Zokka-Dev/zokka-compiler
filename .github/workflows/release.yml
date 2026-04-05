@@ -7,6 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
+  # For npm trusted publishing
+  id-token: write
   contents: read
 
 jobs:

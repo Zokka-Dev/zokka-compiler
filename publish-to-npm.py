@@ -6,9 +6,6 @@ import shutil
 import stat
 import subprocess
 
-# Expect NPM_TOKEN as environment variable rather than argument to prevent the
-# token from showing up in build logs
-
 parser = argparse.ArgumentParser(
     prog="publish-to-npm",
     description="Publishes npm packages",
@@ -54,10 +51,12 @@ def rewrite_versions_of_optional_dependencies(package_json, version):
     return package_json_copy
 
 
+# We expect to be publishing using trusted publishing, so we should have an
+# NPM_ID_TOKEN available.
 try:
-    os.environ["NPM_TOKEN"]
+    os.environ["NPM_ID_TOKEN"]
 except KeyError:
-    raise Exception("The NPM_TOKEN environment variable must be set otherwise we cannot publish to npm!")
+    raise Exception("The NPM_ID_TOKEN environment variable must be set otherwise we cannot publish to npm!")
 
 top_level_npm_directory = "./installers/npm/"
 darwin_x86_directory = "./installers/npm/packages/darwin_x64/"
@@ -95,11 +94,11 @@ for directory in [darwin_x86_directory, darwin_arm64_directory, windows_director
         json.dump(new_package_json, f, indent=2)
         f.truncate()
     if "alpha" in new_version:
-        subprocess.run(["npm", "publish", "--tag", "alpha"] + additional_npm_args, cwd=directory)
+        subprocess.run(["npm", "publish", "--tag", "alpha"] + additional_npm_args, cwd=directory, check=True)
     elif "beta" in new_version:
-        subprocess.run(["npm", "publish", "--tag", "beta"] + additional_npm_args, cwd=directory)
+        subprocess.run(["npm", "publish", "--tag", "beta"] + additional_npm_args, cwd=directory, check=True)
     else:
-        subprocess.run(["npm", "publish"] + additional_npm_args, cwd=directory)
+        subprocess.run(["npm", "publish"] + additional_npm_args, cwd=directory, check=True)
 
 
 with open(top_level_npm_directory + "package.json", "r+") as f:
@@ -120,15 +119,15 @@ if "alpha" in new_version:
     if dry_run:
         print("Skipping setting published package as latest version because this is a dry-run.")
     else:
-        subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"] + additional_npm_args, cwd=top_level_npm_directory)
+        subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"] + additional_npm_args, cwd=top_level_npm_directory, check=True)
 elif "beta" in new_version:
-    subprocess.run(["npm", "publish", "--tag", "beta"] + additional_npm_args, cwd=top_level_npm_directory)
+    subprocess.run(["npm", "publish", "--tag", "beta"] + additional_npm_args, cwd=top_level_npm_directory, check=True)
     # Note that according to
     # https://docs.npmjs.com/cli/v9/commands/npm-publish#dry-run dist-tag does
     # not honor the --dry-run flag so we have to do it manually
     if dry_run:
         print("Skipping setting published package as latest version because this is a dry-run.")
     else:
-        subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"] + additional_npm_args, cwd=top_level_npm_directory)
+        subprocess.run(["npm", "dist-tag", "add", f"zokka@{new_version}", "latest"] + additional_npm_args, cwd=top_level_npm_directory, check=True)
 else:
-    subprocess.run(["npm", "publish"] + additional_npm_args, cwd=top_level_npm_directory)
+    subprocess.run(["npm", "publish"] + additional_npm_args, cwd=top_level_npm_directory, check=True)
