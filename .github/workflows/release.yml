@@ -7,6 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
+  # For npm trusted publishing
+  id-token: write
   contents: read
 
 jobs:
@@ -148,8 +150,6 @@ jobs:
       uses: actions/download-artifact@v4
 
     - name: Publish to NPM
-      env:
-        NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       # I can't seem to get GHCup working on on aarch64 for Linux
       # Giving up for now
       # So we're removing this argument
